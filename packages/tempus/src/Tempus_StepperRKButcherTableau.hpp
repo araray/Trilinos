@@ -40,7 +40,12 @@ template<class Scalar>
 class StepperERK_ForwardEuler :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_ForwardEuler()
   {
     this->setStepperType("RK Forward Euler");
@@ -50,7 +55,7 @@ class StepperERK_ForwardEuler :
 
   StepperERK_ForwardEuler(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -112,7 +117,12 @@ template<class Scalar>
 class StepperERK_4Stage4thOrder :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_4Stage4thOrder()
   {
     this->setStepperType("RK Explicit 4 Stage");
@@ -122,7 +132,7 @@ class StepperERK_4Stage4thOrder :
 
   StepperERK_4Stage4thOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -212,7 +222,12 @@ template<class Scalar>
 class StepperERK_BogackiShampine32 :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_BogackiShampine32()
   {
     this->setStepperType("Bogacki-Shampine 3(2) Pair");
@@ -222,7 +237,7 @@ class StepperERK_BogackiShampine32 :
 
   StepperERK_BogackiShampine32(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -325,7 +340,12 @@ template<class Scalar>
 class StepperERK_Merson45 :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_Merson45()
   {
     this->setStepperType("Merson 4(5) Pair");
@@ -335,7 +355,7 @@ class StepperERK_Merson45 :
 
   StepperERK_Merson45(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -456,7 +476,7 @@ public:
 
   StepperERK_3_8Rule(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -549,7 +569,12 @@ template<class Scalar>
 class StepperERK_4Stage3rdOrderRunge :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_4Stage3rdOrderRunge()
   {
     this->setStepperType("RK Explicit 4 Stage 3rd order by Runge");
@@ -559,7 +584,7 @@ class StepperERK_4Stage3rdOrderRunge :
 
   StepperERK_4Stage3rdOrderRunge(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -647,7 +672,12 @@ template<class Scalar>
 class StepperERK_5Stage3rdOrderKandG :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_5Stage3rdOrderKandG()
   {
     this->setStepperType("RK Explicit 5 Stage 3rd order by Kinnmark and Gray");
@@ -657,7 +687,7 @@ class StepperERK_5Stage3rdOrderKandG :
 
   StepperERK_5Stage3rdOrderKandG(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -745,7 +775,12 @@ template<class Scalar>
 class StepperERK_3Stage3rdOrder :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_3Stage3rdOrder()
   {
     this->setStepperType("RK Explicit 3 Stage 3rd order");
@@ -755,7 +790,7 @@ class StepperERK_3Stage3rdOrder :
 
   StepperERK_3Stage3rdOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -846,7 +881,12 @@ template<class Scalar>
 class StepperERK_3Stage3rdOrderTVD :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_3Stage3rdOrderTVD()
   {
     this->setStepperType("RK Explicit 3 Stage 3rd order TVD");
@@ -856,7 +896,7 @@ class StepperERK_3Stage3rdOrderTVD :
 
   StepperERK_3Stage3rdOrderTVD(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -948,7 +988,12 @@ template<class Scalar>
 class StepperERK_3Stage3rdOrderHeun :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_3Stage3rdOrderHeun()
   {
     this->setStepperType("RK Explicit 3 Stage 3rd order by Heun");
@@ -958,7 +1003,7 @@ class StepperERK_3Stage3rdOrderHeun :
 
   StepperERK_3Stage3rdOrderHeun(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -1045,7 +1090,12 @@ template<class Scalar>
 class StepperERK_Midpoint :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_Midpoint()
   {
     this->setStepperType("RK Explicit Midpoint");
@@ -1055,7 +1105,7 @@ class StepperERK_Midpoint :
 
   StepperERK_Midpoint(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -1133,7 +1183,12 @@ template<class Scalar>
 class StepperERK_Trapezoidal :
   virtual public StepperExplicitRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperERK_Trapezoidal()
   {
     this->setStepperType("RK Explicit Trapezoidal");
@@ -1143,7 +1198,7 @@ class StepperERK_Trapezoidal :
 
   StepperERK_Trapezoidal(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -1241,7 +1296,7 @@ public:
 
   StepperERK_General(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     bool useFSAL,
     std::string ICConsistency,
     bool ICConsistencyCheck,
@@ -1313,6 +1368,7 @@ public:
   {
     this->tableau_ = Teuchos::rcp(new RKButcherTableau<Scalar>(
       this->getStepperType(),A,b,c,order,orderMin,orderMax,bstar));
+    this->isInitialized_ = false;
   }
 
   virtual std::string getDefaultICConsistency() const { return "Consistent"; }
@@ -1359,7 +1415,12 @@ template<class Scalar>
 class StepperDIRK_BackwardEuler :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   *  Requires subsequent setModel() and initialize()
+   *  calls before calling takeStep().
+  */
   StepperDIRK_BackwardEuler()
   {
     this->setStepperType("RK Backward Euler");
@@ -1369,7 +1430,7 @@ class StepperDIRK_BackwardEuler :
 
   StepperDIRK_BackwardEuler(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -1459,7 +1520,12 @@ template<class Scalar>
 class StepperSDIRK_2Stage2ndOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_2Stage2ndOrder()
   {
     typedef Teuchos::ScalarTraits<Scalar> ST;
@@ -1474,7 +1540,7 @@ class StepperSDIRK_2Stage2ndOrder :
 
   StepperSDIRK_2Stage2ndOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -1494,7 +1560,12 @@ class StepperSDIRK_2Stage2ndOrder :
                 ICConsistencyCheck, useEmbedded, zeroInitialGuess);
   }
 
-  void setGamma(Scalar gamma) { gamma_ = gamma; this->setupTableau(); }
+  void setGamma(Scalar gamma)
+  {
+    gamma_ = gamma;
+    this->isInitialized_ = false;
+    this->setupTableau();
+  }
 
   std::string getDescription() const
   {
@@ -1596,7 +1667,12 @@ template<class Scalar>
 class StepperSDIRK_2Stage3rdOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_2Stage3rdOrder()
   {
     typedef Teuchos::ScalarTraits<Scalar> ST;
@@ -1614,7 +1690,7 @@ class StepperSDIRK_2Stage3rdOrder :
 
   StepperSDIRK_2Stage3rdOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -1647,8 +1723,9 @@ class StepperSDIRK_2Stage3rdOrder :
       "gammaType needs to be '3rd Order A-stable', '2nd Order L-stable' "
       "or 'gamma'.");
 
-     gammaType_ = gammaType;
-     this->setupTableau();
+    gammaType_ = gammaType;
+    this->isInitialized_ = false;
+    this->setupTableau();
   }
   void setGamma(Scalar gamma)
   {
@@ -1656,6 +1733,7 @@ class StepperSDIRK_2Stage3rdOrder :
       gamma_ = gamma;
       this->setupTableau();
     }
+    this->isInitialized_ = false;
   }
 
   std::string getDescription() const
@@ -1765,7 +1843,12 @@ template<class Scalar>
 class StepperEDIRK_2Stage3rdOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperEDIRK_2Stage3rdOrder()
   {
     this->setStepperType("EDIRK 2 Stage 3rd order");
@@ -1775,7 +1858,7 @@ class StepperEDIRK_2Stage3rdOrder :
 
   StepperEDIRK_2Stage3rdOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -1877,7 +1960,12 @@ template<class Scalar>
 class StepperDIRK_1StageTheta :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperDIRK_1StageTheta()
   {
     typedef Teuchos::ScalarTraits<Scalar> ST;
@@ -1891,7 +1979,7 @@ class StepperDIRK_1StageTheta :
 
   StepperDIRK_1StageTheta(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -1918,6 +2006,7 @@ class StepperDIRK_1StageTheta :
       "Try using the 'RK Forward Euler' stepper.\n");
     theta_ = theta;
     this->setupTableau();
+    this->isInitialized_ = false;
   }
 
   std::string getDescription() const
@@ -2010,7 +2099,12 @@ template<class Scalar>
 class StepperEDIRK_2StageTheta :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperEDIRK_2StageTheta()
   {
     typedef Teuchos::ScalarTraits<Scalar> ST;
@@ -2024,7 +2118,7 @@ class StepperEDIRK_2StageTheta :
 
   StepperEDIRK_2StageTheta(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2050,6 +2144,7 @@ class StepperEDIRK_2StageTheta :
       "'theta' can not be zero, as it makes this stepper explicit. \n"
       "Try using the 'RK Forward Euler' stepper.\n");
     theta_ = theta;
+    this->isInitialized_ = false;
     this->setupTableau();
   }
 
@@ -2148,7 +2243,12 @@ template<class Scalar>
 class StepperEDIRK_TrapezoidalRule :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperEDIRK_TrapezoidalRule()
   {
     this->setStepperType("RK Trapezoidal Rule");
@@ -2158,7 +2258,7 @@ class StepperEDIRK_TrapezoidalRule :
 
   StepperEDIRK_TrapezoidalRule(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2259,7 +2359,12 @@ template<class Scalar>
 class StepperSDIRK_ImplicitMidpoint :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_ImplicitMidpoint()
   {
     this->setStepperType("RK Implicit Midpoint");
@@ -2269,7 +2374,7 @@ class StepperSDIRK_ImplicitMidpoint :
 
   StepperSDIRK_ImplicitMidpoint(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2367,7 +2472,12 @@ template<class Scalar>
 class StepperDIRK_1Stage1stOrderRadauIA :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperDIRK_1Stage1stOrderRadauIA()
   {
     this->setStepperType("RK Implicit 1 Stage 1st order Radau IA");
@@ -2377,7 +2487,7 @@ class StepperDIRK_1Stage1stOrderRadauIA :
 
   StepperDIRK_1Stage1stOrderRadauIA(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2467,7 +2577,12 @@ template<class Scalar>
 class StepperDIRK_2Stage2ndOrderLobattoIIIB :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperDIRK_2Stage2ndOrderLobattoIIIB()
   {
     this->setStepperType("RK Implicit 2 Stage 2nd order Lobatto IIIB");
@@ -2477,7 +2592,7 @@ class StepperDIRK_2Stage2ndOrderLobattoIIIB :
 
   StepperDIRK_2Stage2ndOrderLobattoIIIB(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2584,7 +2699,12 @@ template<class Scalar>
 class StepperSDIRK_5Stage4thOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_5Stage4thOrder()
   {
     this->setStepperType("SDIRK 5 Stage 4th order");
@@ -2594,7 +2714,7 @@ class StepperSDIRK_5Stage4thOrder :
 
   StepperSDIRK_5Stage4thOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2744,7 +2864,12 @@ template<class Scalar>
 class StepperSDIRK_3Stage4thOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_3Stage4thOrder()
   {
     this->setStepperType("SDIRK 3 Stage 4th order");
@@ -2754,7 +2879,7 @@ class StepperSDIRK_3Stage4thOrder :
 
   StepperSDIRK_3Stage4thOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -2875,7 +3000,12 @@ template<class Scalar>
 class StepperSDIRK_5Stage5thOrder :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_5Stage5thOrder()
   {
     this->setStepperType("SDIRK 5 Stage 5th order");
@@ -2885,7 +3015,7 @@ class StepperSDIRK_5Stage5thOrder :
 
   StepperSDIRK_5Stage5thOrder(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -3048,7 +3178,12 @@ template<class Scalar>
 class StepperSDIRK_21Pair :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperSDIRK_21Pair()
   {
     this->setStepperType("SDIRK 2(1) Pair");
@@ -3058,7 +3193,7 @@ class StepperSDIRK_21Pair :
 
   StepperSDIRK_21Pair(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -3169,7 +3304,12 @@ template<class Scalar>
 class StepperDIRK_General :
   virtual public StepperDIRK<Scalar>
 {
-  public:
+public:
+  /** \brief Default constructor.
+   *
+   * Requires subsequent setModel() and initialize()
+   * calls before calling takestep().
+  */
   StepperDIRK_General()
   {
     this->setStepperType("General DIRK");
@@ -3179,7 +3319,7 @@ class StepperDIRK_General :
 
   StepperDIRK_General(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
+    const Teuchos::RCP<StepperRKObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -3201,7 +3341,7 @@ class StepperDIRK_General :
       this->tableau_->isImplicit() != true, std::logic_error,
       "Error - General DIRK did not receive a DIRK Butcher Tableau!\n");
 
-    this->setup(appModel, obs, useFSAL, ICConsistency,
+    this->setup(appModel, obs, solver, useFSAL, ICConsistency,
                 ICConsistencyCheck, useEmbedded, zeroInitialGuess);
   }
 
@@ -3243,6 +3383,7 @@ class StepperDIRK_General :
                                  t->A(),t->b(),t->c(),
                                  t->order(),t->orderMin(),t->orderMax(),
                                  t->bstar()));
+      this->isInitialized_ = false;
     }
   }
 
@@ -3257,6 +3398,7 @@ class StepperDIRK_General :
   {
     this->tableau_ = Teuchos::rcp(new RKButcherTableau<Scalar>(
       this->getStepperType(),A,b,c,order,orderMin,orderMax,bstar));
+    this->isInitialized_ = false;
   }
 
   Teuchos::RCP<const Teuchos::ParameterList>

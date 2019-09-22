@@ -67,10 +67,9 @@ public:
   }
 
   /// Create stepper from ParameterList with its details.
-  Teuchos::RCP<Stepper<Scalar> > createStepper(
+  Teuchos::RCP<Stepper<Scalar> > createMultiSteppers(
     Teuchos::RCP<Teuchos::ParameterList> stepperPL,
-    std::vector<Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> > >
-      models = Teuchos::null)
+    std::vector<Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> > > models)
   {
     std::string stepperType = stepperPL->get<std::string>("Stepper Type");
     return this->createStepper(models, stepperType, stepperPL);
@@ -237,7 +236,9 @@ public:
     Teuchos::RCP<Teuchos::ParameterList> stepperPL)
   {
     auto solver = rcp(new Thyra::NOXNonlinearSolver());
-    solver->setParameterList(defaultSolverParameters());
+    auto solverPL = Tempus::defaultSolverParameters();
+    auto subPL = sublist(solverPL, "NOX");
+    solver->setParameterList(subPL);
     if (stepperPL != Teuchos::null) {
       // Can not validate because of optional Parameters, e.g., 'Solver Name'.
       //stepperPL->validateParametersAndSetDefaults(
@@ -268,7 +269,9 @@ public:
     Teuchos::RCP<Teuchos::ParameterList> stepperPL)
   {
     auto solver = rcp(new Thyra::NOXNonlinearSolver());
-    solver->setParameterList(defaultSolverParameters());
+    auto solverPL = Tempus::defaultSolverParameters();
+    auto subPL = sublist(solverPL, "NOX");
+    solver->setParameterList(subPL);
     if (stepperPL != Teuchos::null) {
       std::string solverName = stepperPL->get<std::string>("Solver Name");
       if ( stepperPL->isSublist(solverName) ) {
@@ -288,7 +291,9 @@ public:
     Teuchos::RCP<Teuchos::ParameterList> stepperPL)
   {
     auto solver = rcp(new Thyra::NOXNonlinearSolver());
-    solver->setParameterList(defaultSolverParameters());
+    auto solverPL = Tempus::defaultSolverParameters();
+    auto subPL = sublist(solverPL, "NOX");
+    solver->setParameterList(subPL);
     if (stepperPL != Teuchos::null) {
       // Can not validate because of optional Parameters, e.g., 'Solver Name'.
       //stepperPL->validateParametersAndSetDefaults(

@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ************************************************************************
 // @HEADER
 
@@ -53,6 +51,7 @@
 
 #include "Tpetra_ConfigDefs.hpp"
 #include "Kokkos_DualView.hpp"
+#include "KokkosCompat_View.hpp"
 #include "Teuchos_Assert.hpp"
 #include "Teuchos_CommHelpers.hpp"
 #include "Teuchos_OrdinalTraits.hpp"
@@ -60,6 +59,8 @@
 #include "Teuchos_Utils.hpp"
 #include <algorithm>
 #include <iterator>
+#include <memory>
+#include <ostream>
 #include <sstream>
 
 #if defined(HAVE_TPETRA_THROW_EFFICIENCY_WARNINGS) || defined(HAVE_TPETRA_PRINT_EFFICIENCY_WARNINGS)
@@ -547,6 +548,71 @@ namespace Tpetra {
   }
 
 
+/**
+   * \brief Sort the first array, and apply the resulting permutation to the second array.
+   *
+   * Sort the values in the first array (of length size)
+   * in ascending order.  Apply the
+   * permutation resulting from the sort to the second array
+   *
+   * @param view1 A host-accessible 1D Kokkos::View
+   *   of the first array.
+   * @param size Length of the first array.
+   * @param view2 A host-accessible 1D Kokkos::View
+   *   of the second array.  The second array must have no fewer
+   *   elements than the first array.  If the first array has N
+   *   elements, then the permutation will only be applied to the
+   *   first N elements of the second array.
+   */
+  template<class View1, class View2>
+  void sort2(View1 &view1, const size_t &size, View2 &view2) {
+    // NOTE: This assumes the view is host-accessible.
+
+    // Wrap the views as rcps (this happens to preserve the reference counting, but that doesn't really matter here)
+    Teuchos::ArrayRCP<typename View1::non_const_value_type> view1_rcp =  Kokkos::Compat::persistingView(view1, 0, size);
+    Teuchos::ArrayRCP<typename View2::non_const_value_type> view2_rcp =  Kokkos::Compat::persistingView(view2, 0, size);
+
+    sort2(view1_rcp.begin(),view1_rcp.end(),view2_rcp.begin());    
+  }
+
+/**
+   * \brief Convenience wrapper for std::sort for host-accessible views
+   *
+   * Sort the values in the array (of length size) in ascending order.
+
+   * @param view A host-accessible 1D Kokkos::View.
+   * @param size Length of the first array (or portion of which to sort).
+   */
+  template<class View>
+  void sort(View &view, const size_t &size) {
+    // NOTE: This assumes the view is host-accessible.
+
+    // Wrap the view as rcps (this happens to preserve the reference counting, but that doesn't really matter here)
+    Teuchos::ArrayRCP<typename View::non_const_value_type> view_rcp =  Kokkos::Compat::persistingView(view, 0, size);
+
+    std::sort(view_rcp.begin(),view_rcp.end());    
+  }
+
+  /**
+   * \brief Convenience wrapper for a reversed std::sort for host-accessible views
+   *
+   * Reverse Sort the values in the array (of length size) in ascending order.
+
+   * @param view A host-accessible 1D Kokkos::View.
+   * @param size Length of the array (or portion of which to sort, from the *end*)
+   */
+  template<class View>
+  void reverse_sort(View &view, const size_t &size) {
+    // NOTE: This assumes the view is host-accessible.
+    // Wrap the view as rcps (this happens to preserve the reference counting, but that doesn't really matter here)
+    Teuchos::ArrayRCP<typename View::non_const_value_type> view_rcp =  Kokkos::Compat::persistingView(view, 0, size);
+
+    std::sort(view_rcp.rbegin(),view_rcp.rend());    
+  }
+  
+
+
+
   /**
    * \brief Sort the first array, and apply the same permutation to the second
    * and third arrays.
@@ -629,7 +695,7 @@ namespace Tpetra {
   ///         val.begin (), val.end ());
   /// \endcode
   template<class IT1, class IT2>
-  KOKKOS_INLINE_FUNCTION void
+  void
   merge2 (IT1& indResultOut, IT2& valResultOut,
           IT1 indBeg, IT1 indEnd,
           IT2 valBeg, IT2 /* valEnd */)
@@ -953,6 +1019,71 @@ namespace Tpetra {
          << ", sync: {host: " << host << ", dev: " << dev << "}";
       return os.str ();
     }
+
+    /// \brief Print min(x.size(), maxNumToPrint) entries of x.
+    ///
+    /// \return void, because returning std::ostream& won't work
+    ///   if \c out is an std::ostringstream.
+    template<class ArrayType>
+    void
+    verbosePrintArray(std::ostream& out,
+                      const ArrayType& x,
+                      const char name[],
+                      const size_t maxNumToPrint)
+    {
+      out << name << ": [";
+
+      const size_t numEnt(x.size());
+      if (maxNumToPrint == 0) {
+        if (numEnt != 0) {
+          out << "...";
+        }
+      }
+      else {
+        const size_t numToPrint = numEnt > maxNumToPrint ?
+          maxNumToPrint : numEnt;
+        size_t k = 0;
+        for ( ; k < numToPrint; ++k) {
+          out << x[k];
+          if (k + size_t(1) < numToPrint) {
+            out << ", ";
+          }
+        }
+        if (k < numEnt) {
+          out << ", ...";
+        }
+      }
+      out << "]";
+    }
+
+    /// \brief Create string prefix for each line of verbose output.
+    ///
+    /// \return "Proc ${myRank}: ${prefix}: " (using Python notation).
+    std::unique_ptr<std::string>
+    createPrefix(const int myRank,
+                 const char prefix[]);
+
+    /// \brief Create string prefix for each line of verbose output,
+    ///   for a Tpetra function (not a class or instance method).
+    ///
+    /// \param comm [in] May be null; if not, the communicator from
+    ///   which to draw the (MPI) process rank.
+    ///
+    /// \param functionName [in] Name of the function.
+    std::unique_ptr<std::string>
+    createPrefix(const Teuchos::Comm<int>* comm,
+                 const char functionName[]);
+
+    /// \brief Create string prefix for each line of verbose output,
+    ///   for a method of a Tpetra class.
+    ///
+    /// \param className [in] Name of the class.
+    ///
+    /// \param methodName [in] Name of the (class or instance) method.
+    std::unique_ptr<std::string>
+    createPrefix(const Teuchos::Comm<int>*,
+                 const char className[],
+                 const char methodName[]);
 
   } // namespace Details
 } // namespace Tpetra

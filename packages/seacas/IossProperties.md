@@ -20,8 +20,10 @@ RESTART\_DECOMPOSITION\_METHOD | {method} | Decompose a DB with type `RESTART_IN
 DECOMPOSITION\_METHOD | {method} | Decompose all input DB using `method`
 PARALLEL\_CONSISTENCY | \[on]/off | On if the client will call Ioss functions consistently on all processors. If off, then the auto-decomp and auto-join cannot be used.
 RETAIN\_FREE\_NODES | \[on]/off | In auto-decomp, will nodes not connected to any elements be retained.
+RETAIN\_EMPTY\_BLOCKS | on/\[off] | Empty blocks will / won't be retained in model. If retained, will have topology type "unknown".
 LOAD\_BALANCE\_THRESHOLD | {real} \[1.4] | CGNS-Structured only -- Load imbalance permitted Load on Proc / Avg Load
 LINE\_DECOMPOSITION | string | a list of comma-separated BC names. Zone with this bc will not be decomposed perpendicular to this surface. If name is `__ordinal_{ijk}` then use {ijk} as ordinal not to decompose.
+PARMETIS_COMMON_NODE_COUNT | {int}\[varies] | The degree of connectivity among the vertices in the dual graph for the ParMetis KWAY decomposition schemes. A value of 2 will permit edge connectivity in the decomposition; 3 or 4 will give face connectivity. Default is face connectivity.
 
 ### Valid values for Decomposition Method
 
@@ -92,8 +94,29 @@ ENABLE\_FILE\_GROUPS | on/\[off]   | experimental
 
   Property | Value    | Description
  ----------|----------|------------
+ SHOW_CONFIG | ignored | output the build configuration of IOSS and TPL. Show supported database types.
  LOGGING   | on/\[off] | enable/disable logging of field input/output
  DECOMP\_SHOW\_PROGRESS | on/\[off] | show memory and elapsed time during autodecomp.
  DECOMP\_SHOW\_HWM      | on/\[off] | show high-water memory during autodecomp
  IOSS\_TIME\_FILE\_OPEN\_CLOSE | on/\[off] | show elapsed time during parallel-io file open/close/create
  CHECK\_PARALLEL\_CONSISTENCY | ignored | check Ioss::GroupingEntity parallel consistency
+
+## Setting properties via an environment variable
+
+Although the properties are usually accessed internally in the
+application calling the IOSS library, it is possible to set the
+properties externally prior to running the application via the setting
+of the environment variable `IOSS_PROPERTIES`.  The value of the
+variable is one or more colon-separated property/property-value pairs.
+For example, to set the `DECOMPOSITION_METHOD` and the `FILE_TYPE`
+externally, the following would be used:
+```bash
+    export IOSS_PROPERTIES="DECOMPOSITION_METHOD=rib:FILE_TYPE=netcdf4"
+```
+If the environment variable is set correctly, there should be an
+informational message output during running of the application similar
+to:
+```bash
+	IOSS: Adding property 'DECOMPOSITION_METHOD' with value 'rib'
+	IOSS: Adding property 'FILE_TYPE' with value 'netcdf4'
+```

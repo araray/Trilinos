@@ -47,6 +47,7 @@
 
 namespace FROSch {
 
+    using namespace std;
     using namespace Teuchos;
     using namespace Xpetra;
 
@@ -57,10 +58,9 @@ namespace FROSch {
     K_ (k),
     SumOperator_ (new SumOperator<SC,LO,GO,NO>(k->getRangeMap()->getComm())),
     MultiplicativeOperator_ (new MultiplicativeOperator<SC,LO,GO,NO>(k,parameterList)),
-    OverlappingOperator_ (),
-    UseMultiplicative_(false)
+    OverlappingOperator_ ()
     {
-        FROSCH_TIMER_START_LEVELID(oneLevelPreconditionerTime,"OneLevelPreconditioner::OneLevelPreconditioner");
+        FROSCH_DETAILTIMER_START_LEVELID(oneLevelPreconditionerTime,"OneLevelPreconditioner::OneLevelPreconditioner");
         if (!this->ParameterList_->get("OverlappingOperator Type","AlgebraicOverlappingOperator").compare("AlgebraicOverlappingOperator")) {
             // Set the LevelID in the sublist
             parameterList->sublist("AlgebraicOverlappingOperator").set("Level ID",this->LevelID_);
@@ -73,8 +73,7 @@ namespace FROSch {
         }
         if (UseMultiplicative_) {
             MultiplicativeOperator_->addOperator(OverlappingOperator_);
-        }
-        else{
+        } else {
             SumOperator_->addOperator(OverlappingOperator_);
         }
 
@@ -168,7 +167,7 @@ namespace FROSch {
     }
 
     template <class SC,class LO,class GO,class NO>
-    std::string OneLevelPreconditioner<SC,LO,GO,NO>::description() const
+    string OneLevelPreconditioner<SC,LO,GO,NO>::description() const
     {
         return "One-Level Preconditioner";
     }

@@ -43,7 +43,6 @@
 #include <stdexcept>                    // for logic_error, runtime_error
 #include <algorithm>                    // for sort
 #include <stk_mesh/base/BulkData.hpp>   // for BulkData, etc
-#include <stk_mesh/base/FieldParallel.hpp>  // for communicate_field_data, etc
 #include <stk_mesh/base/GetEntities.hpp>  // for count_entities, etc
 #include <stk_mesh/base/FieldParallel.hpp>
 #include <stk_mesh/base/CreateEdges.hpp>
@@ -69,8 +68,11 @@
 #include "stk_mesh/base/Selector.hpp"   // for Selector, operator|
 #include "stk_mesh/base/Types.hpp"      // for EntityProc, EntityVector, etc
 #include "stk_mesh/baseImpl/MeshImplUtils.hpp"
+#include "stk_mesh/baseImpl/MeshCommImplUtils.hpp"
+#include "stk_mesh/baseImpl/EntityGhostData.hpp"
 #include "stk_topology/topology.hpp"    // for topology, etc
 #include "stk_unit_test_utils/stk_mesh_fixtures/BoxFixture.hpp"  // for BoxFixture
+#include "stk_unit_test_utils/stk_mesh_fixtures/TestHexFixture.hpp"
 #include "stk_unit_test_utils/stk_mesh_fixtures/HexFixture.hpp"  // for HexFixture, etc
 #include "stk_unit_test_utils/stk_mesh_fixtures/QuadFixture.hpp"  // for QuadFixture
 #include "stk_unit_test_utils/stk_mesh_fixtures/RingFixture.hpp"  // for RingFixture
@@ -84,23 +86,12 @@
 #include <stk_unit_test_utils/FaceTestingUtils.hpp>
 #include <stk_unit_test_utils/getOption.h>
 #include <stk_unit_test_utils/ioUtils.hpp>
-#include <stk_util/parallel/CommSparse.hpp>  // for Reduce, ReduceSum, etc
 #include <stk_util/parallel/CommSparse.hpp>
 #include <stk_util/parallel/Parallel.hpp>  // for ParallelMachine, etc
 #include <stk_util/parallel/ParallelReduce.hpp>  // for Reduce, ReduceSum, etc
 #include <string>                       // for string, basic_string, etc
 #include <utility>                      // for pair
 #include <vector>                       // for vector, etc
-
-namespace stk
-{
-namespace mesh
-{
-class FieldBase;
-void communicateSharedEntityInfo(stk::mesh::BulkData &mesh, stk::CommSparse &comm, std::vector<std::vector<stk::mesh::shared_entity_type> > &shared_entities);
-
-}
-}
 
 using stk::mesh::Part;
 using stk::mesh::MetaData;
@@ -117,10 +108,6 @@ using stk::mesh::EntityRank;
 using stk::mesh::fixtures::RingFixture;
 using stk::mesh::fixtures::BoxFixture;
 
-const EntityRank NODE_RANK = stk::topology::NODE_RANK;
-const EntityRank FACE_RANK = stk::topology::FACE_RANK;
-const EntityRank ELEM_RANK = stk::topology::ELEM_RANK;
-
 //====================
 extern int gl_argc;
 extern char** gl_argv;
@@ -132,7 +119,7 @@ void donate_one_element(stk::unit_test_util::BulkDataTester & mesh)
 {
     const int p_rank = mesh.parallel_rank();
 
-    Selector select_owned(MetaData::get(mesh).locally_owned_part());
+    Selector select_owned(mesh.mesh_meta_data().locally_owned_part());
 
     std::vector<size_t> before_count;
     std::vector<size_t> after_count;
@@ -215,7 +202,8 @@ void donate_all_shared_nodes(stk::unit_test_util::BulkDataTester & mesh)
 {
     const int p_rank = mesh.parallel_rank();
 
-    const Selector select_used = MetaData::get(mesh).locally_owned_part() | MetaData::get(mesh).globally_shared_part();
+    const MetaData& meta = mesh.mesh_meta_data();
+    const Selector select_used = meta.locally_owned_part() | meta.globally_shared_part();
 
     std::vector<size_t> before_count;
     std::vector<size_t> after_count;
@@ -1998,28 +1986,28 @@ TEST(BulkData, testParallelSideCreationWithoutAura)
 
 //----------------------------------------------------------------------
 //----------------------------------------------------------------------
+class BulkDataWithHexes : public stk::mesh::fixtures::TestHexFixture {};
+
 // Testing of field_data_footprint(.)
-TEST(BulkData, test_total_field_data_footprint )
+TEST_F(BulkDataWithHexes, test_total_field_data_footprint )
 {
     // Test 3x1x1 HexFixture structure
     const unsigned NX = 3;
     const unsigned NY = 1;
     const unsigned NZ = 1;
-    stk::mesh::fixtures::HexFixture hf(MPI_COMM_WORLD, NX, NY, NZ);
-    hf.m_meta.commit();
-    hf.generate_mesh();
+    setup_mesh(NX, NY, NZ);
 
-    const stk::mesh::BulkData &mesh = hf.m_bulk_data;
+    const stk::mesh::BulkData &mesh = get_bulk();
 
     // Call function we're testing
-    size_t field_data_footprint = mesh.total_field_data_footprint(stk::topology::NODE_RANK);
+    size_t field_data_footprint = stk::mesh::get_total_ngp_field_allocation_bytes(get_coord_field());
 
     // Alternative computation explicitly gathers buckets.
     size_t node_fields_footprint = 0;
     const stk::mesh::BucketVector &node_buckets = mesh.buckets(stk::topology::NODE_RANK);
     for(size_t i = 0; i < node_buckets.size(); ++i)
     {
-        node_fields_footprint += node_buckets[i]->capacity() * field_bytes_per_entity(hf.m_coord_field, *node_buckets[i]);
+        node_fields_footprint += node_buckets[i]->capacity() * field_bytes_per_entity(get_coord_field(), *node_buckets[i]);
     }
 
     EXPECT_EQ(node_fields_footprint, field_data_footprint);
@@ -2028,22 +2016,20 @@ TEST(BulkData, test_total_field_data_footprint )
 //----------------------------------------------------------------------
 //----------------------------------------------------------------------
 // Testing of get_buckets and get_entities functions
-TEST(BulkData, test_get_entities )
+TEST_F(BulkDataWithHexes, test_get_entities )
 {
     // Test 3x4x4 HexFixture structure
     const unsigned NX = 3;
     const unsigned NY = 4;
     const unsigned NZ = 40;
-    stk::mesh::fixtures::HexFixture hf(MPI_COMM_WORLD, NX, NY, NZ);
+    setup_mesh(NX, NY, NZ);
 
-    hf.m_meta.commit();
-    hf.generate_mesh();
-    const stk::mesh::BulkData &mesh = hf.m_bulk_data;
+    const stk::mesh::BulkData &mesh = get_bulk();
 
-    Selector select_owned(MetaData::get(mesh).locally_owned_part());
+    Selector select_owned(mesh.mesh_meta_data().locally_owned_part());
     const stk::mesh::BucketVector &bucket_ptrs = mesh.get_buckets(stk::topology::NODE_RANK, select_owned);
     stk::mesh::EntityVector entities;
-    mesh.get_entities(stk::topology::NODE_RANK, select_owned, entities);
+    stk::mesh::get_selected_entities(select_owned, mesh.buckets(stk::topology::NODE_RANK), entities);
     //
     //  Confirm that the number of entities exracted by either bucket or entity access is identical
     //
@@ -2084,8 +2070,6 @@ typedef stk::mesh::Field<int> PressureFieldType;
 static void test_sync_1(stk::mesh::BulkData& eMesh, PressureFieldType& pressure_field, bool sync_shared, bool sync_aura)
 {
     unsigned p_rank = eMesh.parallel_rank();
-    unsigned p_size = eMesh.parallel_size();
-    static_cast<void>(p_size);
 
     const stk::mesh::BucketVector & buckets = eMesh.buckets(stk::topology::NODE_RANK);
 
@@ -2385,7 +2369,7 @@ TEST(BulkData, testCommList)
 std::string printGhostData(stk::mesh::BulkData & bulkData, stk::mesh::Entity entity)
 {
     std::ostringstream oss;
-    std::vector<stk::mesh::EntityGhostData> egd;
+    std::vector<stk::mesh::impl::EntityGhostData> egd;
     stk::mesh::impl::get_ghost_data(bulkData, entity, egd);
     for(size_t z = 0; z < egd.size(); ++z)
     {
@@ -2414,9 +2398,9 @@ std::string printGhostDataByRank(stk::mesh::BulkData & bulkData, stk::topology::
 TEST(BulkData, EntityGhostData)
 {
     std::string gold_result = "(Entity_lid=0, direction=SEND, processor=128, ghosting level=LOCALLY_OWNED)";
-    stk::mesh::EntityGhostData data;
-    data.direction = stk::mesh::EntityGhostData::SEND;
-    data.ghostingLevel = stk::mesh::EntityGhostData::LOCALLY_OWNED;
+    stk::mesh::impl::EntityGhostData data;
+    data.direction = stk::mesh::impl::EntityGhostData::SEND;
+    data.ghostingLevel = stk::mesh::impl::EntityGhostData::LOCALLY_OWNED;
     data.processor = 128;
     std::ostringstream oss;
     oss << data;
@@ -3145,8 +3129,6 @@ TEST(BulkData, ModificationEnd)
             EXPECT_FALSE(stkMeshBulkData->is_valid(iter->entity));
         }
 
-        //    stkMeshBulkData->my_internal_resolve_shared_modify_delete();
-
         std::vector<size_t> globalCounts;
         stk::mesh::comm_mesh_counts(*stkMeshBulkData, globalCounts);
 
@@ -3188,17 +3170,17 @@ TEST(BulkData, resolve_ownership_of_modified_entities_trivial)
     }
     mesh.my_resolve_ownership_of_modified_entities(modified_entities);
     if (myRank == 0) {
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 1), CEOUtils::STATE_OWNED, 0));
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 1), CEOUtils::STATE_OWNED, 0));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
     }
     else if (myRank == 1) {
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 1), CEOUtils::STATE_OWNED, 0));
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 13), CEOUtils::STATE_OWNED, 2));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 1), CEOUtils::STATE_OWNED, 0));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 13), CEOUtils::STATE_OWNED, 2));
     }
     else {
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
-        EXPECT_TRUE(check_state(mesh, EntityKey(NODE_RANK, 13), CEOUtils::STATE_OWNED, 2));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 9), CEOUtils::STATE_OWNED, 1));
+        EXPECT_TRUE(check_state(mesh, EntityKey(stk::topology::NODE_RANK, 13), CEOUtils::STATE_OWNED, 2));
     }
 }
 
@@ -3397,7 +3379,7 @@ TEST(BulkData, orphaned_node_closure_count_shared_nodes_non_owner_adds_element)
   if (myRank == 0)
   {
     std::vector<Entity> element_vector;
-    bulk.get_entities(stk::topology::ELEMENT_RANK, meta.universal_part(), element_vector);
+    stk::mesh::get_entities(bulk, stk::topology::ELEMENT_RANK, element_vector);
     ASSERT_EQ(1u, element_vector.size());
     EXPECT_TRUE(bulk.destroy_entity(element_vector[0]));
     EXPECT_TRUE(bulk.destroy_entity(node1));
@@ -5905,7 +5887,7 @@ TEST(FaceCreation, test_face_creation_2Hexes_2procs)
         EXPECT_EQ(1u, shared_entities_by_proc[otherProc].size());
 
         stk::CommSparse comm(mesh.parallel());
-        communicateSharedEntityInfo(mesh, comm, shared_entities_by_proc);
+        stk::mesh::impl::communicate_shared_entity_info(mesh, comm, shared_entities_by_proc);
         mesh.my_unpackEntityInfromFromOtherProcsAndMarkEntitiesAsSharedAndTrackProcessorsThatNeedAlsoHaveEntity(comm, potentially_shared_sides);
 
         EXPECT_TRUE(mesh.my_internal_is_entity_marked(side) == stk::mesh::BulkData::IS_SHARED);
@@ -6003,7 +5985,7 @@ TEST( BulkData, AddSharedNodesInTwoSteps)
         return;
     }
 
-    int nodeId = 1;
+    stk::mesh::EntityId nodeId = 1;
     const unsigned spatialDim = 3;
     stk::mesh::MetaData meta(spatialDim);
     stk::mesh::BulkData mesh(meta, pm);

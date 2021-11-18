@@ -1,36 +1,9 @@
 /*
- * Copyright (c) 2005-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 #include "exodusII.h"
@@ -40,23 +13,24 @@
 static int ex__get_dimension_value(int exoid, int64_t *var, int default_value,
                                    const char *dimension_name, int missing_ok)
 {
-  int    status;
-  char   errmsg[MAX_ERR_LENGTH];
-  size_t idum;
-  int    dimid;
+  int status;
+  int dimid;
 
   if ((status = nc_inq_dimid(exoid, dimension_name, &dimid)) != NC_NOERR) {
     *var = default_value;
     if (missing_ok) {
       return (EX_NOERR);
     }
+    char errmsg[MAX_ERR_LENGTH];
     snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to retrieve dimension %s for file id %d",
              dimension_name, exoid);
     ex_err_fn(exoid, __func__, errmsg, status);
     return (EX_FATAL);
   }
+  size_t idum;
   if ((status = nc_inq_dimlen(exoid, dimid, &idum)) != NC_NOERR) {
     *var = default_value;
+    char errmsg[MAX_ERR_LENGTH];
     snprintf(errmsg, MAX_ERR_LENGTH,
              "ERROR: failed to retrieve value for dimension %s for file id %d", dimension_name,
              exoid);
@@ -71,18 +45,14 @@ static int ex_get_concat_set_len(int exoid, int64_t *set_length, const char *set
                                  const char *set_num_dim, const char *set_stat_var,
                                  const char *set_size_root, int missing_ok)
 {
-  int    i;
-  int    status;
-  char   errmsg[MAX_ERR_LENGTH];
-  size_t idum;
-  int    dimid, varid;
-  size_t num_sets;
-  int *  stat_vals = NULL;
-
   *set_length = 0; /* default return value */
 
-  if ((status = nc_inq_dimid(exoid, set_num_dim, &dimid)) == NC_NOERR) {
+  int dimid;
+  if (nc_inq_dimid(exoid, set_num_dim, &dimid) == NC_NOERR) {
+    int    status;
+    size_t num_sets;
     if ((status = nc_inq_dimlen(exoid, dimid, &num_sets)) != NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get number of %s sets in file id %d",
                set_name, exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
@@ -90,7 +60,9 @@ static int ex_get_concat_set_len(int exoid, int64_t *set_length, const char *set
     }
 
     /* Allocate space for stat array */
+    int *stat_vals = NULL;
     if (!(stat_vals = malloc((int)num_sets * sizeof(int)))) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH,
                "ERROR: failed to allocate memory for %s set status "
                "array for file id %d",
@@ -100,11 +72,13 @@ static int ex_get_concat_set_len(int exoid, int64_t *set_length, const char *set
     }
 
     /* get variable id of status array */
-    if ((status = nc_inq_varid(exoid, set_stat_var, &varid)) == NC_NOERR) {
+    int varid;
+    if (nc_inq_varid(exoid, set_stat_var, &varid) == NC_NOERR) {
       /* if status array exists, use it, otherwise assume, object exists
          to be backward compatible */
       if ((status = nc_get_var_int(exoid, varid, stat_vals)) != NC_NOERR) {
         free(stat_vals);
+        char errmsg[MAX_ERR_LENGTH];
         snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get %s set status array from file id %d",
                  set_name, exoid);
         ex_err_fn(exoid, __func__, errmsg, status);
@@ -112,17 +86,18 @@ static int ex_get_concat_set_len(int exoid, int64_t *set_length, const char *set
       }
     }
     else { /* default: status is true */
-      for (i = 0; i < num_sets; i++) {
+      for (int i = 0; i < num_sets; i++) {
         stat_vals[i] = 1;
       }
     }
 
-    for (i = 0; i < num_sets; i++) {
+    for (int i = 0; i < num_sets; i++) {
       if (stat_vals[i] == 0) { /* is this object null? */
         continue;
       }
 
-      if ((status = nc_inq_dimid(exoid, ex__catstr(set_size_root, i + 1), &dimid)) != NC_NOERR) {
+      size_t idum;
+      if (nc_inq_dimid(exoid, ex__catstr(set_size_root, i + 1), &dimid) != NC_NOERR) {
         if (missing_ok) {
           idum = 0;
         }
@@ -133,7 +108,7 @@ static int ex_get_concat_set_len(int exoid, int64_t *set_length, const char *set
         }
       }
       else {
-        if ((status = nc_inq_dimlen(exoid, dimid, &idum)) != NC_NOERR) {
+        if (nc_inq_dimlen(exoid, dimid, &idum) != NC_NOERR) {
           *set_length = 0;
           free(stat_vals);
           return (EX_FATAL);
@@ -154,17 +129,17 @@ static void flt_cvt(float *xptr, double x) { *xptr = (float)x; }
 static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float *ret_float,
                                char *ret_char)
 {
-  int       dimid, varid, rootid;
-  void_int *ids = NULL;
-  size_t    i;
-  size_t    ldum = 0;
-  size_t    num_sets, idum;
-  int *     stat_vals;
-  char      errmsg[MAX_ERR_LENGTH];
-  int       status;
-  char      tmp_title[2048];
+  int    dimid, varid;
+  size_t ldum = 0;
+  size_t num_sets, idum;
+  int *  stat_vals;
+  char   errmsg[MAX_ERR_LENGTH];
+  int    status;
+  int    num_var;
 
-  ex__check_valid_file_id(exoid, __func__);
+  if (ex__check_valid_file_id(exoid, __func__) == EX_FATAL) {
+    return (EX_FATAL);
+  }
 
   if (ret_char) {
     *ret_char = '\0'; /* Only needs to be non-null for TITLE and some GROUP NAME inquiries */
@@ -175,7 +150,7 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
     return (EX_FATAL);
   }
 
-  rootid = exoid & EX_FILE_ID_MASK;
+  int rootid = exoid & EX_FILE_ID_MASK;
 
   switch (req_info) {
   case EX_INQ_FILE_TYPE:
@@ -320,6 +295,7 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
     else {
       /* returns the title of the database */
       /* Title is stored at root level... */
+      char tmp_title[2048];
       if ((status = nc_get_att_text(rootid, NC_GLOBAL, ATT_TITLE, tmp_title)) != NC_NOERR) {
         *ret_char = '\0';
         snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get database title for file id %d",
@@ -338,6 +314,28 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
       return (EX_FATAL);
     }
     *ret_int = ldum;
+    break;
+
+  case EX_INQ_ASSEMBLY:
+    /* returns the number of assemblies */
+    {
+      *ret_int                   = 0;
+      struct ex__file_item *file = ex__find_file_item(exoid);
+      if (file) {
+        *ret_int = file->assembly_count;
+      }
+    }
+    break;
+
+  case EX_INQ_BLOB:
+    /* returns the number of blobs */
+    {
+      *ret_int                   = 0;
+      struct ex__file_item *file = ex__find_file_item(exoid);
+      if (file) {
+        *ret_int = file->blob_count;
+      }
+    }
     break;
 
   case EX_INQ_NODES:
@@ -409,7 +407,7 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
         return (EX_FATAL);
       }
 
-      for (i = 0; i < num_sets; i++) {
+      for (size_t i = 0; i < num_sets; i++) {
         if ((status = nc_inq_varid(exoid, VAR_FACT_NS(i + 1), &varid)) != NC_NOERR) {
           if (status == NC_ENOTVAR) {
             idum = 0; /* this dist factor doesn't exist */
@@ -472,6 +470,7 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
         return (EX_FATAL);
       }
 
+      int *ids = NULL;
       if (!(ids = malloc(num_sets * sizeof(int64_t)))) { /* May be getting 2x what is
                                                             needed, but should be OK */
         snprintf(errmsg, MAX_ERR_LENGTH,
@@ -512,14 +511,14 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
         }
       }
       else { /* default: status is true */
-        for (i = 0; i < num_sets; i++) {
+        for (size_t i = 0; i < num_sets; i++) {
           stat_vals[i] = 1;
         }
       }
 
       /* walk id list, get each side set node length and sum for total */
 
-      for (i = 0; i < num_sets; i++) {
+      for (size_t i = 0; i < num_sets; i++) {
         ex_entity_id id;
         if (stat_vals[i] == 0) { /* is this object null? */
           continue;
@@ -589,7 +588,7 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
         return (EX_FATAL);
       }
 
-      for (i = 0; i < num_sets; i++) {
+      for (size_t i = 0; i < num_sets; i++) {
         if ((status = nc_inq_dimid(exoid, DIM_NUM_DF_SS(i + 1), &dimid)) != NC_NOERR) {
           if (status == NC_EBADDIM) {
             ldum = 0; /* this dist factor doesn't exist */
@@ -816,6 +815,76 @@ static int ex_inquire_internal(int exoid, int req_info, int64_t *ret_int, float 
     if (ex__get_dimension_value(exoid, ret_int, 0, DIM_NUM_FAM, 1) != EX_NOERR) {
       return (EX_FATAL);
     }
+    break;
+
+  case EX_INQ_NUM_NODE_VAR:
+    if (ex_get_variable_param(exoid, EX_NODAL, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_EDGE_BLOCK_VAR:
+    if (ex_get_variable_param(exoid, EX_EDGE_BLOCK, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_FACE_BLOCK_VAR:
+    if (ex_get_variable_param(exoid, EX_FACE_BLOCK, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_ELEM_BLOCK_VAR:
+    if (ex_get_variable_param(exoid, EX_ELEM_BLOCK, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_NODE_SET_VAR:
+    if (ex_get_variable_param(exoid, EX_NODE_SET, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_EDGE_SET_VAR:
+    if (ex_get_variable_param(exoid, EX_EDGE_SET, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_FACE_SET_VAR:
+    if (ex_get_variable_param(exoid, EX_FACE_SET, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_ELEM_SET_VAR:
+    if (ex_get_variable_param(exoid, EX_ELEM_SET, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_SIDE_SET_VAR:
+    if (ex_get_variable_param(exoid, EX_SIDE_SET, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
+    break;
+
+  case EX_INQ_NUM_GLOBAL_VAR:
+    if (ex_get_variable_param(exoid, EX_GLOBAL, &num_var) != EX_NOERR) {
+      return (EX_FATAL);
+    }
+    *ret_int = num_var;
     break;
 
   case EX_INQ_COORD_FRAMES:

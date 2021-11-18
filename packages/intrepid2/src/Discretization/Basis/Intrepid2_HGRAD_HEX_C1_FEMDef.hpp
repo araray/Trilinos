@@ -68,7 +68,7 @@ namespace Intrepid2 {
         const auto y = input(1);
         const auto z = input(2);
 
-        // output is a rank-2 array with dimensions (basisCardinality_, dim0)
+        // output is a rank-1 array with dimensions (basisCardinality_)
         output.access(0) = (1.0 - x)*(1.0 - y)*(1.0 - z)/8.0;
         output.access(1) = (1.0 + x)*(1.0 - y)*(1.0 - z)/8.0;
         output.access(2) = (1.0 + x)*(1.0 + y)*(1.0 - z)/8.0;
@@ -85,7 +85,7 @@ namespace Intrepid2 {
         const auto y = input(1);
         const auto z = input(2);
 
-        // output is a rank-3 array with dimensions (basisCardinality_, dim0, spaceDim)
+        // output is a rank-2 array with dimensions (basisCardinality_, spaceDim)
         output.access(0, 0) = -(1.0 - y)*(1.0 - z)/8.0;
         output.access(0, 1) = -(1.0 - x)*(1.0 - z)/8.0;
         output.access(0, 2) = -(1.0 - x)*(1.0 - y)/8.0;
@@ -124,7 +124,7 @@ namespace Intrepid2 {
         const auto y = input(1);
         const auto z = input(2);
 
-        // output is a rank-3 array with dimensions (basisCardinality_, dim0, D2Cardinality = 6)
+        // output is a rank-2 array with dimensions (basisCardinality_, D2Cardinality = 6)
         output.access(0, 0) =  0.0;                    // {2, 0, 0}
         output.access(0, 1) =  (1.0 - z)/8.0;          // {1, 1, 0}
         output.access(0, 2) =  (1.0 - y)/8.0;          // {1, 0, 1}
@@ -183,6 +183,107 @@ namespace Intrepid2 {
         output.access(7, 5) =  0.0;                    // {0, 0, 2}
         break;
       }
+      case OPERATOR_D3:
+      {
+        // output is a rank-2 array with dimensions (basisCardinality_, D3Cardinality = 10)
+        // (1.0 - x)*(1.0 - y)*(1.0 - z)/8.0;
+        output.access(0, 0) =  0.0;      // {3, 0, 0}
+        output.access(0, 1) =  0.0;      // {2, 1, 0}
+        output.access(0, 2) =  0.0;      // {2, 0, 1}
+        output.access(0, 3) =  0.0;      // {1, 2, 0}
+        output.access(0, 4) =  -1.0/8.0; // {1, 1, 1}
+        output.access(0, 5) =  0.0;      // {1, 0, 2}
+        output.access(0, 6) =  0.0;      // {0, 3, 0}
+        output.access(0, 7) =  0.0;      // {0, 2, 1}
+        output.access(0, 8) =  0.0;      // {0, 1, 2}
+        output.access(0, 9) =  0.0;      // {0, 0, 3}
+        
+        // (1.0 + x)*(1.0 - y)*(1.0 - z)/8.0;
+        output.access(1, 0) =  0.0;      // {3, 0, 0}
+        output.access(1, 1) =  0.0;      // {2, 1, 0}
+        output.access(1, 2) =  0.0;      // {2, 0, 1}
+        output.access(1, 3) =  0.0;      // {1, 2, 0}
+        output.access(1, 4) =  1.0/8.0;  // {1, 1, 1}
+        output.access(1, 5) =  0.0;      // {1, 0, 2}
+        output.access(1, 6) =  0.0;      // {0, 3, 0}
+        output.access(1, 7) =  0.0;      // {0, 2, 1}
+        output.access(1, 8) =  0.0;      // {0, 1, 2}
+        output.access(1, 9) =  0.0;      // {0, 0, 3}
+        
+        // (1.0 + x)*(1.0 + y)*(1.0 - z)/8.0;
+        output.access(2, 0) =  0.0;      // {3, 0, 0}
+        output.access(2, 1) =  0.0;      // {2, 1, 0}
+        output.access(2, 2) =  0.0;      // {2, 0, 1}
+        output.access(2, 3) =  0.0;      // {1, 2, 0}
+        output.access(2, 4) = -1.0/8.0;  // {1, 1, 1}
+        output.access(2, 5) =  0.0;      // {1, 0, 2}
+        output.access(2, 6) =  0.0;      // {0, 3, 0}
+        output.access(2, 7) =  0.0;      // {0, 2, 1}
+        output.access(2, 8) =  0.0;      // {0, 1, 2}
+        output.access(2, 9) =  0.0;      // {0, 0, 3}
+        
+        // (1.0 - x)*(1.0 + y)*(1.0 - z)/8.0;
+        output.access(3, 0) =  0.0;      // {3, 0, 0}
+        output.access(3, 1) =  0.0;      // {2, 1, 0}
+        output.access(3, 2) =  0.0;      // {2, 0, 1}
+        output.access(3, 3) =  0.0;      // {1, 2, 0}
+        output.access(3, 4) =  1.0/8.0;  // {1, 1, 1}
+        output.access(3, 5) =  0.0;      // {1, 0, 2}
+        output.access(3, 6) =  0.0;      // {0, 3, 0}
+        output.access(3, 7) =  0.0;      // {0, 2, 1}
+        output.access(3, 8) =  0.0;      // {0, 1, 2}
+        output.access(3, 9) =  0.0;      // {0, 0, 3}
+
+        // (1.0 - x)*(1.0 - y)*(1.0 + z)/8.0;
+        output.access(4, 0) =  0.0;      // {3, 0, 0}
+        output.access(4, 1) =  0.0;      // {2, 1, 0}
+        output.access(4, 2) =  0.0;      // {2, 0, 1}
+        output.access(4, 3) =  0.0;      // {1, 2, 0}
+        output.access(4, 4) =  1.0/8.0;  // {1, 1, 1}
+        output.access(4, 5) =  0.0;      // {1, 0, 2}
+        output.access(4, 6) =  0.0;      // {0, 3, 0}
+        output.access(4, 7) =  0.0;      // {0, 2, 1}
+        output.access(4, 8) =  0.0;      // {0, 1, 2}
+        output.access(4, 9) =  0.0;      // {0, 0, 3}
+
+        // (1.0 + x)*(1.0 - y)*(1.0 + z)/8.0;
+        output.access(5, 0) =  0.0;      // {3, 0, 0}
+        output.access(5, 1) =  0.0;      // {2, 1, 0}
+        output.access(5, 2) =  0.0;      // {2, 0, 1}
+        output.access(5, 3) =  0.0;      // {1, 2, 0}
+        output.access(5, 4) = -1.0/8.0;  // {1, 1, 1}
+        output.access(5, 5) =  0.0;      // {1, 0, 2}
+        output.access(5, 6) =  0.0;      // {0, 3, 0}
+        output.access(5, 7) =  0.0;      // {0, 2, 1}
+        output.access(5, 8) =  0.0;      // {0, 1, 2}
+        output.access(5, 9) =  0.0;      // {0, 0, 3}
+        
+        // (1.0 + x)*(1.0 + y)*(1.0 + z)/8.0;
+        output.access(6, 0) =  0.0;      // {3, 0, 0}
+        output.access(6, 1) =  0.0;      // {2, 1, 0}
+        output.access(6, 2) =  0.0;      // {2, 0, 1}
+        output.access(6, 3) =  0.0;      // {1, 2, 0}
+        output.access(6, 4) =  1.0/8.0;  // {1, 1, 1}
+        output.access(6, 5) =  0.0;      // {1, 0, 2}
+        output.access(6, 6) =  0.0;      // {0, 3, 0}
+        output.access(6, 7) =  0.0;      // {0, 2, 1}
+        output.access(6, 8) =  0.0;      // {0, 1, 2}
+        output.access(6, 9) =  0.0;      // {0, 0, 3}
+        
+        // (1.0 - x)*(1.0 + y)*(1.0 + z)/8.0;
+        output.access(7, 0) =  0.0;      // {3, 0, 0}
+        output.access(7, 1) =  0.0;      // {2, 1, 0}
+        output.access(7, 2) =  0.0;      // {2, 0, 1}
+        output.access(7, 3) =  0.0;      // {1, 2, 0}
+        output.access(7, 4) = -1.0/8.0;  // {1, 1, 1}
+        output.access(7, 5) =  0.0;      // {1, 0, 2}
+        output.access(7, 6) =  0.0;      // {0, 3, 0}
+        output.access(7, 7) =  0.0;      // {0, 2, 1}
+        output.access(7, 8) =  0.0;      // {0, 1, 2}
+        output.access(7, 9) =  0.0;      // {0, 0, 3}
+        
+        break;
+      }
       case OPERATOR_MAX : {
         const ordinal_type jend = output.extent(1);
         const ordinal_type iend = output.extent(0);
@@ -204,7 +305,7 @@ namespace Intrepid2 {
       }
     }
 
-    template<typename SpT,
+    template<typename DT,
              typename outputValueValueType, class ...outputValueProperties,
              typename inputPointValueType,  class ...inputPointProperties>
     void
@@ -214,7 +315,7 @@ namespace Intrepid2 {
                const EOperator operatorType ) {
       typedef          Kokkos::DynRankView<outputValueValueType,outputValueProperties...>         outputValueViewType;
       typedef          Kokkos::DynRankView<inputPointValueType, inputPointProperties...>          inputPointViewType;
-      typedef typename ExecSpace<typename inputPointViewType::execution_space,SpT>::ExecSpaceType ExecSpaceType;
+      typedef typename ExecSpace<typename inputPointViewType::execution_space,typename DT::execution_space>::ExecSpaceType ExecSpaceType;
 
       // Number of evaluation points = dim 0 of inputPoints
       const auto loopSize = inputPoints.extent(0);
@@ -250,7 +351,11 @@ namespace Intrepid2 {
         Kokkos::parallel_for( policy, FunctorType(outputValues, inputPoints) );
         break;
       }
-      case OPERATOR_D3:
+      case OPERATOR_D3:{
+        typedef Functor<outputValueViewType,inputPointViewType,OPERATOR_D3> FunctorType;
+        Kokkos::parallel_for( policy, FunctorType(outputValues, inputPoints) );
+        break;
+      }
       case OPERATOR_D4:
       case OPERATOR_D5:
       case OPERATOR_D6:
@@ -272,8 +377,8 @@ namespace Intrepid2 {
 
   // -------------------------------------------------------------------------------------
 
-  template<typename SpT, typename OT, typename PT>
-  Basis_HGRAD_HEX_C1_FEM<SpT,OT,PT>::
+  template<typename DT, typename OT, typename PT>
+  Basis_HGRAD_HEX_C1_FEM<DT,OT,PT>::
   Basis_HGRAD_HEX_C1_FEM() {
     this->basisCardinality_  = 8;
     this->basisDegree_       = 1;
@@ -315,15 +420,15 @@ namespace Intrepid2 {
                               posScOrd,
                               posDfOrd);
 
-      //this->tagToOrdinal_ = Kokkos::create_mirror_view(typename SpT::memory_space(), tagToOrdinal);
+      //this->tagToOrdinal_ = Kokkos::create_mirror_view(typename DT::memory_space(), tagToOrdinal);
       //Kokkos::deep_copy(this->tagToOrdinal_, tagToOrdinal);
 
-      //this->ordinalToTag_ = Kokkos::create_mirror_view(typename SpT::memory_space(), ordinalToTag);
+      //this->ordinalToTag_ = Kokkos::create_mirror_view(typename DT::memory_space(), ordinalToTag);
       //Kokkos::deep_copy(this->ordinalToTag_, ordinalToTag);
     }
 
     // dofCoords on host and create its mirror view to device
-    Kokkos::DynRankView<typename ScalarViewType::value_type,typename SpT::array_layout,Kokkos::HostSpace>
+    Kokkos::DynRankView<typename ScalarViewType::value_type,typename DT::execution_space::array_layout,Kokkos::HostSpace>
       dofCoords("dofCoordsHost", this->basisCardinality_,this->basisCellTopology_.getDimension());
     
     dofCoords(0,0) = -1.0;   dofCoords(0,1) = -1.0; dofCoords(0,2) = -1.0;
@@ -335,7 +440,7 @@ namespace Intrepid2 {
     dofCoords(6,0) =  1.0;   dofCoords(6,1) =  1.0; dofCoords(6,2) =  1.0;
     dofCoords(7,0) = -1.0;   dofCoords(7,1) =  1.0; dofCoords(7,2) =  1.0;
     
-    this->dofCoords_ = Kokkos::create_mirror_view(typename SpT::memory_space(), dofCoords);
+    this->dofCoords_ = Kokkos::create_mirror_view(typename DT::memory_space(), dofCoords);
     Kokkos::deep_copy(this->dofCoords_, dofCoords);
   }
 

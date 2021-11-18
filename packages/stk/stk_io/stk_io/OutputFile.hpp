@@ -45,6 +45,7 @@
 #include <stk_io/IossBridge.hpp>
 #include <stk_io/Heartbeat.hpp>
 #include <stk_io/MeshField.hpp>                    // for MeshField, etc
+#include <stk_io/IOHelpers.hpp>
 #include <stk_mesh/base/BulkData.hpp>              // for BulkData
 #include <stk_mesh/base/Selector.hpp>              // for Selector
 #include <stk_util/parallel/Parallel.hpp>          // for ParallelMachine
@@ -57,7 +58,6 @@
 #include "stk_util/util/ReportHandler.hpp"  // for ThrowAssert, etc
 namespace Ioss { class Property; }
 namespace Ioss { class Region; }
-namespace boost { class any; }
 namespace stk { namespace io { class InputFile; } }
 namespace stk { namespace mesh { class FieldBase; } }
 namespace stk { namespace mesh { class MetaData; } }
@@ -90,10 +90,12 @@ public:
       m_hasGhosting(false),
       m_hasAdaptivity(false),
       m_isSkinMesh(false),
+      m_enableEdgeIO(false),
       m_dbPurpose(db_type),
       m_inputRegion(input_region),
       m_subsetSelector(nullptr),
       m_sharedSelector(nullptr),
+      m_skinMeshSelector(nullptr),
       m_multiStateSuffixes(nullptr)
     {
         initialize_output_selectors();
@@ -116,10 +118,12 @@ public:
       m_hasGhosting(false),
       m_hasAdaptivity(false),
       m_isSkinMesh(false),
+      m_enableEdgeIO(false),
       m_dbPurpose(db_type),
       m_inputRegion(input_region),
       m_subsetSelector(nullptr),
       m_sharedSelector(nullptr),
+      m_skinMeshSelector(nullptr),
       m_multiStateSuffixes(nullptr)
     {
         m_region = ioss_output_region;
@@ -136,7 +140,7 @@ public:
 
     void setup_output_params(OutputParams &params) const;
 
-    bool set_multistate_suffixes(std::vector<std::string>& multiStateSuffixes);
+    bool set_multistate_suffixes(const std::vector<std::string>& multiStateSuffixes);
 
     void write_output_mesh(const stk::mesh::BulkData& bulk_data,
                            const std::vector<std::vector<int>> &attributeOrdering);
@@ -146,14 +150,34 @@ public:
     void add_attribute_field(stk::mesh::FieldBase &field, const OutputVariableParams &var);
     void add_user_data(const std::vector<std::string>& userData, const std::string &alternate_name, stk::io::DataLocation loc);
     bool has_global(const std::string &globalVarName) const;
-    void add_global(const std::string &variableName, const boost::any &value, stk::util::ParameterType::Type type);
-    void add_global_ref(const std::string &variableName, const boost::any *value, stk::util::ParameterType::Type type);
+    void add_global(const std::string &variableName, const stk::util::Parameter &value);
+
+    template<typename T>
+    void add_global(const std::string &variableName, const T& value, stk::util::ParameterType::Type type)
+    {
+      STK_ANY_NAMESPACE::any anyValue(value);
+      std::pair<size_t, Ioss::Field::BasicType> parameter_type = get_io_parameter_size_and_type(type, anyValue);
+      m_anyGlobalVariablesDefined = true;
+      internal_add_global(m_region, variableName, parameter_type.first, parameter_type.second);
+    }
+
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+    STK_DEPRECATED void add_global(const std::string &variableName, const STK_ANY_NAMESPACE::any &value, stk::util::ParameterType::Type type);
+#endif
+    void add_global_ref(const std::string &variableName, const stk::util::Parameter &value);
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+    STK_DEPRECATED void add_global_ref(const std::string &variableName, const STK_ANY_NAMESPACE::any *value, stk::util::ParameterType::Type type);
+#endif
     void add_global(const std::string &variableName, Ioss::Field::BasicType dataType);
     void add_global(const std::string &variableName, const std::string &type, Ioss::Field::BasicType dataType);
     void add_global(const std::string &variableName, int component_count,     Ioss::Field::BasicType dataType);
 
     void write_global(const std::string &variableName,
-                      const boost::any &value, stk::util::ParameterType::Type type);
+                      const stk::util::Parameter &param);
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+    STK_DEPRECATED void write_global(const std::string &variableName,
+                      const STK_ANY_NAMESPACE::any &value, stk::util::ParameterType::Type type);
+#endif
     void write_global(const std::string &variableName, double globalVarData);
     void write_global(const std::string &variableName, int globalVarData);
     void write_global(const std::string &variableName, std::vector<double>& globalVarData);
@@ -171,6 +195,7 @@ public:
 
     void set_subset_selector(Teuchos::RCP<stk::mesh::Selector> my_selector);
     void set_shared_selector(Teuchos::RCP<stk::mesh::Selector> my_selector);
+    void set_skin_mesh_selector(Teuchos::RCP<stk::mesh::Selector> my_selector);
 
     void set_output_selector(stk::topology::rank_t rank, Teuchos::RCP<stk::mesh::Selector> my_selector);
 
@@ -194,6 +219,8 @@ public:
 
     bool is_skin_mesh() const;
     void is_skin_mesh(bool skinMesh);
+
+    void set_enable_edge_io(bool enableEdgeIO);
 
     Ioss::DatabaseIO *get_output_database();
 
@@ -224,11 +251,13 @@ private:
     bool m_hasGhosting;
     bool m_hasAdaptivity;
     bool m_isSkinMesh;
+    bool m_enableEdgeIO;
     DatabasePurpose m_dbPurpose;
     const Ioss::Region* m_inputRegion;
     Teuchos::RCP<stk::mesh::Selector> m_subsetSelector;
     Teuchos::RCP<stk::mesh::Selector> m_sharedSelector;
     Teuchos::RCP<stk::mesh::Selector> m_outputSelector[stk::topology::ELEM_RANK+1];
+    Teuchos::RCP<stk::mesh::Selector> m_skinMeshSelector;
     Teuchos::RCP<Ioss::Region> m_region;
     std::vector<stk::io::FieldAndName> m_namedFields;
     std::vector<stk::io::FieldAndName> m_additionalAttributeFields;

@@ -1,36 +1,9 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions of
- * Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -58,10 +31,6 @@
 
 #ifdef USE_ZOLTAN
 #include <mpi.h> // for MPI_Finalize, etc
-#endif
-
-#ifdef SGI10K
-#include <sys/resource.h>
 #endif
 
 namespace {
@@ -637,7 +606,7 @@ namespace {
 
     case INFILE:
       fmt::print("\ttype: input from file\n");
-      fmt::print("\tfile name: {}\n", lb->file.c_str());
+      fmt::print("\tfile name: {}\n", lb->file);
       break;
     }
     fmt::print("\trefinement: ");
@@ -651,7 +620,7 @@ namespace {
     }
     if (lb->outfile) {
       fmt::print("\toutput assignment vector\n");
-      fmt::print("\tfile name: {}\n", lb->file.c_str());
+      fmt::print("\tfile name: {}\n", lb->file);
     }
 
     /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
@@ -677,7 +646,7 @@ namespace {
       fmt::print("\tweights from: ExodusII file\n");
       fmt::print("\ttime index: {}\n", weight->exo_tindx);
       fmt::print("\tvariable index: {}\n", weight->exo_vindx);
-      fmt::print("\tvariable name: {}\n", weight->exo_varname.c_str());
+      fmt::print("\tvariable name: {}\n", weight->exo_varname);
     }
     else if (weight->type & EL_BLK) {
       fmt::print("\tElement Block weights specified\n");
@@ -722,6 +691,5 @@ namespace {
       fmt::print("\telement block groups defined\n");
       fmt::print("\tgroup string: \"{}\"\n", prob->groups);
     }
-    return;
   }
 } // namespace

@@ -1,11 +1,49 @@
+//@HEADER
+// ************************************************************************
+//
+//                 Belos: Block Linear Solvers Package
+//                  Copyright 2004 Sandia Corporation
+//
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+// the U.S. Government retains certain rights in this software.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+// 1. Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright
+// notice, this list of conditions and the following disclaimer in the
+// documentation and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the Corporation nor the names of the
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
+// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+// LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+// ************************************************************************
+//@HEADER
+
 #ifndef BELOS_TPETRA_GMRES_SSTEP_HPP
 #define BELOS_TPETRA_GMRES_SSTEP_HPP
 
 #include "Belos_Tpetra_Gmres.hpp"
 #include "Belos_Tpetra_UpdateNewton.hpp"
 
-// #include "wrapTpetraQR.hpp"
-// #include "wrapTpetraCholQR.hpp"
+#include "KokkosBlas3_trsm.hpp"
 
 namespace BelosTpetra {
 namespace Impl {
@@ -16,8 +54,8 @@ template<class SC = Tpetra::Operator<>::scalar_type,
 class CholQR {
 private:
   using LO = typename MV::local_ordinal_type;
-  typedef Teuchos::BLAS<LO, SC> blas_type;
-  typedef Teuchos::LAPACK<LO, SC> lapack_type;
+  using blas_type = Teuchos::BLAS<LO, SC>;
+  using lapack_type = Teuchos::LAPACK<LO, SC>;
 
 public:
   /// \typedef FactorOutput
@@ -26,11 +64,12 @@ public:
   /// Here, FactorOutput is just a minimal object whose value is
   /// irrelevant, so that this class' interface looks like that of
   /// \c CholQR.
-  typedef int FactorOutput;
-  typedef Teuchos::ScalarTraits<SC> STS;
-  typedef typename STS::magnitudeType mag_type;
-  typedef Teuchos::SerialDenseMatrix<LO, SC> dense_matrix_type;
-  typedef Belos::MultiVecTraits<SC, MV> MVT;
+  using FactorOutput = int;
+  using STS = Teuchos::ScalarTraits<SC>;
+  using MVT = Belos::MultiVecTraits<SC, MV>;
+  using mag_type = typename STS::magnitudeType;
+  using STM = Teuchos::ScalarTraits<mag_type>;
+  using dense_matrix_type = Teuchos::SerialDenseMatrix<LO, SC>;
 
   /// \brief Constructor
   ///
@@ -46,34 +85,60 @@ public:
   /// default) or as contiguous column-major cache blocks, with
   /// leading dimension lda >= nrows.
   FactorOutput
-  factor (MV& A, dense_matrix_type& R)
+  factor (Teuchos::FancyOStream* outPtr, MV& A, dense_matrix_type& R)
   {
+    Teuchos::RCP< Teuchos::Time > factorTimer = Teuchos::TimeMonitor::getNewCounter ("CholQR::factor");
+    Teuchos::TimeMonitor LocalTimer (*factorTimer);
+
     blas_type blas;
     lapack_type lapack;
 
     const SC zero = STS::zero ();
     const SC one  = STS::one ();
 
-    LO ncols = A.getNumVectors ();
-    LO nrows = A.getLocalLength ();
+    // quick return
+    size_t ncols = A.getNumVectors ();
+    size_t nrows = A.getLocalLength ();
+    if (ncols == 0 || nrows == 0) {
+      return 0;
+    }
 
     // Compute R := A^T * A, using a single BLAS call.
-    MVT::MvTransMv(one, A, A, R);
+    // MV with "static" memory (e.g., Tpetra manages the static GPU memory pool)
+    MV R_mv = makeStaticLocalMultiVector (A, ncols, ncols);
+    //R_mv.putScalar (STS::zero ());
+
+    // compute R := A^T * A
+    R_mv.multiply (Teuchos::CONJ_TRANS, Teuchos::NO_TRANS, one, A, A, zero);
 
     // Compute the Cholesky factorization of R in place, so that
     // A^T * A = R^T * R, where R is ncols by ncols upper
     // triangular.
     int info = 0;
-    lapack.POTRF ('U', ncols, R.values (), R.stride(), &info);
-    if (info < 0) {
-      ncols = -info;
-      // FIXME (mfh 17 Sep 2018) Don't throw; report an error code.
-      throw std::runtime_error("Cholesky factorization failed");
+    {
+      auto R_h = R_mv.getLocalViewHost (Tpetra::Access::ReadWrite);
+      int ldr = int (R_h.extent (0));
+      SC *Rdata = reinterpret_cast<SC*> (R_h.data ());
+      lapack.POTRF ('U', ncols, Rdata, ldr, &info);
+      if (info > 0) {
+        // FIXME (mfh 17 Sep 2018) Don't throw; report an error code.
+        //ncols = info;
+        //throw std::runtime_error("Cholesky factorization failed");
+        *outPtr << "  >  POTRF( " << ncols << " ) failed with info = " << info << std::endl;
+        for (size_t i=info-1; i<ncols; i++) {
+          R_h(i, i) = one;
+          for (size_t j=i+1; j<ncols; j++) {
+            R_h(i, j) = zero;
+          }
+        }
+      }
     }
+    // Copy to the output R
+    Tpetra::deep_copy (R, R_mv);
     // TODO: replace with a routine to zero out lower-triangular
     //     : not needed, but done for testing
-    for (int i=0; i<ncols; i++) {
-      for (int j=0; j<i; j++) {
+    for (size_t i=0; i<ncols; i++) {
+      for (size_t j=0; j<i; j++) {
         R(i, j) = zero;
       }
     }
@@ -83,22 +148,45 @@ public:
     // triangle of R.
 
     // Compute A_cur / R (Matlab notation for A_cur * R^{-1}) in place.
-    A.sync_host ();
-    A.modify_host ();
-    auto A_lcl = A.getLocalViewHost ();
+    {
+      auto A_d = A.getLocalViewDevice (Tpetra::Access::ReadWrite);
+      auto R_d = R_mv.getLocalViewDevice (Tpetra::Access::ReadOnly);
+      KokkosBlas::trsm ("R", "U", "N", "N",
+                        one, R_d, A_d);
+    }
+    return (info > 0 ? info-1 : ncols);
+  }
 
-    SC* const A_lcl_raw = reinterpret_cast<SC*> (A_lcl.data ());
-    const LO LDA = LO (A.getStride ());
+  // recursive call to factor
+  FactorOutput
+  reFactor (Teuchos::FancyOStream* outPtr, MV& A, dense_matrix_type& R)
+  {
+    int ncols = int (A.getNumVectors ());
+    int rank = 0;
+    int old_rank = -1;
 
-    blas.TRSM (Teuchos::RIGHT_SIDE, Teuchos::UPPER_TRI,
-               Teuchos::NO_TRANS, Teuchos::NON_UNIT_DIAG,
-               nrows, ncols, one, R.values(), R.stride(),
-               A_lcl_raw, LDA);
-    A.template sync<typename MV::device_type::memory_space> ();
+    // recursively call factor while cols remaining and has made progress
+    while (rank < ncols && old_rank != rank) {
+      Teuchos::Range1D next_index(rank, ncols-1);
+      MV nextA = * (A.subView(next_index));
 
-    return (info > 0 ? info : ncols);
+      dense_matrix_type nextR (Teuchos::View, R, ncols-rank, ncols-rank, rank, rank);
+      old_rank = rank;
+      auto new_rank = factor (outPtr, nextA, nextR);
+      if (outPtr != nullptr) {
+        if (rank > 0) {
+          *outPtr << "  ++ reCholQR(";
+        } else {
+          *outPtr << "  >>   CholQR(";
+        }
+        *outPtr << rank << ":" << ncols-1 << "), new_rank = " << new_rank << std::endl;
+      }
+      rank += new_rank;
+    }
+    return rank;
   }
 };
+
 
 template<class SC = Tpetra::Operator<>::scalar_type,
          class MV = Tpetra::MultiVector<SC>,
@@ -121,21 +209,14 @@ private:
 public:
   GmresSstep () :
     base_type::Gmres (),
-    stepSize_ (5),
-    tsqr_ (Teuchos::null)
-  {
-    this->input_.computeRitzValues = true;
-    this->input_.computeRitzValuesOnFly = false;
-  }
+    useCholQR2_ (false),
+    cholqr_ (Teuchos::null)
+  {}
 
   GmresSstep (const Teuchos::RCP<const OP>& A) :
     base_type::Gmres (A),
-    stepSize_ (5),
-    tsqr_ (Teuchos::null)
-  {
-    this->input_.computeRitzValues = true;
-    this->input_.computeRitzValuesOnFly = false;
-  }
+    cholqr_ (Teuchos::null)
+  {}
 
   virtual ~GmresSstep () = default;
 
@@ -145,15 +226,15 @@ public:
   {
     base_type::getParameters (params, defaultValues);
 
-    const int stepSize = defaultValues ? 5 : stepSize_;
+    const int stepSize = defaultValues ? 5 : this->input_.stepSize;
     params.set ("Step Size", stepSize );
   }
 
   virtual void
   setParameters (Teuchos::ParameterList& params) {
     base_type::setParameters (params);
-    int stepSize = params.get<int> ("Step Size", stepSize_);
-    stepSize_ = stepSize;
+    int stepSize = params.get<int> ("Step Size", this->input_.stepSize);
+    this->input_.stepSize = stepSize;
 
     bool computeRitzValuesOnFly 
       = params.get<bool> ("Compute Ritz Values on Fly", this->input_.computeRitzValuesOnFly);
@@ -162,10 +243,13 @@ public:
     constexpr bool useCholQR_default = true;
     bool useCholQR = params.get<bool> ("CholeskyQR", useCholQR_default);
 
-    if (!useCholQR && !tsqr_.is_null ()) {
-      tsqr_ = Teuchos::null;
-    } else if (useCholQR && tsqr_.is_null ()) {
-      tsqr_ = Teuchos::rcp (new CholQR<SC, MV, OP> ());
+    bool useCholQR2 = params.get<bool> ("CholeskyQR2", useCholQR2_);
+    useCholQR2_ = useCholQR2;
+
+    if ((!useCholQR && !useCholQR2) && !cholqr_.is_null ()) {
+      cholqr_ = Teuchos::null;
+    } else if ((useCholQR || useCholQR2) && cholqr_.is_null ()) {
+      cholqr_ = Teuchos::rcp (new CholQR<SC, MV, OP> ());
     }
   }
 
@@ -179,11 +263,16 @@ private:
                const SolverInput<SC>& input)
   {
     using std::endl;
-    int stepSize = stepSize_;
+    int stepSize = input.stepSize;
     int restart = input.resCycle;
     int step = stepSize;
     const SC zero = STS::zero ();
     const SC one  = STS::one ();
+
+    // timers
+    Teuchos::RCP< Teuchos::Time > spmvTimer = Teuchos::TimeMonitor::getNewCounter ("GmresSstep::matrix-apply");
+    Teuchos::RCP< Teuchos::Time > bortTimer = Teuchos::TimeMonitor::getNewCounter ("GmresSstep::BOrtho");
+    Teuchos::RCP< Teuchos::Time > tsqrTimer = Teuchos::TimeMonitor::getNewCounter ("GmresSstep::TSQR");
 
     // initialize output parameters
     SolverOutput<SC> output {};
@@ -215,14 +304,19 @@ private:
     mag_type r_norm;
     mag_type r_norm_imp;
     mag_type metric;
-    vec_type R (B.getMap ());
-    vec_type Y (B.getMap ());
-    vec_type MP (B.getMap ());
-    MV  Q (B.getMap (), restart+1);
+
+    bool zeroOut = false; // Kokkos::View:init can take a long time on GPU?
+    vec_type R (B.getMap (), zeroOut);
+    vec_type Y (B.getMap (), zeroOut);
+    vec_type MP (B.getMap (), zeroOut);
+    MV  Q (B.getMap (), restart+1, zeroOut);
     vec_type P = * (Q.getVectorNonConst (0));
 
     // Compute initial residual (making sure R = B - Ax)
-    A.apply (X, R);
+    {
+      Teuchos::TimeMonitor LocalTimer (*spmvTimer);
+      A.apply (X, R);
+    }
     R.update (one, B, -one);
     b0_norm = R.norm2 (); // initial residual norm, not preconditioned
     if (input.precoSide == "left") {
@@ -245,6 +339,17 @@ private:
       // Return residual norm as B
       Tpetra::deep_copy (B, P);
       return output;
+    } else if (STM::isnaninf (metric)) {
+      if (outPtr != nullptr) {
+        *outPtr << "Initial guess' residual norm " << b_norm
+                << " is nan " << endl;
+      }
+      output.absResid = r_norm;
+      output.relResid = r_norm / b0_norm;
+      output.converged = false;
+      // Return residual norm as B
+      Tpetra::deep_copy (B, P);
+      return output;
     } else if (input.computeRitzValues && !input.computeRitzValuesOnFly) {
       // Invoke standard Gmres for the first restart cycle, to compute
       // Ritz values for use as Newton shifts
@@ -253,6 +358,7 @@ private:
       }
       SolverInput<SC> input_gmres = input;
       input_gmres.maxNumIters = input.resCycle;
+      input_gmres.maxNumIters = std::min(input.resCycle, input.maxNumIters);
       input_gmres.computeRitzValues = true;
 
       Tpetra::deep_copy (R, B);
@@ -303,24 +409,31 @@ private:
         }
 
         // Compute matrix powers
-        if (input.computeRitzValuesOnFly && output.numIters < stepSize_) {
+        if (input.computeRitzValuesOnFly && output.numIters < input.stepSize) {
           stepSize = 1;
         } else {
-          stepSize = stepSize_;
+          stepSize = input.stepSize;
         }
         for (step=0; step < stepSize && iter+step < restart; step++) {
           // AP = A*P
           vec_type P  = * (Q.getVectorNonConst (iter+step));
           vec_type AP = * (Q.getVectorNonConst (iter+step+1));
           if (input.precoSide == "none") {
+            Teuchos::TimeMonitor LocalTimer (*spmvTimer);
             A.apply (P, AP);
           }
           else if (input.precoSide == "right") {
             M.apply (P, MP);
-            A.apply (MP, AP);
+            {
+              Teuchos::TimeMonitor LocalTimer (*spmvTimer);
+              A.apply (MP, AP);
+            }
           }
           else {
-            A.apply (P, MP);
+            {
+              Teuchos::TimeMonitor LocalTimer (*spmvTimer);
+              A.apply (P, MP);
+            }
             M.apply (MP, AP);
           }
           // Shift for Newton basis
@@ -333,31 +446,65 @@ private:
         }
 
         // Orthogonalization
-        this->projectBelosOrthoManager (iter, step, Q, G);
-        const int rank = normalizeCholQR (iter, step, Q, G);
+        {
+          Teuchos::TimeMonitor LocalTimer (*bortTimer);
+          this->projectBelosOrthoManager (iter, step, Q, G);
+        }
+        int rank = 0;
+        {
+          Teuchos::TimeMonitor LocalTimer (*tsqrTimer);
+          rank = recursiveCholQR (outPtr, iter, step, Q, G);
+          if (useCholQR2_) {
+            rank = recursiveCholQR (outPtr, iter, step, Q, G2);
+            // merge R 
+            dense_matrix_type Rfix (Teuchos::View, G2, step+1, step+1, iter, 0);
+            dense_matrix_type Rold (Teuchos::View, G,  step+1, step+1, iter, 0);
+            blas.TRMM (Teuchos::LEFT_SIDE, Teuchos::UPPER_TRI,
+                       Teuchos::NO_TRANS, Teuchos::NON_UNIT_DIAG,
+                       step+1, step+1,
+                       one, Rfix.values(), Rfix.stride(),
+                            Rold.values(), Rold.stride());
+          }
+          if (rank == 0) {
+            // FIXME: Don't throw; report an error code.
+            throw std::runtime_error("orthogonalization failed with rank = 0");
+          }
+        }
         updateHessenburg (iter, step, output.ritzValues, H, G);
-
-        // Check negative norm
-        TEUCHOS_TEST_FOR_EXCEPTION
-          (STS::real (H(iter+step, iter+step-1)) < STM::zero (),
-           std::runtime_error, "At iteration " << output.numIters << ", H("
-           << iter+step << ", " << iter+step-1 << ") = "
-           << H(iter+step, iter+step-1) << " < 0.");
 
         // Convergence check
         if (rank == step+1 && H(iter+step, iter+step-1) != zero) {
           // Copy H to T and apply Givens rotations to new columns of T and y
           for (int iiter = 0; iiter < step; iiter++) {
+            // Check negative norm
+            TEUCHOS_TEST_FOR_EXCEPTION
+              (STS::real (H(iter+iiter+1, iter+iiter)) < STM::zero (),
+               std::runtime_error, "At iteration " << output.numIters << ", H("
+               << iter+iiter+1 << ", " << iter+iiter << ") = "
+               << H(iter+iiter+1, iter+iiter) << " < 0.");
+
             for (int i = 0; i <= iter+iiter+1; i++) {
               T(i, iter+iiter) = H(i, iter+iiter);
             }
             this->reduceHessenburgToTriangular(iter+iiter, T, cs, sn, y);
+            metric = this->getConvergenceMetric (STS::magnitude (y(iter+iiter+1)), b_norm, input);
             if (outPtr != nullptr) {
               *outPtr << " > implicit residual norm=(" << iter+iiter+1 << ")="
-                      << STS::magnitude (y(iter+iiter+1)) << endl;
+                      << STS::magnitude (y(iter+iiter+1))
+                      << " metric=" << metric << endl;
+            }
+            if (STM::isnaninf (metric) || metric <= input.tol) {
+              if (outPtr != nullptr) {
+                *outPtr << " > break at step = " << iiter+1 << " (" << step << ")" << endl;
+              }
+              step = iiter+1;
+              break;
             }
           }
-          metric = this->getConvergenceMetric (STS::magnitude (y(iter+step)), b_norm, input);
+          if (STM::isnaninf (metric)) {
+              // metric is nan
+              break;
+          }
         }
         else {
           metric = STM::zero ();
@@ -365,17 +512,17 @@ private:
 
         // Optionally, compute Ritz values for generating Newton basis
         if (input.computeRitzValuesOnFly && int (output.ritzValues.size()) == 0
-            && output.numIters >= stepSize_) {
-          for (int i = 0; i < stepSize_; i++) {
-            for (int iiter = 0; iiter < stepSize_; iiter++) {
+            && output.numIters >= input.stepSize) {
+          for (int i = 0; i < input.stepSize; i++) {
+            for (int iiter = 0; iiter < input.stepSize; iiter++) {
               G2(i, iiter) = H(i, iiter);
             }
           }
-          computeRitzValues (stepSize_, G2, output.ritzValues);
-          sortRitzValues <LO, SC> (stepSize_, output.ritzValues);
+          computeRitzValues (input.stepSize, G2, output.ritzValues);
+          sortRitzValues <LO, SC> (input.stepSize, output.ritzValues);
           if (outPtr != nullptr) {
             *outPtr << " > ComputeRitzValues: " << endl;
-            for (int i = 0; i < stepSize_; i++) {
+            for (int i = 0; i < input.stepSize; i++) {
               *outPtr << " > ritzValues[ " << i << " ] = " << output.ritzValues[i] << endl;
             }
           }
@@ -395,20 +542,20 @@ private:
                  T.values(), T.stride(), y.values(), y.stride());
       Teuchos::Range1D cols(0, iter-1);
       Teuchos::RCP<const MV> Qj = Q.subView(cols);
+      dense_vector_type y_iter (Teuchos::View, y.values (), iter);
       if (input.precoSide == "right") {
-        dense_vector_type y_iter (Teuchos::View, y.values (), iter);
-
         MVT::MvTimesMatAddMv (one, *Qj, y_iter, zero, R);
         M.apply (R, MP);
         X.update (one, MP, one);
       }
       else {
-        dense_vector_type y_iter (Teuchos::View, y.values (), iter);
-
         MVT::MvTimesMatAddMv (one, *Qj, y_iter, one, X);
       }
       // Compute real residual (not-preconditioned)
-      A.apply (X, R);
+      {
+        Teuchos::TimeMonitor LocalTimer (*spmvTimer);
+        A.apply (X, R);
+      }
       R.update (one, B, -one);
       r_norm = R.norm2 (); // residual norm
       output.absResid = r_norm;
@@ -421,6 +568,12 @@ private:
       if (metric <= input.tol) {
         // update solution
         output.converged = true;
+      }
+      else if (STM::isnaninf (metric)) {
+        // failed with nan
+        // Return residual norm as B
+        Tpetra::deep_copy (B, R);
+        return output;
       }
       else if (output.numIters < input.maxNumIters) {
         // Restart, only if max inner-iteration was reached.
@@ -474,7 +627,10 @@ protected:
     const SC one  = STS::one ();
     const SC zero = STS::zero ();
 
-    // copy: H(j:n-1, j:n-1) = R(j:n-1, j:n-1), i.e., H = R*B
+    // 1) multiply H with R(1:n+s+1, 1:n+s+1) from left
+    //    where R(1:n, 1:n) = I and 
+    //          H(n+1:n+s+1, n+1:n+s) = 0, except h(n+j+1,n+j)=1 for j=1,..,s
+    // 1.1) copy: H(j:n-1, j:n-1) = R(j:n-1, j:n-1), i.e., H = R*B
     for (int j = 0; j < s; j++ ) {
       for (int i = 0; i <= n+j+1; i++) {
         H(i, n+j) = R(i, j+1);
@@ -489,19 +645,28 @@ protected:
     }
 
     // submatrices
-    dense_matrix_type r_diag (Teuchos::View, R, s+1, s+1, n, 0);
-    dense_matrix_type h_diag (Teuchos::View, H, s+1, s,   n, n);
+    dense_matrix_type r_diag (Teuchos::View, R, s,   s, n, 0);
+    dense_matrix_type h_diag (Teuchos::View, H, s+1, s, n, n);
     Teuchos::BLAS<LO, SC> blas;
 
-    // H = H*R^{-1}
     if (n == 0) { // >> first matrix-power iteration <<
+      // 2) multiply H with R(1:s, 1:s)^{-1} from right
       // diagonal block
       blas.TRSM (Teuchos::RIGHT_SIDE, Teuchos::UPPER_TRI, Teuchos::NO_TRANS,
                  Teuchos::NON_UNIT_DIAG, s+1, s, one,
                  r_diag.values(), r_diag.stride(),
                  h_diag.values(), h_diag.stride());
     } else  { // >> rest of iterations <<
-      for (int j = 1; j < s; j++ ) {
+      // 1.2) update the starting vector
+      for (int i = 0; i < n; i++ ) {
+        H(i, n-1) += H(n, n-1) * R(i, 0);
+      }
+      H(n, n-1) *= R(n, 0);
+
+      // 2) multiply H with R(1:n+s, 1:n+s)^{-1} from right,
+      //    where R(1:n, 1:n) = I
+      // 2.1) diagonal block
+      for (int j = 0; j < s; j++ ) {
         H(n, n+j) -= H(n, n-1) * R(n-1, j);
       }
       // diagonal block
@@ -511,10 +676,9 @@ protected:
                  h_diag.values(), h_diag.stride());
       H(n+s, n+s-1) /= R(n+s-1, s-1);
 
-      // upper off-diagonal block: H(0:j-1, j:j+n-2)
+      // 2.2) upper off-diagonal block: H(0:j-1, j:j+n-2)
       dense_matrix_type r_off (Teuchos::View, R, n, s, 0, 0);
       dense_matrix_type h_off (Teuchos::View, H, n, s, 0, n);
-
       blas.GEMM(Teuchos::NO_TRANS, Teuchos::NO_TRANS,
                 n, s, n,
                -one, H.values(),      H.stride(),
@@ -530,7 +694,8 @@ protected:
 
   //! Apply the orthogonalization using Belos' OrthoManager
   int
-  normalizeCholQR (const int n,
+  normalizeCholQR (Teuchos::FancyOStream* outPtr,
+                   const int n,
                    const int s,
                    MV& Q,
                    dense_matrix_type& R)
@@ -542,8 +707,32 @@ protected:
     dense_matrix_type r_new (Teuchos::View, R, s+1, s+1, n, 0);
 
     int rank = 0;
-    if (tsqr_ != Teuchos::null) {
-      rank = tsqr_->factor (Qnew, r_new);
+    if (cholqr_ != Teuchos::null) {
+      rank = cholqr_->factor (outPtr, Qnew, r_new);
+    }
+    else {
+      rank = this->normalizeBelosOrthoManager (Qnew, r_new);
+    }
+    return rank;
+  }
+
+  //! Apply the orthogonalization using Belos' OrthoManager
+  int
+  recursiveCholQR (Teuchos::FancyOStream* outPtr,
+                   const int n,
+                   const int s,
+                   MV& Q,
+                   dense_matrix_type& R)
+  {
+    // vector to be orthogonalized
+    Teuchos::Range1D index_prev(n, n+s);
+    MV Qnew = * (Q.subView(index_prev));
+
+    dense_matrix_type r_new (Teuchos::View, R, s+1, s+1, n, 0);
+
+    int rank = 0;
+    if (cholqr_ != Teuchos::null) {
+      rank = cholqr_->reFactor (outPtr, Qnew, r_new);
     }
     else {
       rank = this->normalizeBelosOrthoManager (Qnew, r_new);
@@ -552,9 +741,10 @@ protected:
   }
 
 private:
-  int stepSize_;
-  Teuchos::RCP<CholQR<SC, MV, OP> > tsqr_;
+  bool useCholQR2_;
+  Teuchos::RCP<CholQR<SC, MV, OP> > cholqr_;
 };
+
 
 template<class SC, class MV, class OP,
          template<class, class, class> class KrylovSubclassType>

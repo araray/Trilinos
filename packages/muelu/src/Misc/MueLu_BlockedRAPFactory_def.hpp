@@ -50,8 +50,6 @@
 #include <Xpetra_MatrixFactory.hpp>
 #include <Xpetra_Matrix.hpp>
 #include <Xpetra_MatrixMatrix.hpp>
-#include <Xpetra_VectorFactory.hpp>
-#include <Xpetra_Vector.hpp>
 
 #include "MueLu_BlockedRAPFactory_decl.hpp"
 
@@ -156,17 +154,6 @@ namespace MueLu {
 
     GetOStream(Statistics1) << PerfUtils::PrintMatrixInfo(*bAc, "Ac (blocked)");
 
-    // static int run = 1;
-    // RCP<CrsMatrixWrap> A11 = rcp(new CrsMatrixWrap(bAc->getMatrix(0,0)));
-    // Utils::Write(toString(run) + "_A_11.mm", *A11);
-    // if (!bAc->getMatrix(1,1).is_null()) {
-      // RCP<CrsMatrixWrap> A22 = rcp(new CrsMatrixWrap(bAc->getMatrix(1,1)));
-      // Utils::Write(toString(run) + "_A_22.mm", *A22);
-    // }
-    // RCP<CrsMatrixWrap> Am = rcp(new CrsMatrixWrap(bAc->Merge()));
-    // Utils::Write(toString(run) + "_A.mm", *Am);
-    // run++;
-
     Set<RCP <Matrix> >(coarseLevel, "A", bAc);
 
     if (transferFacts_.begin() != transferFacts_.end()) {
@@ -191,7 +178,7 @@ namespace MueLu {
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   void BlockedRAPFactory<Scalar, LocalOrdinal, GlobalOrdinal, Node>::CheckMainDiagonal(RCP<BlockedCrsMatrix> & bAc, bool repairZeroDiagonals) {
     RCP<Matrix> c00 = bAc->getMatrix(0, 0);
-    RCP<Matrix> Aout = MatrixFactory::Build(c00->getRowMap(), c00->getGlobalMaxNumRowEntries(), Xpetra::StaticProfile);
+    RCP<Matrix> Aout = MatrixFactory::Build(c00->getRowMap(), c00->getGlobalMaxNumRowEntries());
 
     RCP<Vector> diagVec = VectorFactory::Build(c00->getRowMap());
     c00->getLocalDiagCopy(*diagVec);

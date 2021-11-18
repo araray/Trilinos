@@ -2,10 +2,11 @@
 //@HEADER
 // ************************************************************************
 //
-//               KokkosKernels 0.9: Linear Algebra and Graph Kernels
-//                 Copyright 2017 Sandia Corporation
+//                        Kokkos v. 3.0
+//       Copyright (2020) National Technology & Engineering
+//               Solutions of Sandia, LLC (NTESS).
 //
-// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+// Under the terms of Contract DE-NA0003525 with NTESS,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -23,10 +24,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -40,6 +41,8 @@
 // ************************************************************************
 //@HEADER
 */
+
+#include "KokkosKernels_Utils.hpp"
 
 namespace KokkosSparse{
 
@@ -55,7 +58,8 @@ template <typename a_row_view_t, typename a_nnz_view_t, typename a_scalar_view_t
 struct KokkosSPGEMM
   <HandleType, a_row_view_t_, a_lno_nnz_view_t_, a_scalar_nnz_view_t_,
     b_lno_row_view_t_, b_lno_nnz_view_t_, b_scalar_nnz_view_t_>::
-  NumericCMEM_CPU{
+  NumericCMEM_CPU
+{
   nnz_lno_t numrows;
   nnz_lno_t numcols;
 
@@ -126,19 +130,11 @@ struct KokkosSPGEMM
 #endif
 #if defined( KOKKOS_ENABLE_OPENMP )
     case KokkosKernels::Impl::Exec_OMP:
-  #ifdef KOKKOS_ENABLE_DEPRECATED_CODE
-      return Kokkos::OpenMP::hardware_thread_id();
-  #else
       return Kokkos::OpenMP::impl_hardware_thread_id();
-  #endif
 #endif
 #if defined( KOKKOS_ENABLE_THREADS )
     case KokkosKernels::Impl::Exec_PTHREADS:
-  #ifdef KOKKOS_ENABLE_DEPRECATED_CODE
-      return Kokkos::Threads::hardware_thread_id();
-  #else
       return Kokkos::Threads::impl_hardware_thread_id();
-  #endif
 #endif
 #if defined( KOKKOS_ENABLE_QTHREAD)
     case KokkosKernels::Impl::Exec_QTHREADS:
@@ -146,6 +142,10 @@ struct KokkosSPGEMM
 #endif
 #if defined( KOKKOS_ENABLE_CUDA )
     case KokkosKernels::Impl::Exec_CUDA:
+      return row_index;
+#endif
+#if defined( KOKKOS_ENABLE_HIP )
+    case KokkosKernels::Impl::Exec_HIP:
       return row_index;
 #endif
     }
@@ -199,7 +199,7 @@ struct KokkosSPGEMM
         marker [ind] = 0;
       }
     });
-
+    memory_space.release_chunk(dense_accum);
   }
 
 };
@@ -217,7 +217,8 @@ template <typename a_row_view_t__, typename a_nnz_view_t__, typename a_scalar_vi
 struct KokkosSPGEMM
   <HandleType, a_row_view_t_, a_lno_nnz_view_t_, a_scalar_nnz_view_t_,
     b_lno_row_view_t_, b_lno_nnz_view_t_, b_scalar_nnz_view_t_>::
-  NumericCMEM{
+  NumericCMEM
+{
   nnz_lno_t numrows;
 
   a_row_view_t__ row_mapA;
@@ -300,8 +301,8 @@ struct KokkosSPGEMM
         thread_memory((shared_memory_size /8 / suggested_team_size_) * 8),
         shmem_key_size(), shared_memory_hash_func(), shmem_hash_size(1)
         {
-
-          shmem_key_size = ((thread_memory - sizeof(nnz_lno_t) * 2) / unit_memory);
+          constexpr size_t scalarAlignPad = (alignof(scalar_t) > alignof(nnz_lno_t)) ? (alignof(scalar_t) - alignof(nnz_lno_t)) : 0;
+          shmem_key_size = ((thread_memory - sizeof(nnz_lno_t) * 2 - scalarAlignPad) / unit_memory);
           if (KOKKOSKERNELS_VERBOSE_){
             std::cout << "\t\tNumericCMEM -- thread_memory:" << thread_memory  << " unit_memory:" << unit_memory <<
                 " initial key size:" << shmem_key_size << std::endl;
@@ -347,13 +348,16 @@ struct KokkosSPGEMM
     //holds the keys
     nnz_lno_t * keys = (nnz_lno_t *) (all_shared_memory);
     all_shared_memory += sizeof(nnz_lno_t) * shmem_key_size;
-    scalar_t * vals = (scalar_t *) (all_shared_memory);
+    scalar_t* vals = KokkosKernels::Impl::alignPtr<char*, scalar_t>(all_shared_memory);
 
+    KokkosKernels::Experimental::HashmapAccumulator<nnz_lno_t,nnz_lno_t,scalar_t,KokkosKernels::Experimental::HashOpType::bitwiseAnd>
+    hm(shmem_key_size, shared_memory_hash_func, begins, nexts, keys, vals);
 
-    KokkosKernels::Experimental::HashmapAccumulator<nnz_lno_t,nnz_lno_t,scalar_t>
-    hm(shmem_hash_size, shmem_key_size, begins, nexts, keys, vals);
+    // issue-508, TODO: understand and re-work below parallel_for loop.
+    // Inialize hm2 with correct max_value_size and hashOpRHS
+    // global_memory_hash_size is computed, per team of threads -- this is hashOpRHS.
 
-    KokkosKernels::Experimental::HashmapAccumulator<nnz_lno_t,nnz_lno_t,scalar_t>
+    KokkosKernels::Experimental::HashmapAccumulator<nnz_lno_t,nnz_lno_t,scalar_t,KokkosKernels::Experimental::HashOpType::modulo>
     hm2(0, 0,
         NULL, NULL, NULL, NULL);
     /*
@@ -362,13 +366,10 @@ struct KokkosSPGEMM
         pbeginsC + c_row_begin, pnextsC + c_row_begin, pEntriesC + c_row_begin, pvaluesC + c_row_begin);
         */
 
-
     Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, team_row_begin, team_row_end), [&] (const nnz_lno_t& row_index) {
       const size_type c_row_begin = rowmapC[row_index];
       const nnz_lno_t global_memory_hash_size = nnz_lno_t(rowmapC[row_index + 1] - c_row_begin);
 
-      hm2.hash_key_size = global_memory_hash_size;
-      hm2.max_value_size = global_memory_hash_size;
       hm2.keys = pEntriesC + c_row_begin;
       hm2.values = pvaluesC + c_row_begin;
       hm2.hash_begins = pbeginsC + c_row_begin;
@@ -402,27 +403,23 @@ struct KokkosSPGEMM
           nnz_lno_t work_to_handle = KOKKOSKERNELS_MACRO_MIN(vector_size, left_work_);
           nnz_lno_t b_col_ind = -1;
           scalar_t b_val = -1;
-          nnz_lno_t hash = -1;
           Kokkos::parallel_for(
               Kokkos::ThreadVectorRange(teamMember, work_to_handle),
               [&] (nnz_lno_t i) {
             const size_type adjind = i + rowBegin;
             b_col_ind = entriesB[adjind];
             b_val = valuesB[adjind] * valA;
-            //hash = b_col_ind % shmem_key_size;
-            hash = b_col_ind & shared_memory_hash_func;
           });
 
           int num_unsuccess = hm.vector_atomic_insert_into_hash_mergeAdd(
-              teamMember, vector_size,
-              hash, b_col_ind, b_val,
-              used_hash_sizes,
-              shmem_key_size);
+                                b_col_ind, b_val,
+                                used_hash_sizes
+                              );
 
           int overall_num_unsuccess = 0;
 
           Kokkos::parallel_reduce( Kokkos::ThreadVectorRange(teamMember, vector_size),
-              [&] (const int threadid, int &overall_num_unsuccess_) {
+              [&] (const int /* threadid */, int &overall_num_unsuccess_) {
             overall_num_unsuccess_ += num_unsuccess;
           }, overall_num_unsuccess);
 
@@ -433,10 +430,11 @@ struct KokkosSPGEMM
             }
 
             //int insertion =
-            hm2.vector_atomic_insert_into_hash_mergeAdd(
+            hm2.vector_atomic_insert_into_hash_mergeAdd_with_team_level_list_length(
                 teamMember, vector_size,
                 hash_,b_col_ind,b_val,
-                used_hash_sizes + 1, hm2.max_value_size
+                used_hash_sizes + 1,
+                global_memory_hash_size
             );
 
           }
@@ -463,10 +461,38 @@ struct KokkosSPGEMM
     });
   }
 
-  size_t team_shmem_size (int team_size) const {
+  size_t team_shmem_size (int /* team_size */) const {
     return shared_memory_size;
   }
 };
+
+
+//
+// * Notes on KokkosSPGEMM_numeric_speed *
+//
+// Prior to this routine, KokkosSPGEMM_numeric(...) was called
+//
+//   KokkosSPGEMM_numeric(...) :
+//     if (this->spgemm_algorithm == SPGEMM_KK || SPGEMM_KK_LP == this->spgemm_algorithm) :
+//       call KokkosSPGEMM_numeric_speed(...)
+//     else:
+//       call  KokkosSPGEMM_numeric_hash(...)
+//
+//
+// KokkosSPGEMM_numeric_speed:
+//
+// Algorithm selection as follows and matching to kernel Tag:
+//
+//  Policy typedefs with tags found in: KokkosSparse_spgemm_impl.hpp
+//
+//  if GPU:
+//    "KokkosSparse::NumericCMEM::KKSPEED::GPU" : gpu_team_policy_t,  i.e. GPUTag
+//
+//  else :
+//    "KokkosSparse::NumericCMEM_CPU::DENSE::DYNAMIC" : dynamic_multicore_team_policy_t,  i.e. MultiCoreTag
+//    "KokkosSparse::NumericCMEM_CPU::DENSE::STATIC" :  multicore_team_policy_t,  i.e. MultiCoreTag
+//
+
 
 template <typename HandleType,
 typename a_row_view_t_, typename a_lno_nnz_view_t_, typename a_scalar_nnz_view_t_,
@@ -476,11 +502,12 @@ void
   KokkosSPGEMM
   <HandleType, a_row_view_t_, a_lno_nnz_view_t_, a_scalar_nnz_view_t_,
     b_lno_row_view_t_, b_lno_nnz_view_t_, b_scalar_nnz_view_t_>::
-    KokkosSPGEMM_numeric_speed(
+  KokkosSPGEMM_numeric_speed(
     c_row_view_t rowmapC_,
     c_lno_nnz_view_t entriesC_,
     c_scalar_nnz_view_t valuesC_,
-    KokkosKernels::Impl::ExecSpaceType my_exec_space_){
+    KokkosKernels::Impl::ExecSpaceType my_exec_space_)
+{
 
   if (KOKKOSKERNELS_VERBOSE){
     std::cout << "\tSPEED MODE" << std::endl;
@@ -496,7 +523,7 @@ void
 
   Kokkos::Impl::Timer numeric_speed_timer_with_free;
 
-  if (my_exec_space_ == KokkosKernels::Impl::Exec_CUDA){
+  if (KokkosKernels::Impl::kk_is_gpu_exec_space<typename HandleType::HandleExecSpace>()) {
     //allocate memory for begins and next to be used by the hashmap
     nnz_lno_temp_work_view_t beginsC
     (Kokkos::ViewAllocateWithoutInitializing("C keys"), valuesC_.extent(0));

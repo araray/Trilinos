@@ -34,9 +34,64 @@ void remove_io_attribute_from_empty_parts(stk::mesh::BulkData & bulk)
   }
 }
 
-void extract_blocks_from_file(const std::string &inFile,
+std::vector<std::string> GetEntityNamesFromIDs(const stk::mesh::BulkData & meshBulk, stk::topology::rank_t  stkTop, const std::vector<int> & theIDs)
+ {
+
+    std::vector<std::string> entity_names;
+    const stk::mesh::PartVector &parts = meshBulk.mesh_meta_data().get_mesh_parts();
+    for (size_t IdIndex = 0; IdIndex < theIDs.size(); IdIndex++)
+    {
+        for(size_t i = 0; i < parts.size(); i++)
+        {
+
+            if ( parts[i]->primary_entity_rank() == stkTop && parts[i]->id() == theIDs[IdIndex] )
+            {
+                entity_names.push_back(parts[i]->name());
+            }
+        }
+    }
+    return entity_names;
+ }
+
+std::vector<std::string> GetBlockNamesFromIDs(const stk::mesh::BulkData & meshBulk, const std::vector<int> & block_ids)
+{
+    return (GetEntityNamesFromIDs( meshBulk, stk::topology::ELEMENT_RANK, block_ids));
+}
+
+std::vector<std::string> find_nodeset_names_from_id(const stk::mesh::BulkData & meshBulk, const std::vector<int> & nodeset_ids)
+{
+    return (GetEntityNamesFromIDs( meshBulk, stk::topology::NODE_RANK, nodeset_ids));
+}
+
+void GetPartsByName(std::vector<stk::mesh::Part*> & parts,
+                           const stk::mesh::BulkData& inBulk,
+                           std::vector < std::string > names)
+{
+    for(size_t i = 0; i < names.size(); i++)
+    {
+        parts.push_back(inBulk.mesh_meta_data().get_part(names[i]));
+        ThrowRequireMsg(parts[i] != nullptr, "Can't find " <<  names[i] << " in mesh.\n");
+    }
+}
+
+stk::mesh::Selector GetBlockAndNodesetSelector(const stk::mesh::BulkData & inBulk,
+                                            const std::vector<std::string>& nodesetNames,
+                                            const std::vector<std::string>& blockNames)
+{
+
+    stk::mesh::PartVector parts;
+    GetPartsByName(parts, inBulk, nodesetNames);
+    GetPartsByName(parts, inBulk, blockNames);
+    stk::mesh::Selector nodeset_and_block_selector = stk::mesh::selectUnion(parts);
+
+    return nodeset_and_block_selector;
+}
+
+
+void extract_blocks_and_ns_from_file(const std::string &inFile,
                               const std::string &outFile,
-                              const std::vector<std::string> &blockNames,
+                              const std::vector<int> &blockIDs,
+                              const std::vector<int> &nodesetIDs,
                               MPI_Comm comm)
 {
     stk::mesh::MetaData inMeta;
@@ -45,9 +100,6 @@ void extract_blocks_from_file(const std::string &inFile,
                                , false
 #endif
                                , (stk::mesh::FieldDataManager*)nullptr);
-
-    stk::io::StkMeshIoBroker stkInput;
-    stk::io::fill_mesh_preexisting(stkInput, inFile, inBulk);
 
     stk::mesh::MetaData outMeta;
     stk::mesh::BulkData outBulk(outMeta, comm, stk::mesh::BulkData::AUTO_AURA
@@ -56,55 +108,31 @@ void extract_blocks_from_file(const std::string &inFile,
 #endif
                                 , (stk::mesh::FieldDataManager*)nullptr);
 
-
-    extract_blocks(inBulk, outBulk, blockNames);
-
-
-    remove_io_attribute_from_empty_parts(outBulk);
-
-    stk::io::StkMeshIoBroker stkOutput;
-    stkOutput.set_bulk_data(outBulk);
-    stkOutput.set_attribute_field_ordering_stored_by_part_ordinal(stkInput.get_attribute_field_ordering_stored_by_part_ordinal());
-
-    stk::transfer_utils::TransientFieldTransferById transfer(stkInput, stkOutput);
-    transfer.transfer_and_write_transient_fields(outFile);
-}
-
-void extract_blocks_and_ns_from_file(const std::string &inFile,
-                              const std::string &outFile,
-                              const std::vector<std::string> &blockNames,
-							  const std::vector<std::string> &nodesetNames,
-                              MPI_Comm comm)
-{
-    stk::mesh::MetaData inMeta;
-    stk::mesh::BulkData inBulk(inMeta, comm, stk::mesh::BulkData::AUTO_AURA
-#ifdef SIERRA_MIGRATION
-                               , false
-#endif
-                               , (stk::mesh::FieldDataManager*)nullptr);
-
     stk::io::StkMeshIoBroker stkInput;
     stk::io::fill_mesh_preexisting(stkInput, inFile, inBulk);
 
-    stk::mesh::PartVector parts;
-    for(size_t i=0; i<nodesetNames.size(); i++)
+
+    stk::mesh::Selector nothingSelector_byDefaultConstruction;
+    stk::mesh::Selector allSelector(!nothingSelector_byDefaultConstruction);
+
+    std::vector<std::string> blockNames = GetBlockNamesFromIDs(inBulk, blockIDs);
+
+    stk::mesh::Selector nodeset_and_block_selector = allSelector;
+    // if user asks for nodeset, use selector to output nodesets and blocks (this ensures we actually get the nodes associated with the nodesets
+    if (nodesetIDs.size() > 0)
     {
-        parts.push_back(inBulk.mesh_meta_data().get_part(nodesetNames[i]));
-        ThrowRequireMsg(parts[i] != nullptr, "Can't find nodeset " << nodesetNames[i] << " in mesh.\n");
+        std::vector < std::string > nodesetNames = find_nodeset_names_from_id(inBulk, nodesetIDs);
+        nodeset_and_block_selector = GetBlockAndNodesetSelector(inBulk, nodesetNames, blockNames);
+        stk::tools::copy_mesh(inBulk, allSelector, outBulk);
+    }
+    else // if user only asks for blocks, use extract_blocks, which completely deletes all other blocks and associated nodes
+    {
+        extract_blocks(inBulk, outBulk, blockNames);
+        remove_io_attribute_from_empty_parts(outBulk);
     }
 
-    for(size_t i=0; i<blockNames.size(); i++)
-        {
-            parts.push_back(inBulk.mesh_meta_data().get_part(blockNames[i]));
-            ThrowRequireMsg(parts[i] != nullptr, "Can't find block " << blockNames[i] << " in mesh.\n");
-        }
-
-
-    stk::mesh::Selector nodeset_and_block_selector = stk::mesh::selectUnion(parts);
-
-
     stk::io::StkMeshIoBroker stkOutput;
-    stkOutput.set_bulk_data(inBulk);
+    stkOutput.set_bulk_data(outBulk);
     stkOutput.set_attribute_field_ordering_stored_by_part_ordinal(stkInput.get_attribute_field_ordering_stored_by_part_ordinal());
 
     stk::transfer_utils::TransientFieldTransferById transfer(stkInput, stkOutput);
@@ -127,4 +155,5 @@ void extract_blocks(stk::mesh::BulkData &oldBulk, stk::mesh::BulkData &newBulk, 
 }
 
 }
+
 }

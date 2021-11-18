@@ -81,10 +81,8 @@
 #include "SidesetTranslator.hpp"
 #include "StkIoUtils.hpp"
 #include "Teuchos_RCP.hpp"                           // for RCP::operator->, etc
-#include "boost/any.hpp"                             // for any_cast, any
 #include "stk_io/DatabasePurpose.hpp"                // for DatabasePurpose, etc
 #include "stk_io/MeshField.hpp"                      // for MeshField, etc
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"                  // for Entity
 #include "stk_mesh/base/FieldBase.hpp"               // for FieldBase
 #include "stk_mesh/base/FieldParallel.hpp"
@@ -124,7 +122,7 @@ Ioss::DatabaseIO *OutputFile::get_output_database()
     return m_region->get_database();
 }
 
-bool OutputFile::set_multistate_suffixes(std::vector<std::string>& multiStateSuffixes)
+bool OutputFile::set_multistate_suffixes(const std::vector<std::string>& multiStateSuffixes)
 {
     if(nullptr != m_multiStateSuffixes) {
         delete m_multiStateSuffixes;
@@ -147,6 +145,7 @@ void OutputFile::setup_output_params(OutputParams &params) const
     params.set_output_selector(stk::topology::NODE_RANK, m_outputSelector[stk::topology::NODE_RANK].get());
     params.set_output_selector(stk::topology::EDGE_RANK, m_outputSelector[stk::topology::EDGE_RANK].get());
     params.set_output_selector(stk::topology::FACE_RANK, m_outputSelector[stk::topology::FACE_RANK].get());
+    params.set_skin_mesh_selector(m_skinMeshSelector.get());
     params.set_output_selector(stk::topology::ELEM_RANK, m_outputSelector[stk::topology::ELEM_RANK].get());
     params.set_sort_stk_parts_by_name(sort_stk_parts_by_name);
     params.set_use_nodeset_for_block_node_fields(m_useNodesetForBlockNodesFields);
@@ -155,9 +154,9 @@ void OutputFile::setup_output_params(OutputParams &params) const
     params.set_use_part_id_for_output(m_usePartIdForOutput);
     params.set_has_ghosting(m_hasGhosting);
     params.set_has_adaptivity(m_hasAdaptivity);
-    params.set_is_skin_mesh(m_isSkinMesh);
     params.set_additional_attribute_fields(m_additionalAttributeFields);
     params.set_is_restart(m_dbPurpose == stk::io::WRITE_RESTART);
+    params.set_enable_edge_io(m_enableEdgeIO);
 }
 
 void OutputFile::set_input_region(const Ioss::Region *input_region)
@@ -233,7 +232,7 @@ std::vector<stk::mesh::Entity> OutputFile::get_output_entities(const stk::mesh::
     } else if(type == Ioss::NODESET) {
         part_type = stk::topology::NODE_RANK;
     } else if(type == Ioss::ELEMENTBLOCK) {
-        part_type = stk::topology::ELEMENT_RANK;
+        part_type = params.has_skin_mesh_selector() ? meta.side_rank() : stk::topology::ELEMENT_RANK;
     } else if(type == Ioss::SIDESET) {
         part = meta.get_part(name);
         ThrowRequireMsg(nullptr != part, "Could not find a sideset with name: " + name);
@@ -386,7 +385,17 @@ void OutputFile::add_user_data(const std::vector<std::string>& partNames, const 
 
 }
 
-void OutputFile::add_global_ref(const std::string &name, const boost::any *value, stk::util::ParameterType::Type type)
+void OutputFile::add_global_ref(const std::string &name, const stk::util::Parameter &param)
+{
+    ThrowErrorMsgIf (m_fieldsDefined,
+                     "On region named " << m_region->name() <<
+                     " Attempting to add global variable after data has already been written to the database.");
+    std::pair<size_t, Ioss::Field::BasicType> parameter_type = get_io_parameter_size_and_type(param.type, param.value);
+    internal_add_global(m_region, name, parameter_type.first, parameter_type.second);
+    m_globalAnyFields.emplace_back(name, &param.value, param.type);
+}
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+STK_DEPRECATED void OutputFile::add_global_ref(const std::string &name, const STK_ANY_NAMESPACE::any *value, stk::util::ParameterType::Type type)
 {
     ThrowErrorMsgIf (m_fieldsDefined,
                      "On region named " << m_region->name() <<
@@ -395,13 +404,25 @@ void OutputFile::add_global_ref(const std::string &name, const boost::any *value
     internal_add_global(m_region, name, parameter_type.first, parameter_type.second);
     m_globalAnyFields.emplace_back(name, value, type);
 }
+#endif
 
 bool OutputFile::has_global(const std::string &globalVarName) const
 {
     return m_region->field_exists(globalVarName);
 }
 
-void OutputFile::add_global(const std::string &name, const boost::any &value, stk::util::ParameterType::Type type)
+void OutputFile::add_global(const std::string &name, const stk::util::Parameter &param)
+{
+    ThrowErrorMsgIf (m_fieldsDefined,
+                     "On region named " << m_region->name() <<
+                     " Attempting to add global variable after data has already been written to the database.");
+    std::pair<size_t, Ioss::Field::BasicType> parameter_type = get_io_parameter_size_and_type(param.type, param.value);
+    m_anyGlobalVariablesDefined = true;  // This output file has at least 1 global variable.
+    internal_add_global(m_region, name, parameter_type.first, parameter_type.second);
+}
+
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+STK_DEPRECATED void OutputFile::add_global(const std::string &name, const STK_ANY_NAMESPACE::any &value, stk::util::ParameterType::Type type)
 {
     ThrowErrorMsgIf (m_fieldsDefined,
                      "On region named " << m_region->name() <<
@@ -410,6 +431,7 @@ void OutputFile::add_global(const std::string &name, const boost::any &value, st
     m_anyGlobalVariablesDefined = true;  // This output file has at least 1 global variable.
     internal_add_global(m_region, name, parameter_type.first, parameter_type.second);
 }
+#endif
 
 void OutputFile::add_global(const std::string &globalVarName, Ioss::Field::BasicType dataType)
 {
@@ -438,10 +460,18 @@ void OutputFile::add_global(const std::string &globalVarName, const std::string 
     internal_add_global(m_region, globalVarName, storage, dataType);
 }
 
-void OutputFile::write_global(const std::string &globalVarName,
-                                    const boost::any &value, stk::util::ParameterType::Type type)
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+STK_DEPRECATED void OutputFile::write_global(const std::string &globalVarName,
+                              const STK_ANY_NAMESPACE::any &value, stk::util::ParameterType::Type type)
 {
     internal_write_parameter(m_region, globalVarName, value, type);
+}
+#endif
+
+void OutputFile::write_global(const std::string &globalVarName,
+                              const stk::util::Parameter &param)
+{
+    internal_write_parameter(m_region, globalVarName, param);
 }
 
 void OutputFile::write_global(const std::string &globalVarName, std::vector<double>& globalVarData)
@@ -743,6 +773,14 @@ void OutputFile::set_output_selector(stk::topology::rank_t rank, Teuchos::RCP<st
     m_outputSelector[rank] = my_selector;
 }
 
+void OutputFile::set_skin_mesh_selector(Teuchos::RCP<stk::mesh::Selector> my_selector)
+{
+    ThrowErrorMsgIf(m_meshDefined,
+                    "ERROR: On region named " << m_region->name() <<
+                    " the subset_selector cannot be changed after the mesh has already been written.");
+    m_skinMeshSelector = my_selector;
+}
+
 bool OutputFile::use_nodeset_for_block_nodes_fields() const
 {
     return m_useNodesetForBlockNodesFields;
@@ -817,12 +855,12 @@ void OutputFile::has_adaptivity(bool hasAdaptivity)
 
 bool OutputFile::is_skin_mesh() const
 {
-    return m_isSkinMesh;
+    return m_skinMeshSelector.get() != nullptr;
 }
 
-void OutputFile::is_skin_mesh(bool skinMesh)
+void OutputFile::set_enable_edge_io(bool enableEdgeIO)
 {
-    m_isSkinMesh = skinMesh;
+    m_enableEdgeIO = enableEdgeIO;
 }
 
 } // namespace impl

@@ -303,7 +303,6 @@ public:
     if ( bnd.isActivated() ) {
       bnd.project(x);
     }
-    bnd.update(x,true,algo_state.iter);
     // Update objective and constraint.
     augLag.update(x,true,algo_state.iter);
     if (useDefaultScaling_) {
@@ -341,10 +340,10 @@ public:
     algo_state.ngrad += augLag.getNumberGradientEvaluations();
     // Initialize intermediate stopping tolerances
     minPenaltyReciprocal_ = std::min(one/state->searchSize,minPenaltyLowerBound_);
-    optTolerance_  = std::max(TOL*outerOptTolerance_,
+    optTolerance_  = std::max<Real>(TOL*outerOptTolerance_,
                               optToleranceInitial_*std::pow(minPenaltyReciprocal_,optDecreaseExponent_));
-    optTolerance_  = std::min(optTolerance_,TOL*algo_state.gnorm);
-    feasTolerance_ = std::max(TOL*outerFeasTolerance_,
+    optTolerance_  = std::min<Real>(optTolerance_,TOL*algo_state.gnorm);
+    feasTolerance_ = std::max<Real>(TOL*outerFeasTolerance_,
                               feasToleranceInitial_*std::pow(minPenaltyReciprocal_,feasDecreaseExponent_));
     if (verbosity_ > 0) {
       std::cout << std::endl;
@@ -450,6 +449,7 @@ public:
     algo_state.snorm = s.norm();
     algo_state.iter++;
     // Update objective function value
+    obj.update(x);
     algo_state.value = augLag.getObjectiveValue(x);
     // Update constraint value
     augLag.getConstraintVec(*(state->constraintVec),x);
@@ -463,7 +463,6 @@ public:
     algo_state.ncval += augLag.getNumberConstraintEvaluations();
     // Update objective function and constraints
     augLag.update(x,true,algo_state.iter);
-    bnd.update(x,true,algo_state.iter);
     // Update multipliers
     minPenaltyReciprocal_ = std::min(one/state->searchSize,minPenaltyLowerBound_);
     if ( cscale_*algo_state.cnorm < feasTolerance_ ) {

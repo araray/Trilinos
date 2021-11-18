@@ -43,6 +43,7 @@
 #include <Panzer_STK_SquareQuadMeshFactory.hpp>
 #include <Teuchos_TimeMonitor.hpp>
 #include <PanzerAdaptersSTK_config.hpp>
+#include "Teuchos_StandardParameterEntryValidators.hpp" // for plist validation
 
 // #define ENABLE_UNIFORM
 
@@ -159,6 +160,9 @@ void SquareQuadMeshFactory::completeMeshConstruction(STK_Interface & mesh,stk::P
    mesh.buildSubcells();
 #endif
    mesh.buildLocalElementIDs();
+   if(createEdgeBlocks_) {
+      mesh.buildLocalEdgeIDs();
+   }
 
    // now that edges are built, sidsets can be added
 #ifndef ENABLE_UNIFORM
@@ -167,6 +171,10 @@ void SquareQuadMeshFactory::completeMeshConstruction(STK_Interface & mesh,stk::P
 
    // add nodesets
    addNodeSets(mesh);
+
+   if(createEdgeBlocks_) {
+      addEdgeBlocks(mesh);
+   }
 
    // calls Stk_MeshFactory::rebalance
    this->rebalance(mesh);
@@ -193,6 +201,10 @@ void SquareQuadMeshFactory::setParameterList(const Teuchos::RCP<Teuchos::Paramet
 
    xProcs_ = paramList->get<int>("X Procs");
    yProcs_ = paramList->get<int>("Y Procs");
+
+   offsetGIDs_ = (paramList->get<std::string>("Offset mesh GIDs above 32-bit int limit") == "ON") ? true : false;
+
+   createEdgeBlocks_ = paramList->get<bool>("Create Edge Blocks");
 
    // read in periodic boundary conditions
    parsePeriodicBCList(Teuchos::rcpFromRef(paramList->sublist("Periodic BCs")),periodicBCVec_);
@@ -221,6 +233,16 @@ Teuchos::RCP<const Teuchos::ParameterList> SquareQuadMeshFactory::getValidParame
 
       defaultParams->set<int>("X Elements",5);
       defaultParams->set<int>("Y Elements",5);
+
+      // default to false for backward compatibility
+      defaultParams->set<bool>("Create Edge Blocks",false,"Create edge blocks in the mesh");
+
+      Teuchos::setStringToIntegralParameter<int>(
+        "Offset mesh GIDs above 32-bit int limit",
+        "OFF",
+        "If 64-bit GIDs are supported, the mesh element and node global indices will start at a value greater than 32-bit limit.",
+        Teuchos::tuple<std::string>("OFF", "ON"),
+        defaultParams.get());
 
       Teuchos::ParameterList & bcs = defaultParams->sublist("Periodic BCs");
       bcs.set<int>("Count",0); // no default periodic boundary conditions
@@ -283,6 +305,11 @@ void SquareQuadMeshFactory::buildMetaData(stk::ParallelMachine /* parallelMach *
    // add nodesets
    mesh.addNodeset("lower_left");
    mesh.addNodeset("origin");
+
+   if(createEdgeBlocks_) {
+     const CellTopologyData * edge_ctd = shards::CellTopology(ctd).getBaseCellTopologyData(1,0);
+     mesh.addEdgeBlock(panzer_stk::STK_Interface::edgeBlockString, edge_ctd);
+   }
 }
 
 void SquareQuadMeshFactory::buildElements(stk::ParallelMachine parallelMach,STK_Interface & mesh) const
@@ -315,13 +342,19 @@ void SquareQuadMeshFactory::buildBlock(stk::ParallelMachine /* parallelMach */,i
  
    std::vector<double> coord(2,0.0);
 
+   offset_ = 0;
+   if (offsetGIDs_) {
+     if (std::numeric_limits<panzer::GlobalOrdinal>::max() > std::numeric_limits<unsigned int>::max())
+       offset_ = panzer::GlobalOrdinal(std::numeric_limits<unsigned int>::max()) + 1;
+   }
+
    // build the nodes
    for(int nx=myXElems_start;nx<myXElems_end+1;++nx) {
       coord[0] = this->getMeshCoord(nx, deltaX, x0_);
       for(int ny=myYElems_start;ny<myYElems_end+1;++ny) {
          coord[1] = this->getMeshCoord(ny, deltaY, y0_);
 
-         mesh.addNode(ny*(totalXElems+1)+nx+1,coord);
+         mesh.addNode(ny*(totalXElems+1)+nx+1+offset_,coord);
       }
    }
 
@@ -332,12 +365,15 @@ void SquareQuadMeshFactory::buildBlock(stk::ParallelMachine /* parallelMach */,i
    // build the elements
    for(int nx=myXElems_start;nx<myXElems_end;++nx) {
       for(int ny=myYElems_start;ny<myYElems_end;++ny) {
-         stk::mesh::EntityId gid = totalXElems*ny+nx+1;
+         stk::mesh::EntityId gid = totalXElems*ny+nx+1 + offset_;
          std::vector<stk::mesh::EntityId> nodes(4);
          nodes[0] = nx+1+ny*(totalXElems+1);
          nodes[1] = nodes[0]+1;
          nodes[2] = nodes[1]+(totalXElems+1);
          nodes[3] = nodes[2]-1;
+
+         for (int i=0; i < 4; ++i)
+           nodes[i] += offset_;
 
          RCP<ElementDescriptor> ed = rcp(new ElementDescriptor(gid,nodes));
          mesh.addElement(ed,block);
@@ -425,6 +461,9 @@ void SquareQuadMeshFactory::addSideSets(STK_Interface & mesh) const
    for(itr=localElmts.begin();itr!=localElmts.end();++itr) {
       stk::mesh::Entity element = (*itr);
       stk::mesh::EntityId gid = mesh.elementGlobalId(element);
+
+      // reverse the offset for local gid numbering scheme
+      gid -= offset_;
 
       std::size_t nx,ny;
       ny = (gid-1) / totalXElems;
@@ -527,12 +566,28 @@ void SquareQuadMeshFactory::addNodeSets(STK_Interface & mesh) const
    if(machRank_==0) 
    {
       // add zero node to lower_left node set
-      stk::mesh::Entity node = bulkData->get_entity(mesh.getNodeRank(),1);
+      stk::mesh::Entity node = bulkData->get_entity(mesh.getNodeRank(),1 + offset_);
       mesh.addEntityToNodeset(node,lower_left);
 
       // add zero node to origin node set
       mesh.addEntityToNodeset(node,origin);
    }
+
+   mesh.endModification();
+}
+
+void SquareQuadMeshFactory::addEdgeBlocks(STK_Interface & mesh) const
+{
+   mesh.beginModification();
+
+   stk::mesh::Part * edge_block = mesh.getEdgeBlock(panzer_stk::STK_Interface::edgeBlockString);
+
+   Teuchos::RCP<stk::mesh::BulkData> bulkData = mesh.getBulkData();
+   Teuchos::RCP<stk::mesh::MetaData> metaData = mesh.getMetaData();
+
+   std::vector<stk::mesh::Entity> edges;
+   bulkData->get_entities(mesh.getEdgeRank(),metaData->locally_owned_part(),edges);
+   mesh.addEntitiesToEdgeBlock(edges, edge_block);
 
    mesh.endModification();
 }

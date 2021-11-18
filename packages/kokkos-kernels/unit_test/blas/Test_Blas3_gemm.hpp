@@ -25,7 +25,7 @@ namespace Test {
     KOKKOS_INLINE_FUNCTION
     void operator() (const typename Kokkos::TeamPolicy<ExecutionSpace>::member_type& team) const {
 // GNU COMPILER BUG WORKAROUND
-#if defined(KOKKOS_COMPILER_GNU) && !defined(__CUDA_ARCH__)
+#if defined(KOKKOS_COMPILER_GNU) && !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
       int i = team.league_rank();
 #else
       const int i = team.league_rank();
@@ -105,14 +105,16 @@ namespace Test {
     uint64_t seed = Kokkos::Impl::clock_tic();
     Kokkos::Random_XorShift64_Pool<execution_space> rand_pool(seed);
 
-    Kokkos::fill_random(A,rand_pool,ScalarA(10));
-    Kokkos::fill_random(B,rand_pool,ScalarB(10));
-    Kokkos::fill_random(C,rand_pool,ScalarC(10));
+    // (SA 11 Dec 2019) Max (previously: 10) increased to detect the bug in Trilinos issue #6418 
+    Kokkos::fill_random(A,rand_pool, Kokkos::rand<typename Kokkos::Random_XorShift64_Pool<execution_space>::generator_type,ScalarA>::max());
+    Kokkos::fill_random(B,rand_pool, Kokkos::rand<typename Kokkos::Random_XorShift64_Pool<execution_space>::generator_type,ScalarB>::max());
+    Kokkos::fill_random(C,rand_pool, Kokkos::rand<typename Kokkos::Random_XorShift64_Pool<execution_space>::generator_type,ScalarC>::max());
+    // Kokkos::fill_random(A,rand_pool,ScalarA(10));
+    // Kokkos::fill_random(B,rand_pool,ScalarB(10));
+    // Kokkos::fill_random(C,rand_pool,ScalarC(10));
     
     Kokkos::deep_copy(C2,C);
 
-    Kokkos::fence();
- 
     struct VanillaGEMM<ViewTypeA,ViewTypeB,ViewTypeC,execution_space> vgemm;
     vgemm.A_t = A_t; vgemm.B_t = B_t;
     vgemm.A_c = A_c; vgemm.B_c = B_c;
@@ -125,8 +127,6 @@ namespace Test {
     Kokkos::parallel_for("KokkosBlas::Test::VanillaGEMM", Kokkos::TeamPolicy<execution_space>(M,Kokkos::AUTO,16), vgemm);
 
     KokkosBlas::gemm(TA,TB,alpha,A,B,beta,C);
-
-    Kokkos::fence();
 
     mag_type diff_C = 0;
     struct DiffGEMM<ViewTypeC,execution_space> diffgemm;
@@ -143,7 +143,9 @@ namespace Test {
       // eps = K * 75 * machine_eps * 7
       double diff_C_expected = 1.0*sqrt(K)*K*75*machine_eps*7;
 
-      //printf("Result: %e %e\n",diff_C_average,diff_C_expected);
+      if ( (diff_C_average >= 1.05*diff_C_expected ) ) {
+        printf("Result: %e %e\n",diff_C_average,diff_C_expected);
+      }
       EXPECT_TRUE( (diff_C_average < 1.05*diff_C_expected ) );
     }
   }

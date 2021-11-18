@@ -137,11 +137,15 @@ public:
   /** \brief . */
   RCP<const VectorSpaceBase<Scalar> > get_f_space() const;
   /** \brief . */
+  RCP<const VectorSpaceBase<Scalar> > get_f_multiplier_space() const;
+  /** \brief . */
   RCP<const VectorSpaceBase<Scalar> > get_p_space(int l) const;
   /** \brief . */
   RCP<const Teuchos::Array<std::string> > get_p_names(int l) const;
   /** \brief . */
   RCP<const VectorSpaceBase<Scalar> > get_g_space(int j) const;
+  /** \brief . */
+  RCP<const VectorSpaceBase<Scalar> > get_g_multiplier_space(int j) const;
   /** \brief . */
   Teuchos::ArrayView<const std::string> get_g_names(int j) const;
   /** \brief . */
@@ -158,6 +162,10 @@ public:
   RCP<PreconditionerBase<Scalar> > create_W_prec() const;
   /** \brief . */
   RCP<const LinearOpWithSolveFactoryBase<Scalar> > get_W_factory() const;
+#ifdef Thyra_BUILD_HESSIAN_SUPPORT
+  /** \brief . */
+  RCP<LinearOpBase<Scalar> > create_hess_g_pp( int j, int l1, int l2 ) const;
+#endif  // ifdef Thyra_BUILD_HESSIAN_SUPPORT
   /** \brief . */
   ModelEvaluatorBase::InArgs<Scalar> createInArgs() const;
   /** \brief . */
@@ -412,6 +420,14 @@ ModelEvaluatorDelegatorBase<Scalar>::get_f_space() const
 
 template<class Scalar>
 RCP<const VectorSpaceBase<Scalar> >
+ModelEvaluatorDelegatorBase<Scalar>::get_f_multiplier_space() const
+{
+  return getUnderlyingModel()->get_f_multiplier_space();
+}
+
+
+template<class Scalar>
+RCP<const VectorSpaceBase<Scalar> >
 ModelEvaluatorDelegatorBase<Scalar>::get_p_space(int l) const
 {
   return getUnderlyingModel()->get_p_space(l);
@@ -431,6 +447,14 @@ RCP<const VectorSpaceBase<Scalar> >
 ModelEvaluatorDelegatorBase<Scalar>::get_g_space(int j) const
 {
   return getUnderlyingModel()->get_g_space(j);
+}
+
+
+template<class Scalar>
+RCP<const VectorSpaceBase<Scalar> >
+ModelEvaluatorDelegatorBase<Scalar>::get_g_multiplier_space(int j) const
+{
+  return getUnderlyingModel()->get_g_multiplier_space(j);
 }
 
 
@@ -498,13 +522,23 @@ ModelEvaluatorDelegatorBase<Scalar>::get_W_factory() const
 }
 
 
+#ifdef Thyra_BUILD_HESSIAN_SUPPORT
+template<class Scalar>
+RCP<LinearOpBase<Scalar> >
+ModelEvaluatorDelegatorBase<Scalar>::create_hess_g_pp( int j, int l1, int l2 ) const
+{
+  return getUnderlyingModel()->create_hess_g_pp(j, l1, l2);
+}
+#endif  // ifdef Thyra_BUILD_HESSIAN_SUPPORT
+
+
 template<class Scalar>
 ModelEvaluatorBase::InArgs<Scalar>
 ModelEvaluatorDelegatorBase<Scalar>::createInArgs() const
 {
   ModelEvaluatorBase::InArgsSetup<Scalar> inArgs = getUnderlyingModel()->createInArgs();
   inArgs.setModelEvalDescription(this->description());
-  return inArgs;
+  return std::move(inArgs);
 }
 
 
@@ -608,7 +642,7 @@ ModelEvaluatorDelegatorBase<Scalar>::createOutArgsImpl() const
   ModelEvaluatorBase::OutArgsSetup<Scalar>
     outArgs = getUnderlyingModel()->createOutArgs();
   outArgs.setModelEvalDescription(this->description());
-  return outArgs;
+  return std::move(outArgs);
 }
 
 

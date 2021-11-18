@@ -66,8 +66,21 @@ namespace Galeri {
         E  = list.get("E", Teuchos::as<typename Teuchos::ScalarTraits<Scalar>::magnitudeType>(1e9));
         nu = list.get("nu", Teuchos::as<typename Teuchos::ScalarTraits<Scalar>::magnitudeType>(0.25));
 
-        nx_ = list.get<GlobalOrdinal>("nx", -1);
-        ny_ = list.get<GlobalOrdinal>("ny", -1);
+        nx_ = -1;
+        ny_ = -1;
+
+        if (list.isParameter("nx")) {
+          if (list.isType<int>("nx"))
+            nx_ = Teuchos::as<GlobalOrdinal>(list.get<int>("nx"));
+          else
+            nx_ = list.get<GlobalOrdinal>("nx");
+        }
+        if (list.isParameter("ny")) {
+          if (list.isType<int>("ny"))
+            ny_ = Teuchos::as<GlobalOrdinal>(list.get<int>("ny"));
+          else
+            ny_ = list.get<GlobalOrdinal>("ny");
+        }
 
         nDim_ = 2;
         double one = 1.0;
@@ -175,7 +188,8 @@ namespace Galeri {
       SerialDenseMatrix<LO,SC> R(D->numRows(), Teuchos::as<LO>(bDim));
       R(0,0) = R(1,3) = R(2,1) = R(2,2) = 1;
 
-      this->A_ = MatrixTraits<Map,Matrix>::Build(this->Map_, 9*numDofPerNode);
+      this->A_ = MatrixTraits<Map,Matrix>::Build(this->Map_, 8*numNodesPerElem);
+      this->A_->setObjectLabel(this->getObjectLabel());
 
       SC one = TST::one(), zero = TST::zero();
       SerialDenseMatrix<LO,SC> prevKE(numDofPerElem, numDofPerElem), prevElementNodes(numNodesPerElem, Teuchos::as<LO>(nDim_));        // cache
@@ -316,7 +330,6 @@ namespace Galeri {
     template <typename Scalar, typename LocalOrdinal, typename GlobalOrdinal, typename Map, typename Matrix, typename MultiVector>
     RCP<typename Problem<Map,Matrix,MultiVector>::RealValuedMultiVector>
     Elasticity2DProblem<Scalar,LocalOrdinal,GlobalOrdinal,Map,Matrix,MultiVector>::BuildCoords() {
-      using RealValuedMultiVector = typename Problem<Map,Matrix,MultiVector>::RealValuedMultiVector;
       // FIXME: map here is an extended map, with multiple DOF per node
       // as we cannot construct a single DOF map in Problem, we repeat the coords
       this->Coords_ = MultiVectorTraits<Map,RealValuedMultiVector>::Build(this->Map_, nDim_);
@@ -356,7 +369,7 @@ namespace Galeri {
       if (this->Coords_ == Teuchos::null)
         BuildCoords();
 
-      Teuchos::ArrayView<const GO> GIDs = this->Map_->getNodeElementList();
+      // Teuchos::ArrayView<const GO> GIDs = this->Map_->getNodeElementList();
 
       size_t          numDofs = this->Map_->getNodeNumElements();
       Teuchos::ArrayRCP<real_type> x = this->Coords_->getDataNonConst(0);

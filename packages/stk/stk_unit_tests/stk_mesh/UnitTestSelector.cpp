@@ -35,7 +35,6 @@
 #include "mpi.h"                        // for MPI_COMM_WORLD, etc
 #include "stk_mesh/base/Bucket.hpp"     // for Bucket
 #include "stk_mesh/base/BulkData.hpp"   // for BulkData
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"     // for Entity
 #include "stk_mesh/base/Field.hpp"      // for Field
 #include "stk_mesh/base/MetaData.hpp"   // for MetaData, entity_rank_names
@@ -430,6 +429,23 @@ TEST(Verify, usingPartVectorToSelectIntersection)
   EXPECT_EQ("(PartA & PartB)", msg.str());
 }
 
+TEST(Verify, selectUnionIgnoresNullParts)
+{
+  SelectorFixture fix ;
+  initialize(fix);
+
+  stk::mesh::PartVector parts ;
+  parts.push_back( & fix.m_partA );
+  parts.push_back( & fix.m_partB );
+  parts.push_back( & fix.m_partC );
+  stk::mesh::Selector selector = selectUnion(parts);
+
+  parts.insert(parts.begin(), nullptr);
+  parts.push_back(nullptr);
+  stk::mesh::Selector selector2 = selectUnion(parts);
+  EXPECT_TRUE(selector == selector2);
+}
+
 TEST(Verify, usingPartVectorToSelectUnion)
 {
   SelectorFixture fix ;
@@ -809,6 +825,7 @@ TEST( UnitTestRootTopology, getPartsDoesNotFindAutoCreatedRootParts )
         , stk::topology::TRI_4
         , stk::topology::TRI_6
         , stk::topology::QUAD_4
+        , stk::topology::QUAD_6
         , stk::topology::QUAD_8
         , stk::topology::QUAD_9
         //ELEMENT_RANK

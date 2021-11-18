@@ -156,10 +156,25 @@ void CubeTetMeshFactory::completeMeshConstruction(STK_Interface & mesh,stk::Para
    // finish up the edges and faces
    mesh.buildSubcells();
    mesh.buildLocalElementIDs();
+   if(createEdgeBlocks_) {
+      mesh.buildLocalEdgeIDs();
+   }
+   if(createFaceBlocks_) {
+      mesh.buildLocalFaceIDs();
+   }
 
    // now that edges are built, sidets can be added
    addSideSets(mesh);
    addNodeSets(mesh);
+
+   mesh.beginModification();
+   if(createEdgeBlocks_) {
+      addEdgeBlocks(mesh);
+   }
+   if(createFaceBlocks_) {
+      addFaceBlocks(mesh);
+   }
+   mesh.endModification();
 
    // calls Stk_MeshFactory::rebalance
    this->rebalance(mesh);
@@ -191,6 +206,9 @@ void CubeTetMeshFactory::setParameterList(const Teuchos::RCP<Teuchos::ParameterL
    nXElems_ = paramList->get<int>("X Elements");
    nYElems_ = paramList->get<int>("Y Elements");
    nZElems_ = paramList->get<int>("Z Elements");
+
+   createEdgeBlocks_ = paramList->get<bool>("Create Edge Blocks");
+   createFaceBlocks_ = paramList->get<bool>("Create Face Blocks");
 
    // read in periodic boundary conditions
    parsePeriodicBCList(Teuchos::rcpFromRef(paramList->sublist("Periodic BCs")),periodicBCVec_);
@@ -224,6 +242,10 @@ Teuchos::RCP<const Teuchos::ParameterList> CubeTetMeshFactory::getValidParameter
       defaultParams->set<int>("X Elements",5);
       defaultParams->set<int>("Y Elements",5);
       defaultParams->set<int>("Z Elements",5);
+
+      // default to false for backward compatibility
+      defaultParams->set<bool>("Create Edge Blocks",false,"Create edge blocks in the mesh");
+      defaultParams->set<bool>("Create Face Blocks",false,"Create face blocks in the mesh");
 
       Teuchos::ParameterList & bcs = defaultParams->sublist("Periodic BCs");
       bcs.set<int>("Count",0); // no default periodic boundary conditions
@@ -271,6 +293,15 @@ void CubeTetMeshFactory::buildMetaData(stk::ParallelMachine /* parallelMach */, 
    mesh.addSideset("back",side_ctd);
 
    mesh.addNodeset("origin");
+
+   if(createEdgeBlocks_) {
+      const CellTopologyData * edge_ctd = shards::CellTopology(ctd).getBaseCellTopologyData(1,0);
+      mesh.addEdgeBlock(panzer_stk::STK_Interface::edgeBlockString, edge_ctd);
+   }
+   if(createFaceBlocks_) {
+      const CellTopologyData * face_ctd = shards::CellTopology(ctd).getBaseCellTopologyData(2,0);
+      mesh.addFaceBlock(panzer_stk::STK_Interface::faceBlockString, face_ctd);
+   }
 }
 
 void CubeTetMeshFactory::buildElements(stk::ParallelMachine parallelMach,STK_Interface & mesh) const
@@ -591,6 +622,34 @@ void CubeTetMeshFactory::addNodeSets(STK_Interface & mesh) const
    }
 
    mesh.endModification();
+}
+
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
+void CubeTetMeshFactory::addEdgeBlocks(STK_Interface & mesh) const
+{
+   stk::mesh::Part * edge_block = mesh.getEdgeBlock(panzer_stk::STK_Interface::edgeBlockString);
+
+   Teuchos::RCP<stk::mesh::BulkData> bulkData = mesh.getBulkData();
+   Teuchos::RCP<stk::mesh::MetaData> metaData = mesh.getMetaData();
+
+   std::vector<stk::mesh::Entity> edges;
+   bulkData->get_entities(mesh.getEdgeRank(),metaData->locally_owned_part(),edges);
+   mesh.addEntitiesToEdgeBlock(edges, edge_block);
+}
+
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
+void CubeTetMeshFactory::addFaceBlocks(STK_Interface & mesh) const
+{
+   stk::mesh::Part * face_block = mesh.getFaceBlock(panzer_stk::STK_Interface::faceBlockString);
+
+   Teuchos::RCP<stk::mesh::BulkData> bulkData = mesh.getBulkData();
+   Teuchos::RCP<stk::mesh::MetaData> metaData = mesh.getMetaData();
+
+   std::vector<stk::mesh::Entity> faces;
+   bulkData->get_entities(mesh.getFaceRank(),metaData->locally_owned_part(),faces);
+   mesh.addEntitiesToFaceBlock(faces, face_block);
 }
 
 //! Convert processor rank to a tuple

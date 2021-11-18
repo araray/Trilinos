@@ -66,6 +66,13 @@
 #include "Teuchos_MatrixMarket_Banner.hpp"
 #include "Teuchos_MatrixMarket_CoordDataReader.hpp"
 #include "Teuchos_SetScientific.hpp"
+#include "Teuchos_TimeMonitor.hpp"
+
+extern "C" {
+#include "mmio_Tpetra.h"
+}
+#include "Tpetra_Distribution.hpp"
+
 
 #include <algorithm>
 #include <fstream>
@@ -206,12 +213,6 @@ namespace Tpetra {
       typedef Teuchos::Comm<int> comm_type;
       typedef Map<local_ordinal_type, global_ordinal_type, node_type> map_type;
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      // DEPRECATED typedefs for backwards compatibility.
-      typedef Teuchos::RCP<const comm_type> comm_ptr TPETRA_DEPRECATED;
-      typedef Teuchos::RCP<const map_type> map_ptr TPETRA_DEPRECATED;
-      typedef Teuchos::RCP<node_type> node_ptr TPETRA_DEPRECATED;
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     private:
       /// \typedef size_type
@@ -1663,7 +1664,7 @@ namespace Tpetra {
         if (comm->getRank () == 0) {
           try {
             in.open (filename.c_str ());
-            opened = 1;
+            opened = in.is_open();
           }
           catch (...) {
             opened = 0;
@@ -1681,26 +1682,6 @@ namespace Tpetra {
         // exception.
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Variant of readSparseGraphFile (filename, comm,
-      ///   callFillComplete, tolerant, debug) that takes a Node
-      ///   object.
-      ///
-      /// Please don't call this method; call the one above.
-      /// DO NOT CREATE EXPLICIT NODE OBJECTS.
-      static Teuchos::RCP<sparse_graph_type>  TPETRA_DEPRECATED
-      readSparseGraphFile (const std::string& filename,
-                           const Teuchos::RCP<const Teuchos::Comm<int> >& comm,
-                           const Teuchos::RCP<node_type>& /* pNode*/,
-                           const bool callFillComplete=true,
-                           const bool tolerant=false,
-                           const bool debug=false)
-      {
-        // Call the overload below.
-        return readSparseGraphFile (filename, comm,
-                                    callFillComplete, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse graph from the given Matrix Market file.
       ///
@@ -1750,7 +1731,7 @@ namespace Tpetra {
         if (pComm->getRank () == 0) {
           try {
             in.open (filename.c_str ());
-            opened = 1;
+            opened = in.is_open();
           }
           catch (...) {
             opened = 0;
@@ -1771,28 +1752,6 @@ namespace Tpetra {
         // exception.
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Variant of readSparseGraphFile (filename, comm,
-      ///   constructorParams, fillCompleteParams, tolerant, debug)
-      ///   that takes a Node object.
-      ///
-      /// Please don't call this method; call the one above.
-      /// DO NOT CREATE EXPLICIT NODE OBJECTS.
-      static Teuchos::RCP<sparse_graph_type> TPETRA_DEPRECATED
-      readSparseGraphFile (const std::string& filename,
-                           const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                           const Teuchos::RCP<node_type>& /*pNode*/,
-                           const Teuchos::RCP<Teuchos::ParameterList>& constructorParams,
-                           const Teuchos::RCP<Teuchos::ParameterList>& fillCompleteParams,
-                           const bool tolerant=false,
-                           const bool debug=false)
-      {
-        // Call the overload below.
-        return readSparseGraphFile (filename, pComm,
-                                    constructorParams, fillCompleteParams,
-                                    tolerant, debug);
-      }
-#endif  // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse graph from the given Matrix Market file,
       ///   with provided Maps.
@@ -1865,7 +1824,7 @@ namespace Tpetra {
         if (comm->getRank () == 0) {
           try {
             in.open (filename.c_str ());
-            opened = 1;
+            opened = in.is_open();
           }
           catch (...) {
             opened = 0;
@@ -1925,21 +1884,6 @@ namespace Tpetra {
         return graph;
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readSparseGraph() above that takes a Node object.
-      static Teuchos::RCP<sparse_graph_type> TPETRA_DEPRECATED
-      readSparseGraph (std::istream& in,
-                       const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                       const Teuchos::RCP<node_type>& /* pNode */,
-                       const bool callFillComplete=true,
-                       const bool tolerant=false,
-                       const bool debug=false)
-      {
-        // Call the overload below.
-        return readSparseGraph (in, pComm, callFillComplete,
-                                tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse graph from the given Matrix Market input
       ///   stream.
@@ -1988,22 +1932,6 @@ namespace Tpetra {
         return graph;
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of the above readSparseGraph() method that takes a Kokkos Node.
-      static Teuchos::RCP<sparse_graph_type> TPETRA_DEPRECATED
-      readSparseGraph (std::istream& in,
-                       const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                       const Teuchos::RCP<node_type>& /* pNode */,
-                       const Teuchos::RCP<Teuchos::ParameterList>& constructorParams,
-                       const Teuchos::RCP<Teuchos::ParameterList>& fillCompleteParams,
-                       const bool tolerant=false,
-                       const bool debug=false)
-      {
-        // Call the overload below.
-        return readSparseGraph (in, pComm, constructorParams,
-                                fillCompleteParams, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse matrix from the given Matrix Market input
       ///   stream, with provided Maps.
@@ -2065,6 +1993,8 @@ namespace Tpetra {
         return graph;
       }
 
+#include "MatrixMarket_TpetraNew.hpp"
+
       /// \brief Read sparse matrix from the given Matrix Market file.
       ///
       /// Open the given file on MPI Rank 0 (with respect to the given
@@ -2114,19 +2044,6 @@ namespace Tpetra {
         // exception.
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readSparseFile that takes a Node object.
-      static Teuchos::RCP<sparse_matrix_type>  TPETRA_DEPRECATED
-      readSparseFile (const std::string& filename,
-                      const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                      const Teuchos::RCP<node_type>& /* pNode */,
-                      const bool callFillComplete=true,
-                      const bool tolerant=false,
-                      const bool debug=false)
-      {
-        return readSparseFile (filename, pComm, callFillComplete, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse matrix from the given Matrix Market file.
       ///
@@ -2172,22 +2089,6 @@ namespace Tpetra {
                            fillCompleteParams, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readSparseFile above that takes a Node object.
-      static Teuchos::RCP<sparse_matrix_type>  TPETRA_DEPRECATED
-      readSparseFile (const std::string& filename,
-                      const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                      const Teuchos::RCP<node_type>& /* pNode */,
-                      const Teuchos::RCP<Teuchos::ParameterList>& constructorParams,
-                      const Teuchos::RCP<Teuchos::ParameterList>& fillCompleteParams,
-                      const bool tolerant=false,
-                      const bool debug=false)
-      {
-        return readSparseFile (filename, pComm,
-                               constructorParams, fillCompleteParams,
-                               tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse matrix from the given Matrix Market file,
       ///   with provided Maps.
@@ -2257,7 +2158,7 @@ namespace Tpetra {
         if (myRank == 0) {
           try {
             in.open (filename.c_str ());
-            opened = 1;
+            opened = in.is_open();
           }
           catch (...) {
             opened = 0;
@@ -2820,19 +2721,6 @@ namespace Tpetra {
         return pMatrix;
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readSparse() above that takes a Node object.
-      static Teuchos::RCP<sparse_matrix_type>  TPETRA_DEPRECATED
-      readSparse (std::istream& in,
-                  const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                  const Teuchos::RCP<node_type>& /* pNode */,
-                  const bool callFillComplete=true,
-                  const bool tolerant=false,
-                  const bool debug=false)
-      {
-        return readSparse (in, pComm, callFillComplete, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse matrix from the given Matrix Market input stream.
       ///
@@ -3377,21 +3265,6 @@ namespace Tpetra {
         return pMatrix;
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of the above readSparse() method that takes a Kokkos Node.
-      static Teuchos::RCP<sparse_matrix_type>  TPETRA_DEPRECATED
-      readSparse (std::istream& in,
-                  const Teuchos::RCP<const Teuchos::Comm<int> >& pComm,
-                  const Teuchos::RCP<node_type>& /* pNode */,
-                  const Teuchos::RCP<Teuchos::ParameterList>& constructorParams,
-                  const Teuchos::RCP<Teuchos::ParameterList>& fillCompleteParams,
-                  const bool tolerant=false,
-                  const bool debug=false)
-      {
-        return readSparse (in, pComm, constructorParams,
-                           fillCompleteParams, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read sparse matrix from the given Matrix Market input
       ///   stream, with provided Maps.
@@ -4061,26 +3934,28 @@ namespace Tpetra {
                      const bool tolerant=false,
                      const bool debug=false)
       {
+        using Teuchos::broadcast;
+        using Teuchos::outArg;
+
         std::ifstream in;
-        if (comm->getRank () == 0) { // Only open the file on Proc 0.
-          in.open (filename.c_str ()); // Destructor closes safely
+        int opened = 0;
+        if (comm->getRank() == 0) {
+          try {
+            in.open (filename.c_str ());
+            opened = in.is_open();
+          }
+          catch (...) {
+            opened = 0;
+          }
         }
+        broadcast<int, int> (*comm, 0, outArg (opened));
+        TEUCHOS_TEST_FOR_EXCEPTION(
+          opened == 0, std::runtime_error,
+          "readDenseFile: Failed to open file \"" << filename << "\" on "
+          "Process 0.");
         return readDense (in, comm, map, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readDenseMatrix (see above) that takes a Node.
-      static Teuchos::RCP<multivector_type>  TPETRA_DEPRECATED
-      readDenseFile (const std::string& filename,
-                     const Teuchos::RCP<const comm_type>& comm,
-                     const Teuchos::RCP<node_type>& /* pNode*/,
-                     Teuchos::RCP<const map_type>& map,
-                     const bool tolerant=false,
-                     const bool debug=false)
-      {
-        return readDenseFile(filename, comm, map, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read a Vector from the given Matrix Market file.
       ///
@@ -4118,27 +3993,28 @@ namespace Tpetra {
                       const bool tolerant=false,
                       const bool debug=false)
       {
+        using Teuchos::broadcast;
+        using Teuchos::outArg;
+
         std::ifstream in;
-        if (comm->getRank () == 0) { // Only open the file on Proc 0.
-          in.open (filename.c_str ()); // Destructor closes safely
+        int opened = 0;
+        if (comm->getRank() == 0) {
+          try {
+            in.open (filename.c_str ());
+            opened = in.is_open();
+          }
+          catch (...) {
+            opened = 0;
+          }
         }
+        broadcast<int, int> (*comm, 0, outArg (opened));
+        TEUCHOS_TEST_FOR_EXCEPTION(
+          opened == 0, std::runtime_error,
+          "readVectorFile: Failed to open file \"" << filename << "\" on "
+          "Process 0.");
         return readVector (in, comm, map, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Like readVectorFile() (see above), but with a
-      ///   supplied Node object.
-      static Teuchos::RCP<vector_type>  TPETRA_DEPRECATED
-      readVectorFile (const std::string& filename,
-                      const Teuchos::RCP<const comm_type>& comm,
-                      const Teuchos::RCP<node_type>& /* pNode */,
-                      Teuchos::RCP<const map_type>& map,
-                      const bool tolerant=false,
-                      const bool debug=false)
-      {
-        return readVectorFile(filename, comm, map, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read dense matrix (as a MultiVector) from the given
       ///   Matrix Market input stream.
@@ -4218,19 +4094,6 @@ namespace Tpetra {
         return readDenseImpl<scalar_type> (in, comm, map, err, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Variant of readDense (see above) that takes a Node.
-      static Teuchos::RCP<multivector_type>  TPETRA_DEPRECATED
-      readDense (std::istream& in,
-                 const Teuchos::RCP<const comm_type>& comm,
-                 const Teuchos::RCP<node_type>& /* pNode */,
-                 Teuchos::RCP<const map_type>& map,
-                 const bool tolerant=false,
-                 const bool debug=false)
-      {
-        return readDense (in, comm, map, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       //! Read Vector from the given Matrix Market input stream.
       static Teuchos::RCP<vector_type>
@@ -4245,19 +4108,6 @@ namespace Tpetra {
         return readVectorImpl<scalar_type> (in, comm, map, err, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      //! Read Vector from the given Matrix Market input stream, with a supplied Node.
-      static Teuchos::RCP<vector_type> TPETRA_DEPRECATED
-      readVector (std::istream& in,
-                 const Teuchos::RCP<const comm_type>& comm,
-                 const Teuchos::RCP<node_type>& /* pNode */,
-                 Teuchos::RCP<const map_type>& map,
-                 const bool tolerant=false,
-                 const bool debug=false)
-      {
-        return readVector(in, comm,  map, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read Map (as a MultiVector) from the given
       ///   Matrix Market file.
@@ -4304,19 +4154,6 @@ namespace Tpetra {
         return readMap (in, comm, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Variant of readMapFile (above) that takes an explicit
-      ///   Node instance.
-      static Teuchos::RCP<const map_type>  TPETRA_DEPRECATED
-      readMapFile (const std::string& filename,
-                   const Teuchos::RCP<const comm_type>& comm,
-                   const Teuchos::RCP<node_type>& /* pNode */,
-                   const bool tolerant=false,
-                   const bool debug=false)
-      {
-        return readMapFile (filename, comm, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     private:
       template<class MultiVectorScalarType>
@@ -5369,19 +5206,6 @@ namespace Tpetra {
         return readMap (in, comm, err, tolerant, debug);
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Variant of readMap (above) that takes an explicit
-      ///   Node instance.
-      static Teuchos::RCP<const map_type>  TPETRA_DEPRECATED
-      readMap (std::istream& in,
-               const Teuchos::RCP<const comm_type>& comm,
-               const Teuchos::RCP<node_type>& /* pNode */,
-               const bool tolerant=false,
-               const bool debug=false)
-      {
-        return readMap(in, comm, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
       /// \brief Read Map (as a MultiVector) from the given input
       ///   stream, with optional debugging output stream.
@@ -5762,20 +5586,6 @@ namespace Tpetra {
         return newMap;
       }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      /// \brief Variant of readMap (above) that takes an explicit
-      ///   Node instance.
-      static Teuchos::RCP<const map_type>  TPETRA_DEPRECATED
-      readMap (std::istream& in,
-               const Teuchos::RCP<const comm_type>& comm,
-               const Teuchos::RCP<node_type>& /* pNode */,
-               const Teuchos::RCP<Teuchos::FancyOStream>& err,
-               const bool tolerant=false,
-               const bool debug=false)
-      {
-        return readMap (in, comm, err, tolerant, debug);
-      }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     private:
 
@@ -5808,7 +5618,7 @@ namespace Tpetra {
             "Please report this bug to the Tpetra developers.");
         }
       }
-    };
+    }; // class Reader
 
     /// \class Writer
     /// \brief Matrix Market file writer for CrsMatrix and MultiVector.
@@ -6201,22 +6011,19 @@ namespace Tpetra {
             for (GO globalRowIndex = minAllGlobalIndex;
                  globalRowIndex <= maxAllGlobalIndex; // inclusive range
                  ++globalRowIndex) {
-              ArrayView<const GO> ind;
-              ArrayView<const ST> val;
+              typename sparse_matrix_type::global_inds_host_view_type ind;
+              typename sparse_matrix_type::values_host_view_type val;
               newMatrix->getGlobalRowView (globalRowIndex, ind, val);
-              auto indIter = ind.begin ();
-              auto valIter = val.begin ();
-              for (; indIter != ind.end() && valIter != val.end();
-                   ++indIter, ++valIter) {
-                const GO globalColIndex = *indIter;
+              for (size_t ii = 0; ii < ind.extent(0); ii++) {
+                const GO globalColIndex = ind(ii);
                 // Convert row and column indices to 1-based.
                 // This works because the global index type is signed.
                 out << (globalRowIndex + 1 - rowIndexBase) << " "
                     << (globalColIndex + 1 - colIndexBase) << " ";
                 if (STS::isComplex) {
-                  out << STS::real (*valIter) << " " << STS::imag (*valIter);
+                  out << STS::real (val(ii)) << " " << STS::imag (val(ii));
                 } else {
-                  out << *valIter;
+                  out << val(ii);
                 }
                 out << endl;
               } // For each entry in the current row
@@ -6235,30 +6042,27 @@ namespace Tpetra {
                 "Failed to convert the supposed local row index "
                 << localRowIndex << " into a global row index.  "
                 "Please report this bug to the Tpetra developers.");
-              ArrayView<const LO> ind;
-              ArrayView<const ST> val;
+              typename sparse_matrix_type::local_inds_host_view_type ind;
+              typename sparse_matrix_type::values_host_view_type val;
               newMatrix->getLocalRowView (localRowIndex, ind, val);
-              auto indIter = ind.begin ();
-              auto valIter = val.begin ();
-              for (; indIter != ind.end() && valIter != val.end();
-                   ++indIter, ++valIter) {
+              for (size_t ii = 0; ii < ind.extent(0); ii++) {
                 // Convert the column index from local to global.
                 const GO globalColIndex =
-                  newMatrix->getColMap()->getGlobalElement (*indIter);
+                  newMatrix->getColMap()->getGlobalElement (ind(ii));
                 TEUCHOS_TEST_FOR_EXCEPTION(
                   globalColIndex == OTG::invalid(), std::logic_error,
                   "On local row " << localRowIndex << " of the sparse matrix: "
                   "Failed to convert the supposed local column index "
-                  << *indIter << " into a global column index.  Please report "
+                  << ind(ii) << " into a global column index.  Please report "
                   "this bug to the Tpetra developers.");
                 // Convert row and column indices to 1-based.
                 // This works because the global index type is signed.
                 out << (globalRowIndex + 1 - rowIndexBase) << " "
                     << (globalColIndex + 1 - colIndexBase) << " ";
                 if (STS::isComplex) {
-                  out << STS::real (*valIter) << " " << STS::imag (*valIter);
+                  out << STS::real (val(ii)) << " " << STS::imag (val(ii));
                 } else {
-                  out << *valIter;
+                  out << val(ii);
                 }
                 out << endl;
               } // For each entry in the current row
@@ -6501,10 +6305,10 @@ namespace Tpetra {
             for (GO globalRowIndex = minAllGlobalIndex;
                  globalRowIndex <= maxAllGlobalIndex; // inclusive range
                  ++globalRowIndex) {
-              ArrayView<const GO> ind;
+              typename crs_graph_type::global_inds_host_view_type ind;
               newGraph.getGlobalRowView (globalRowIndex, ind);
-              for (auto indIter = ind.begin (); indIter != ind.end (); ++indIter) {
-                const GO globalColIndex = *indIter;
+              for (size_t ii = 0; ii < ind.extent(0); ii++) {
+                const GO globalColIndex = ind(ii);
                 // Convert row and column indices to 1-based.
                 // This works because the global index type is signed.
                 out << (globalRowIndex + 1 - rowIndexBase) << " "
@@ -6526,17 +6330,17 @@ namespace Tpetra {
                  "to convert the supposed local row index " << localRowIndex <<
                  " into a global row index.  Please report this bug to the "
                  "Tpetra developers.");
-              ArrayView<const LO> ind;
+              typename crs_graph_type::local_inds_host_view_type ind;
               newGraph.getLocalRowView (localRowIndex, ind);
-              for (auto indIter = ind.begin (); indIter != ind.end (); ++indIter) {
+              for (size_t ii = 0; ii < ind.extent(0); ii++) {
                 // Convert the column index from local to global.
                 const GO globalColIndex =
-                  newGraph.getColMap ()->getGlobalElement (*indIter);
+                  newGraph.getColMap ()->getGlobalElement (ind(ii));
                 TEUCHOS_TEST_FOR_EXCEPTION(
                   globalColIndex == OTG::invalid(), std::logic_error,
                   "On local row " << localRowIndex << " of the sparse graph: "
                   "Failed to convert the supposed local column index "
-                  << *indIter << " into a global column index.  Please report "
+                  << ind(ii) << " into a global column index.  Please report "
                   "this bug to the Tpetra developers.");
                 // Convert row and column indices to 1-based.
                 // This works because the global index type is signed.

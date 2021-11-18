@@ -59,6 +59,7 @@
 #include "Sacado_mpl_vector.hpp"
 #include "Sacado_mpl_for_each.hpp"
 #include "Sacado_mpl_push_back.hpp"
+#include "Phalanx_DataLayout_DynamicLayout.hpp"
 #include "Phalanx_FieldTag_Tag.hpp"
 
 namespace PHX {
@@ -247,16 +248,24 @@ namespace PHX {
     using array_type = typename traits::array_type;
     using size_type = typename device_type::size_type;
     using execution_space = typename array_type::execution_space;
-
+#ifdef PHX_DEBUG
+    enum { rank_value = traits::rank }; // for printing in debug mode
+#endif
     typedef Scalar value_type;
     typedef Scalar& reference_type;
 
 
-    // Not allowed - too easy to forget to bind memory!
-    // template<typename...Extents>
-    // MDField(const std::string name,Extents... e)
-    //   : view(name,e...)
-    // {}
+    /// ONLY USE THIS CTOR FOR UNMANAGED FIELDS!!!! It will allocate memory unassociated with the DAG!
+    template<typename...Extents>
+    MDField(const std::string name,const std::string layout_name,Extents... e)
+      : m_view(name,e...)
+#ifdef PHX_DEBUG
+      , m_data_set(true)
+#endif
+    {
+      Teuchos::RCP<PHX::Layout> layout = Teuchos::rcp(new PHX::Layout(layout_name,e...));
+      m_tag = Teuchos::rcp(new PHX::Tag<value_type>(name,layout));
+    }
 
     MDField(const std::string& name, const Teuchos::RCP<PHX::DataLayout>& dl)
 #ifdef PHX_DEBUG
@@ -306,6 +315,9 @@ namespace PHX {
 
     KOKKOS_INLINE_FUNCTION
     constexpr size_t size() const {return m_view.size();}
+
+    KOKKOS_INLINE_FUNCTION
+    constexpr size_t span() const {return m_view.span();}
 
     const PHX::FieldTag& fieldTag() const
     {
@@ -448,6 +460,9 @@ namespace PHX {
     }
 
     KOKKOS_FORCEINLINE_FUNCTION
+    operator array_type () const { return get_static_view();}
+
+    KOKKOS_FORCEINLINE_FUNCTION
     Kokkos::DynRankView<Scalar,typename PHX::DevLayout<Scalar>::type,PHX::Device> get_view()
     {return m_view;}
 
@@ -474,6 +489,15 @@ namespace PHX {
 
     PHX::any get_static_view_as_any()
     {return get_static_view_as_any(ViewSpecialization<traits::rank>());}
+
+    /// Resets the underlying view ptr to null.
+    void releaseFieldData()
+    {
+#if defined(PHX_DEBUG)
+      m_data_set = false;
+#endif
+      m_view = array_type();
+    }
 
   private:
     template<int R> KOKKOS_INLINE_FUNCTION constexpr size_type rank(ViewSpecialization<R>) const {return traits::rank;}
@@ -630,6 +654,14 @@ namespace PHX {
     f.print(os, false);
     return os;
   }
+
+  /// \brief free function to allow one to pass in a kokkos view or MDField and get out a view
+  template <typename ...Args>
+  const auto as_view(const Kokkos::View<Args...> &a) { return a; }
+  template <typename ...Args>
+  const auto as_view(const Kokkos::DynRankView<Args...> &a) { return a; }
+  template <typename ...Args>
+  const auto as_view(const PHX::MDField<Args...> &a) { return a.get_static_view(); }
 
 }
 

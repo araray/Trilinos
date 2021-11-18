@@ -215,21 +215,12 @@ namespace Tpetra {
     }
     else { // the row Maps of A and B are not the same
       // Construct the result matrix C.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-      if (constructorSublist.is_null ()) {
-        C = rcp (new crs_matrix_type (C_rowMap, 0, ProfileType(StaticProfile+1) /* DynamicProfile */));
-      } else {
-        C = rcp (new crs_matrix_type (C_rowMap, 0, ProfileType(StaticProfile+1) /* DynamicProfile */,
-                                      constructorSublist));
-      }
-#else
       // true: !A_rowMap->isSameAs (*B_rowMap)
       TEUCHOS_TEST_FOR_EXCEPTION(true,
 				 std::invalid_argument,
 				 "Tpetra::RowMatrix::add: The row maps must be the same for statically "
 				 "allocated matrices in order to be sure that there is sufficient space "
 				 "to do the addition");
-#endif
     }
 
 #ifdef HAVE_TPETRA_DEBUG
@@ -240,8 +231,10 @@ namespace Tpetra {
     //
     // Compute C = alpha*A + beta*B.
     //
-    Array<GO> ind;
-    Array<Scalar> val;
+    using gids_type = nonconst_global_inds_host_view_type;
+    using vals_type = nonconst_values_host_view_type;
+    gids_type ind;
+    vals_type val;
 
     if (alpha != STS::zero ()) {
       const LO A_localNumRows = static_cast<LO> (A_rowMap->getNodeNumElements ());
@@ -249,11 +242,11 @@ namespace Tpetra {
         size_t A_numEntries = A.getNumEntriesInLocalRow (localRow);
         const GO globalRow = A_rowMap->getGlobalElement (localRow);
         if (A_numEntries > static_cast<size_t> (ind.size ())) {
-          ind.resize (A_numEntries);
-          val.resize (A_numEntries);
+          Kokkos::resize(ind,A_numEntries);
+          Kokkos::resize(val,A_numEntries);
         }
-        ArrayView<GO> indView = ind (0, A_numEntries);
-        ArrayView<Scalar> valView = val (0, A_numEntries);
+        gids_type indView = Kokkos::subview(ind, std::make_pair((size_t)0, A_numEntries));
+        vals_type valView = Kokkos::subview(val, std::make_pair((size_t)0, A_numEntries));
         A.getGlobalRowCopy (globalRow, indView, valView, A_numEntries);
 
         if (alpha != STS::one ()) {
@@ -261,7 +254,9 @@ namespace Tpetra {
             valView[k] *= alpha;
           }
         }
-        C->insertGlobalValues (globalRow, indView, valView);
+        C->insertGlobalValues (globalRow, A_numEntries, 
+                               reinterpret_cast<const Scalar*>(valView.data()),
+                               indView.data());
       }
     }
 
@@ -271,11 +266,11 @@ namespace Tpetra {
         size_t B_numEntries = B.getNumEntriesInLocalRow (localRow);
         const GO globalRow = B_rowMap->getGlobalElement (localRow);
         if (B_numEntries > static_cast<size_t> (ind.size ())) {
-          ind.resize (B_numEntries);
-          val.resize (B_numEntries);
+          Kokkos::resize(ind,B_numEntries);
+          Kokkos::resize(val,B_numEntries);
         }
-        ArrayView<GO> indView = ind (0, B_numEntries);
-        ArrayView<Scalar> valView = val (0, B_numEntries);
+        gids_type indView = Kokkos::subview(ind, std::make_pair((size_t)0, B_numEntries));
+        vals_type valView = Kokkos::subview(val, std::make_pair((size_t)0, B_numEntries));
         B.getGlobalRowCopy (globalRow, indView, valView, B_numEntries);
 
         if (beta != STS::one ()) {
@@ -283,7 +278,9 @@ namespace Tpetra {
             valView[k] *= beta;
           }
         }
-        C->insertGlobalValues (globalRow, indView, valView);
+        C->insertGlobalValues (globalRow, B_numEntries, 
+                               reinterpret_cast<const Scalar*>(valView.data()),
+                               indView.data());
       }
     }
 
@@ -305,8 +302,7 @@ namespace Tpetra {
   pack (const Teuchos::ArrayView<const LocalOrdinal>& exportLIDs,
         Teuchos::Array<char>& exports,
         const Teuchos::ArrayView<size_t>& numPacketsPerLID,
-        size_t& constantNumPackets,
-        Distributor &distor) const
+        size_t& constantNumPackets) const
   {
 #ifdef HAVE_TPETRA_DEBUG
     const char tfecfFuncName[] = "pack: ";
@@ -316,7 +312,7 @@ namespace Tpetra {
       int lclBad = 0;
       try {
         this->packImpl (exportLIDs, exports, numPacketsPerLID,
-                        constantNumPackets, distor);
+                        constantNumPackets);
       } catch (std::exception& e) {
         lclBad = 1;
         msg << e.what ();
@@ -345,7 +341,7 @@ namespace Tpetra {
     }
 #else
     this->packImpl (exportLIDs, exports, numPacketsPerLID,
-                    constantNumPackets, distor);
+                    constantNumPackets);
 #endif // HAVE_TPETRA_DEBUG
   }
 
@@ -414,8 +410,8 @@ namespace Tpetra {
         // If the matrix is locally indexed on the calling process, we
         // have to use its column Map (which it _must_ have in this
         // case) to convert to global indices.
-        ArrayView<const LO> indIn;
-        ArrayView<const Scalar> valIn;
+        local_inds_host_view_type indIn;
+        values_host_view_type valIn;
         this->getLocalRowView (lclRow, indIn, valIn);
         const map_type& colMap = * (this->getColMap ());
         // Copy column indices one at a time, so that we don't need
@@ -424,7 +420,7 @@ namespace Tpetra {
           const GO gblIndIn = colMap.getGlobalElement (indIn[k]);
           memcpy (indOut + k * sizeof (GO), &gblIndIn, sizeof (GO));
         }
-        memcpy (valOut, valIn.getRawPtr (), numEnt * sizeof (Scalar));
+        memcpy (valOut, valIn.data (), numEnt * sizeof (Scalar));
       }
       else if (this->isGloballyIndexed ()) {
         // If the matrix is globally indexed on the calling process,
@@ -432,13 +428,13 @@ namespace Tpetra {
         // have to get the global row index.  The calling process must
         // have a row Map, since otherwise it shouldn't be participating
         // in packing operations.
-        ArrayView<const GO> indIn;
-        ArrayView<const Scalar> valIn;
+        global_inds_host_view_type indIn;
+        values_host_view_type valIn;
         const map_type& rowMap = * (this->getRowMap ());
         const GO gblRow = rowMap.getGlobalElement (lclRow);
         this->getGlobalRowView (gblRow, indIn, valIn);
-        memcpy (indOut, indIn.getRawPtr (), numEnt * sizeof (GO));
-        memcpy (valOut, valIn.getRawPtr (), numEnt * sizeof (Scalar));
+        memcpy (indOut, indIn.data (), numEnt * sizeof (GO));
+        memcpy (valOut, valIn.data (), numEnt * sizeof (Scalar));
       }
       else {
         if (numEnt != 0) {
@@ -450,10 +446,10 @@ namespace Tpetra {
       // FIXME (mfh 25 Jan 2015) Pass in valIn and indIn as scratch
       // space, instead of allocating them on each call.
       if (this->isLocallyIndexed ()) {
-        Array<LO> indIn (numEnt);
-        Array<Scalar> valIn (numEnt);
+        nonconst_local_inds_host_view_type indIn("indIn",numEnt);
+        nonconst_values_host_view_type valIn("valIn",numEnt);
         size_t theNumEnt = 0;
-        this->getLocalRowCopy (lclRow, indIn (), valIn (), theNumEnt);
+        this->getLocalRowCopy (lclRow, indIn, valIn, theNumEnt);
         if (theNumEnt != numEnt) {
           return false;
         }
@@ -464,11 +460,11 @@ namespace Tpetra {
           const GO gblIndIn = colMap.getGlobalElement (indIn[k]);
           memcpy (indOut + k * sizeof (GO), &gblIndIn, sizeof (GO));
         }
-        memcpy (valOut, valIn.getRawPtr (), numEnt * sizeof (Scalar));
+        memcpy (valOut, valIn.data(), numEnt * sizeof (Scalar));
       }
       else if (this->isGloballyIndexed ()) {
-        Array<GO> indIn (numEnt);
-        Array<Scalar> valIn (numEnt);
+        nonconst_global_inds_host_view_type indIn("indIn",numEnt);
+        nonconst_values_host_view_type valIn("valIn",numEnt);
         const map_type& rowMap = * (this->getRowMap ());
         const GO gblRow = rowMap.getGlobalElement (lclRow);
         size_t theNumEnt = 0;
@@ -476,8 +472,8 @@ namespace Tpetra {
         if (theNumEnt != numEnt) {
           return false;
         }
-        memcpy (indOut, indIn.getRawPtr (), numEnt * sizeof (GO));
-        memcpy (valOut, valIn.getRawPtr (), numEnt * sizeof (Scalar));
+        memcpy (indOut, indIn.data(), numEnt * sizeof (GO));
+        memcpy (valOut, valIn.data(), numEnt * sizeof (Scalar));
       }
       else {
         if (numEnt != 0) {
@@ -494,8 +490,7 @@ namespace Tpetra {
   packImpl (const Teuchos::ArrayView<const LocalOrdinal>& exportLIDs,
             Teuchos::Array<char>& exports,
             const Teuchos::ArrayView<size_t>& numPacketsPerLID,
-            size_t& constantNumPackets,
-            Distributor& /* distor */) const
+            size_t& constantNumPackets) const
   {
     using Teuchos::Array;
     using Teuchos::ArrayView;
@@ -599,6 +594,7 @@ namespace Tpetra {
       << ", numBytes: " << firstBadNumBytes << ".");
   }
 
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   LocalOrdinal
   RowMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
@@ -626,6 +622,7 @@ namespace Tpetra {
 
     return static_cast<LocalOrdinal> (0);
   }
+#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 } // namespace Tpetra
 

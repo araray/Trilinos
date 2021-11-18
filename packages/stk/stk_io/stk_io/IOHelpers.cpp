@@ -80,11 +80,8 @@
 #include "SidesetTranslator.hpp"
 #include "StkIoUtils.hpp"
 #include "Teuchos_RCP.hpp"                           // for RCP::operator->, etc
-#include "boost/any.hpp"                             // for any_cast, any
 #include "stk_io/DatabasePurpose.hpp"                // for DatabasePurpose, etc
 #include "stk_io/MeshField.hpp"                      // for MeshField, etc
-#include "stk_io/SidesetUpdater.hpp"
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"                  // for Entity
 #include "stk_mesh/base/FieldBase.hpp"               // for FieldBase
 #include "stk_mesh/base/FieldParallel.hpp"
@@ -247,44 +244,50 @@ bool internal_read_global(Teuchos::RCP<Ioss::Region> input_region, const std::st
 
 
 void internal_write_parameter(Teuchos::RCP<Ioss::Region> output_region,
-                              const std::string &name, const boost::any &any_value,
+                              const std::string &name, const stk::util::Parameter &param)
+{
+  internal_write_parameter(output_region, name, param.value, param.type);
+}
+
+void internal_write_parameter(Teuchos::RCP<Ioss::Region> output_region,
+                              const std::string &name, const STK_ANY_NAMESPACE::any &any_value,
                               stk::util::ParameterType::Type type)
 {
     try {
         switch(type)
         {
             case stk::util::ParameterType::INTEGER: {
-                int value = boost::any_cast<int>(any_value);
+                int value = STK_ANY_NAMESPACE::any_cast<int>(any_value);
                 internal_write_global(output_region, name, value);
                 break;
             }
 
             case stk::util::ParameterType::INT64: {
-                int64_t value = boost::any_cast<int64_t>(any_value);
+                int64_t value = STK_ANY_NAMESPACE::any_cast<int64_t>(any_value);
                 internal_write_global(output_region, name, value);
                 break;
             }
 
             case stk::util::ParameterType::DOUBLE: {
-                double value = boost::any_cast<double>(any_value);
+                double value = STK_ANY_NAMESPACE::any_cast<double>(any_value);
                 internal_write_global(output_region, name, value);
                 break;
             }
 
             case stk::util::ParameterType::DOUBLEVECTOR: {
-                std::vector<double> vec = boost::any_cast<std::vector<double> >(any_value);
+                std::vector<double> vec = STK_ANY_NAMESPACE::any_cast<std::vector<double> >(any_value);
                 internal_write_global(output_region, name, vec);
                 break;
             }
 
             case stk::util::ParameterType::INTEGERVECTOR: {
-                std::vector<int> vec = boost::any_cast<std::vector<int> >(any_value);
+                std::vector<int> vec = STK_ANY_NAMESPACE::any_cast<std::vector<int> >(any_value);
                 internal_write_global(output_region, name, vec);
                 break;
             }
 
             case stk::util::ParameterType::INT64VECTOR: {
-                std::vector<int64_t> vec = boost::any_cast<std::vector<int64_t> >(any_value);
+                std::vector<int64_t> vec = STK_ANY_NAMESPACE::any_cast<std::vector<int64_t> >(any_value);
                 internal_write_global(output_region, name, vec);
                 break;
             }
@@ -308,7 +311,7 @@ void write_defined_global_any_fields(Teuchos::RCP<Ioss::Region> region,
 {
     for (size_t i=0; i < global_any_fields.size(); i++) {
         const std::string &name = global_any_fields[i].m_name;
-        const boost::any *value = global_any_fields[i].m_value;
+        const STK_ANY_NAMESPACE::any *value = global_any_fields[i].m_value;
         stk::util::ParameterType::Type type = global_any_fields[i].m_type;
         internal_write_parameter(region, name, *value, type);
     }
@@ -316,7 +319,15 @@ void write_defined_global_any_fields(Teuchos::RCP<Ioss::Region> region,
 
 bool internal_read_parameter(Teuchos::RCP<Ioss::Region> input_region,
                              const std::string &globalVarName,
-                             boost::any &any_value, stk::util::ParameterType::Type type,
+                             stk::util::Parameter& param,
+                             bool abort_if_not_found)
+{
+  return internal_read_parameter(input_region, globalVarName, param.value, param.type, abort_if_not_found);
+}
+
+bool internal_read_parameter(Teuchos::RCP<Ioss::Region> input_region,
+                             const std::string &globalVarName,
+                             STK_ANY_NAMESPACE::any &any_value, stk::util::ParameterType::Type type,
                              bool abort_if_not_found)
 {
     bool success = false;
@@ -420,7 +431,8 @@ size_t get_entities(const stk::mesh::Part &part,
     stk::mesh::Selector selector = part & own;
     if (subset_selector) selector &= *subset_selector;
 
-    get_selected_entities(selector, bulk.buckets(type), entities);
+    const bool sortById = true;
+    stk::mesh::get_entities(bulk, type, selector, entities, sortById);
     return entities.size();
 }
 
@@ -464,30 +476,23 @@ void communicate_shared_side_entity_fields(const stk::mesh::BulkData& bulk,
 {
     stk::CommSparse comm(bulk.parallel());
 
-    for (stk::mesh::Entity side : sides) {
-        if (!bulk.bucket(side).owned())
-        {
-            CommBuffer & buffer = comm.send_buffer(bulk.parallel_owner_rank(side));
-            pack_distribution_factor(bulk, buffer, distFact, side);
-        }
-    }
+    const bool anythingToUnpack =
+        stk::pack_and_communicate(comm, [&comm, &bulk, &distFact, &sides]() {
+            for (stk::mesh::Entity side : sides) {
+                ThrowRequireMsg(bulk.is_valid(side),"communicate_shared_side_entity_fields, invalid side");
+                if (!bulk.bucket(side).owned()) {
+                    CommBuffer & buffer = comm.send_buffer(bulk.parallel_owner_rank(side));
+                    pack_distribution_factor(bulk, buffer, distFact, side);
+                }
+            }
+        });
 
-    comm.allocate_buffers();
-
-    for (stk::mesh::Entity side : sides) {
-        if (!bulk.bucket(side).owned())
-        {
-            CommBuffer & buffer = comm.send_buffer(bulk.parallel_owner_rank(side));
-            pack_distribution_factor(bulk, buffer, distFact, side);
-        }
-    }
-
-    comm.communicate();
-
-    for (int p = 0 ; p < bulk.parallel_size(); ++p) {
-        CommBuffer & buf = comm.recv_buffer(p);
-        while (buf.remaining()) {
-            unpack_distribution_factor(bulk, buf, distFact);
+    if (anythingToUnpack) {
+        for (int p = 0 ; p < bulk.parallel_size(); ++p) {
+            CommBuffer & buf = comm.recv_buffer(p);
+            while (buf.remaining()) {
+                unpack_distribution_factor(bulk, buf, distFact);
+            }
         }
     }
 }
@@ -497,7 +502,7 @@ void process_surface_entity_df(const Ioss::SideSet* sset, stk::mesh::BulkData & 
 {
     assert(sset->type() == Ioss::SIDESET);
 
-    const stk::mesh::MetaData &meta = stk::mesh::MetaData::get(bulk);
+    const stk::mesh::MetaData &meta = bulk.mesh_meta_data();
 
     Ioss::Region *region = sset->get_database()->get_region();
     const std::string universalAlias = region->get_alias("universal_sideset");
@@ -544,8 +549,17 @@ void process_surface_entity_df(const Ioss::SideSet* sset, stk::mesh::BulkData & 
             std::vector<stk::mesh::Entity> sides;
             sides.reserve(side_count);
 
-            for(size_t is = 0; is < side_count; ++is)
-                sides.push_back(stk::mesh::get_side_entity_for_elem_id_side_pair_of_rank(bulk, elemSidePairs[is*2], elemSidePairs[is*2+1]-1, side_rank));
+            for (size_t is = 0; is < side_count; ++is) {
+                stk::mesh::Entity side = stk::mesh::get_side_entity_for_elem_id_side_pair_of_rank(bulk, elemSidePairs[is*2], elemSidePairs[is*2+1]-1, side_rank);
+                if (bulk.is_valid(side)) {
+                    sides.push_back(side);
+                }
+                else {
+                    std::ostringstream os;
+                    os<<"P"<<bulk.parallel_rank()<<" STK IO Warning, process_surface_entity_df: side {"<<elemSidePairs[is*2]<<","<<(elemSidePairs[is*2+1]-1)<<"} not valid."<<std::endl;
+                    std::cerr<<os.str();
+                }
+            }
 
             const stk::mesh::FieldBase *df_field = stk::io::get_distribution_factor_field(*sb_part);
             if (df_field != nullptr) {
@@ -616,7 +630,7 @@ void process_node_coords_and_attributes(Ioss::Region &region, stk::mesh::BulkDat
     // instead of the "global" ids. If there exists a stk-field with the
     // name "implicit_node_ids", then populate the field with the correct
     // data.
-    const stk::mesh::MetaData &meta = stk::mesh::MetaData::get(bulk);
+    const stk::mesh::MetaData &meta = bulk.mesh_meta_data();
     stk::mesh::FieldBase *implicit_node_id_field = meta.get_field(stk::topology::NODE_RANK, "implicit_node_ids");
     if (implicit_node_id_field) {
         stk::io::field_data_from_ioss(bulk, implicit_node_id_field, nodes, nb, "implicit_ids");
@@ -647,7 +661,7 @@ template void process_node_coords_and_attributes<int64_t>(Ioss::Region &region, 
 template <typename INT>
 void process_elem_attributes_and_implicit_ids(Ioss::Region &region, stk::mesh::BulkData &bulk, const bool shouldAutoLoadAttributes)
 {
-    const stk::mesh::MetaData& meta = stk::mesh::MetaData::get(bulk);
+    const stk::mesh::MetaData& meta = bulk.mesh_meta_data();
 
     const Ioss::ElementBlockContainer& elem_blocks = region.get_element_blocks();
     for(Ioss::ElementBlockContainer::const_iterator it = elem_blocks.begin();
@@ -659,13 +673,6 @@ void process_elem_attributes_and_implicit_ids(Ioss::Region &region, stk::mesh::B
             if (part == nullptr)
             {
                 continue;
-            }
-
-            stk::topology topo = part->topology();
-            if (topo == stk::topology::INVALID_TOPOLOGY) {
-                std::ostringstream msg ;
-                msg << " INTERNAL_ERROR: Part " << part->name() << " has invalid topology";
-                throw std::runtime_error( msg.str() );
             }
 
             // See if we need to get the list of elements...
@@ -693,8 +700,8 @@ void process_elem_attributes_and_implicit_ids(Ioss::Region &region, stk::mesh::B
 
             std::vector<INT> elem_ids ;
             entity->get_field_data("ids", elem_ids);
-
             size_t element_count = elem_ids.size();
+
             std::vector<stk::mesh::Entity> elements;
             elements.reserve(element_count);
 
@@ -760,7 +767,7 @@ void process_nodesets_df(Ioss::Region &region, stk::mesh::BulkData &bulk)
     // Should only process nodes that have already been defined via the element
     // blocks connectivity lists.
     const Ioss::NodeSetContainer& node_sets = region.get_nodesets();
-    const stk::mesh::MetaData &meta = stk::mesh::MetaData::get(bulk);
+    const stk::mesh::MetaData &meta = bulk.mesh_meta_data();
 
     NodesetMap nodesetMap;
 

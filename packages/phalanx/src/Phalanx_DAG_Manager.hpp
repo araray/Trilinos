@@ -41,7 +41,6 @@
 // ************************************************************************
 // @HEADER
 
-
 #ifndef PHX_DAG_MANAGER_HPP
 #define PHX_DAG_MANAGER_HPP
 
@@ -173,16 +172,24 @@ namespace PHX {
      */
     const std::vector<Teuchos::RCP<PHX::FieldTag>>& getFieldTags();
 
+    /// Returns true if sortAndOrderEvaluators has been called.
     bool sortingCalled() const;
 
+    /// Write the DAG to file in graphviz/dot format. This is the deprecated version.
     void writeGraphvizFile(const std::string filename,
 			   bool writeEvaluatedFields,
 			   bool writeDependentFields,
 			   bool debugRegisteredEvaluators) const;
 
+    /// Write the DAG to file in graphviz/dot format.
     void writeGraphvizFileNew(const std::string filename,
 			      bool writeEvaluatedFields,
 			      bool writeDependentFields) const;
+
+    /// Write the DAG to std::ostream in graphviz/dot format.
+    void writeGraphviz(std::ostream& os,
+                       bool writeEvaluatedFields,
+                       bool writeDependentFields) const;
 
     //! Printing
     void print(std::ostream& os) const;
@@ -230,6 +237,19 @@ namespace PHX {
     */
     const std::unordered_map<std::string,std::pair<int,int>>& getFieldUseRange();
 
+    /** Returns a set of field tags for fields that the user has
+        requested to NOT be shared with any other field. Unshared
+        fields are used to trade off increased memory use for a
+        reduction in flops for an evalautor. Unshared fields are a
+        corner case where the user can leverage special knowledge
+        about how data in a field changes across evaluations. One
+        example use case is for FAD types during a Gather operation,
+        where we know the off diagonal entries are always zero. The
+        evaluator can zero out the FAD array during initialization and
+        only change the diagonal (seed value) during an evalaution.
+     */
+    const std::unordered_map<std::string,Teuchos::RCP<PHX::FieldTag>>& getUnsharedFields();
+
     /** \brief Print to user specified ostream when each evaluator
         starts and stops. Useful for debugging. Enabled only in debug
         builds.
@@ -237,6 +257,20 @@ namespace PHX {
         @param [in] ostr RCP to output stream. If set to null, this disables printing.
     */
     void printEvaluatorStartStopMessage(const Teuchos::RCP<std::ostream>& ostr);
+
+    /// Returns all fields that the user requested to to be evaluated by the field manager.
+    const std::vector<Teuchos::RCP<PHX::FieldTag>>& getRequiredFields() const;
+
+    /** Returns the internal fields this DagManager can currently
+        evaluate and the index into the DAG node vector. This function
+        is provided only for query, debug and unit testing.
+    */
+    const std::unordered_map<std::string,int>& queryRegisteredFields() const;
+
+    /** Returns all nodes registered with the DagManager. This
+        function is provided only for query, debug and unit testing.
+     */
+    const std::vector<PHX::DagNode<Traits>>& queryRegisteredEvaluators() const;
 
   protected:
 
@@ -319,6 +353,15 @@ namespace PHX {
 
     //! Field use range for topologically sorted evalautors. Key is field identifier, value is inclusive start/stop range.
     std::unordered_map<std::string,std::pair<int,int>> field_use_range_;
+
+    //! True if the field use range has been evaluated.
+    bool field_use_range_evaluated_;
+
+    //! Fields the user has requested to NOT share memory.
+    std::unordered_map<std::string,Teuchos::RCP<PHX::FieldTag>> unshared_;
+
+    //! True if the unshared fields have been evaluated.
+    bool unshared_evaluated_;
   };
   
   template<typename Traits>

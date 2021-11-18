@@ -56,7 +56,7 @@
    The HAVE_TPETRA_TSQR macro tells you whether it is safe to use TSQR
    in Tpetra (and downstream packages).  TSQR is enabled by default in
    Tpetra if KokkosTSQR is enabled, but users may turn off TSQR by
-   setting Tpetra_ENABLE_TSQR to OFF. */
+   setting TpetraCore_ENABLE_TSQR to OFF. */
 #cmakedefine HAVE_TPETRACORE_TPETRATSQR
 #ifdef HAVE_TPETRACORE_TPETRATSQR
 #  define HAVE_TPETRA_KOKKOSTSQR
@@ -66,14 +66,15 @@
 /* Define when building TpetraCore with TSQR enabled.  TSQR is enabled
    by default in TpetraCore if the TpetraTSQR subpackage is enabled.
    Users may turn off TSQR even if TpetraTSQR is enabled, by setting
-   Tpetra_ENABLE_TSQR to OFF. */
+   TpetraCore_ENABLE_TSQR to OFF. */
 #cmakedefine HAVE_TPETRA_TSQR
 
 /* Define when enabling the Murmur hash function in Tpetra */
 #cmakedefine TPETRA_USE_MURMUR_HASH
 
-/* Define when enabling KokkosContainers in Tpetra */
+/* Tpetra timers */
 #cmakedefine HAVE_TPETRA_MMM_TIMINGS
+#cmakedefine HAVE_TPETRA_DISTRIBUTOR_TIMINGS
 
 /* Define when enabling KokkosCore in Tpetra */
 #cmakedefine HAVE_TPETRACORE_KOKKOSCORE
@@ -131,6 +132,7 @@
 /* List of enabled Scalar types */
 #cmakedefine HAVE_TPETRA_INST_FLOAT
 #cmakedefine HAVE_TPETRA_INST_DOUBLE
+#cmakedefine HAVE_TPETRA_INST_LONG_DOUBLE
 #cmakedefine HAVE_TPETRA_INST_COMPLEX_FLOAT
 #cmakedefine HAVE_TPETRA_INST_COMPLEX_DOUBLE
 #cmakedefine HAVE_TPETRA_INST_DD_REAL
@@ -143,6 +145,8 @@
 #cmakedefine HAVE_TPETRA_INST_PTHREAD
 #cmakedefine HAVE_TPETRA_INST_OPENMP
 #cmakedefine HAVE_TPETRA_INST_CUDA
+#cmakedefine HAVE_TPETRA_INST_HIP
+#cmakedefine HAVE_TPETRA_INST_SYCL
 
 #cmakedefine HAVE_TPETRA_INT_INT
 #cmakedefine HAVE_TPETRA_INT_LONG
@@ -152,6 +156,7 @@
 
 #cmakedefine HAVE_TPETRA_FLOAT
 #cmakedefine HAVE_TPETRA_DOUBLE
+#cmakedefine HAVE_TPETRA_LONG_DOUBLE
 #cmakedefine HAVE_TPETRA_COMPLEX_FLOAT
 #cmakedefine HAVE_TPETRA_COMPLEX_DOUBLE
 #cmakedefine HAVE_TPETRA_DD_REAL
@@ -162,6 +167,8 @@
 #cmakedefine HAVE_TPETRA_PTHREAD
 #cmakedefine HAVE_TPETRA_OPENMP
 #cmakedefine HAVE_TPETRA_CUDA
+#cmakedefine HAVE_TPETRA_HIP
+#cmakedefine HAVE_TPETRA_SYCL
 
 #cmakedefine HAVE_TPETRA_THREADED_MKL
 

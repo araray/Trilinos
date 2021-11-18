@@ -34,18 +34,44 @@
 #ifndef _DisconnectBlocks_hpp_
 #define _DisconnectBlocks_hpp_
 #include "DisconnectBlocksImpl.hpp"
+#include "DisconnectTypes.hpp"
 
 namespace stk { namespace mesh { class BulkData; } }
 
 namespace stk {
 namespace tools {
 
-    void disconnect_all_blocks(stk::mesh::BulkData& bulk, bool preserveOrphans = false);
-    void disconnect_block_pairs(stk::mesh::BulkData& bulk, const std::vector<impl::BlockPairType>& blockPairsToDisconnect,
-                                impl::LinkInfo& info);
-    void reconnect_block_pairs(stk::mesh::BulkData& bulk, const std::vector<impl::BlockPairType>& blockPairsToDisconnect,
-                                impl::LinkInfo& info);
+enum DisconnectOption {
+  DISCONNECT_GLOBAL,
+  DISCONNECT_LOCAL
+};
+
+enum SnipOption {
+  PRESERVE_INITIAL_HINGES,
+  SNIP_ALL_HINGES
+};
+
+struct DisconnectBlocksOption {
+  DisconnectBlocksOption()
+   : disconnectOption(DISCONNECT_GLOBAL)
+   , snipOption(PRESERVE_INITIAL_HINGES)
+  {}
+
+  DisconnectBlocksOption(DisconnectOption disconnectOption_, SnipOption snipOption_)
+   : disconnectOption(disconnectOption_)
+   , snipOption(snipOption_)
+  {}
+
+  DisconnectOption disconnectOption;
+  SnipOption snipOption;
+};
+
+void disconnect_all_blocks(stk::mesh::BulkData& bulk, bool preserveOrphans = false);
+void disconnect_all_blocks(stk::mesh::BulkData & bulk, impl::LinkInfo& info, bool preserveOrphans = false);
+void disconnect_user_blocks(stk::mesh::BulkData& bulk, const BlockPairVector& blockPairsToDisconnect,
+                            DisconnectBlocksOption options = DisconnectBlocksOption());
 }
+
 }
 
 #endif

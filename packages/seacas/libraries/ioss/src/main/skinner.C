@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #include <algorithm>
 #include <cstddef>
@@ -68,6 +42,34 @@ namespace {
   template <typename INT> void skinner(Skinner::Interface &interFace, INT /*dummy*/);
   std::string                  codename;
   std::string                  version = "0.99";
+
+  void output_table(const Ioss::ElementBlockContainer &             ebs,
+                    std::map<std::string, std::vector<Ioss::Face>> &boundary_faces)
+  {
+    // Get maximum name and face_count length...
+    size_t max_name = std::string("Block Name").length();
+    size_t max_face = std::string("Face Count").length();
+    for (auto &eb : ebs) {
+      const std::string &name = eb->name();
+      if (name.length() > max_name) {
+        max_name = name.length();
+      }
+      size_t face_width = Ioss::Utils::number_width(boundary_faces[name].size());
+      max_face          = face_width > max_face ? face_width : max_face;
+    }
+    max_name += 4; // Padding
+    max_face += 4;
+
+    fmt::print("\t+{2:-^{0}}+{2:-^{1}}+\n", max_name, max_face, "");
+    fmt::print("\t|{2:^{0}}|{3:^{1}}|\n", max_name, max_face, "Block Name", "Face Count");
+    fmt::print("\t+{2:-^{0}}+{2:-^{1}}+\n", max_name, max_face, "");
+    for (auto &eb : ebs) {
+      const std::string &name = eb->name();
+      fmt::print("\t|{2:^{0}}|{3:{1}L}  |\n", max_name, max_face - 2, name,
+                 boundary_faces[name].size());
+    }
+    fmt::print("\t+{2:-^{0}}+{2:-^{1}}+\n", max_name, max_face, "");
+  }
 } // namespace
 
 int main(int argc, char *argv[])
@@ -117,7 +119,7 @@ int main(int argc, char *argv[])
   double end = Ioss::Utils::timer();
 
   if (my_rank == 0) {
-    fmt::print("\n\tTotal Execution time = {} seconds\n", end - begin);
+    fmt::print("\n\tTotal Execution Time = {:.4} seconds\n", end - begin);
     fmt::print("\n{} execution successful.\n\n", codename);
   }
   return EXIT_SUCCESS;
@@ -159,14 +161,11 @@ namespace {
     Ioss::FaceGenerator face_generator(region);
     face_generator.generate_faces((INT)0, true);
 
-    if (interFace.no_output()) {
-      return;
-    }
-
     // Get vector of all boundary faces which will be output as the skin...
+
     std::map<std::string, std::vector<Ioss::Face>> boundary_faces;
     const Ioss::ElementBlockContainer &            ebs = region.get_element_blocks();
-    for (auto eb : ebs) {
+    for (auto &eb : ebs) {
       const std::string &name     = eb->name();
       auto &             boundary = boundary_faces[name];
       auto &             faces    = face_generator.faces(name);
@@ -175,6 +174,11 @@ namespace {
           boundary.push_back(face);
         }
       }
+    }
+    output_table(ebs, boundary_faces);
+
+    if (interFace.no_output()) {
+      return;
     }
 
     // Iterate the boundary faces and determine which nodes are referenced...
@@ -256,7 +260,7 @@ namespace {
     // block (wedge -> tri and quad).
 
     // Count faces per element block and create output element block...
-    for (auto eb : ebs) {
+    for (auto &eb : ebs) {
       const std::string &name      = eb->name();
       auto &             boundary  = boundary_faces[name];
       auto               face_topo = eb->topology()->face_type(0);
@@ -288,7 +292,7 @@ namespace {
 
     bool use_face_hash_ids = interFace.useFaceHashIds_;
     INT  fid               = 0;
-    for (auto eb : ebs) {
+    for (auto &eb : ebs) {
       const std::string &name       = eb->name();
       auto &             boundary   = boundary_faces[name];
       auto *             block      = output_region.get_element_block(name);
@@ -326,7 +330,7 @@ namespace {
 
   Ioss::PropertyManager set_properties(Skinner::Interface &interFace)
   {
-    Ioss::PropertyManager properties;
+    Ioss::PropertyManager properties{};
     if (interFace.ints_64_bit()) {
       properties.add(Ioss::Property("INTEGER_SIZE_DB", 8));
       properties.add(Ioss::Property("INTEGER_SIZE_API", 8));

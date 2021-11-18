@@ -65,6 +65,14 @@ public:
   typedef typename MatrixType::global_ordinal_type global_ordinal_type;
   typedef typename MatrixType::node_type node_type;
   typedef typename Teuchos::ScalarTraits<scalar_type>::magnitudeType magnitude_type;
+  typedef typename MatrixType::global_inds_host_view_type global_inds_host_view_type;
+  typedef typename MatrixType::local_inds_host_view_type local_inds_host_view_type;
+  typedef typename MatrixType::values_host_view_type values_host_view_type;
+
+  typedef typename MatrixType::nonconst_global_inds_host_view_type nonconst_global_inds_host_view_type;
+  typedef typename MatrixType::nonconst_local_inds_host_view_type nonconst_local_inds_host_view_type;
+  typedef typename MatrixType::nonconst_values_host_view_type nonconst_values_host_view_type;
+
   using row_matrix_type = Tpetra::RowMatrix<scalar_type, local_ordinal_type,
 					    global_ordinal_type, node_type>;
 
@@ -99,10 +107,6 @@ public:
   //! The communicator over which the matrix is distributed.
   virtual Teuchos::RCP<const Teuchos::Comm<int> > getComm() const;
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  //! The matrix's Node instance.
-  virtual TPETRA_DEPRECATED Teuchos::RCP<node_type> getNode() const;
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
   //! The Map that describes the distribution of rows over processes.
   virtual Teuchos::RCP<const Tpetra::Map<local_ordinal_type, global_ordinal_type, node_type> >
@@ -213,10 +217,16 @@ public:
   */
   virtual void
   getGlobalRowCopy (global_ordinal_type GlobalRow,
+                    nonconst_global_inds_host_view_type &Indices,
+                    nonconst_values_host_view_type &Values,
+                    size_t& NumEntries) const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+  virtual void
+  getGlobalRowCopy (global_ordinal_type GlobalRow,
                     const Teuchos::ArrayView<global_ordinal_type> &Indices,
                     const Teuchos::ArrayView<scalar_type> &Values,
                     size_t &NumEntries) const;
-
+#endif
   //! Extract a list of entries in a specified local row of the graph. Put into storage allocated by calling routine.
   /*!
     \param LocalRow - (In) Local row number for which indices are desired.
@@ -230,9 +240,16 @@ public:
   */
   virtual void
   getLocalRowCopy (local_ordinal_type LocalRow,
+                   nonconst_local_inds_host_view_type &Indices,
+                   nonconst_values_host_view_type &Values,
+                   size_t& NumEntries) const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+  virtual void
+  getLocalRowCopy (local_ordinal_type LocalRow,
                    const Teuchos::ArrayView<local_ordinal_type> &Indices,
                    const Teuchos::ArrayView<scalar_type> &Values,
                    size_t &NumEntries) const;
+#endif
 
   //! Extract a const, non-persisting view of global indices in a specified row of the matrix.
   /*!
@@ -246,9 +263,14 @@ public:
   */
   virtual void
   getGlobalRowView (global_ordinal_type GlobalRow,
+                    global_inds_host_view_type &indices,
+                    values_host_view_type &values) const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+  virtual void
+  getGlobalRowView (global_ordinal_type GlobalRow,
                     Teuchos::ArrayView<const global_ordinal_type> &indices,
                     Teuchos::ArrayView<const scalar_type> &values) const;
-
+#endif
   //! Extract a const, non-persisting view of local indices in a specified row of the matrix.
   /*!
     \param LocalRow - (In) Local row number for which indices are desired.
@@ -259,10 +281,16 @@ public:
 
     Note: If \c LocalRow does not belong to this node, then \c indices is set to null.
   */
+ virtual void
+  getLocalRowView (local_ordinal_type LocalRow,
+                   local_inds_host_view_type & indices,
+                   values_host_view_type & values) const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
   virtual void
   getLocalRowView (local_ordinal_type LocalRow,
                    Teuchos::ArrayView<const local_ordinal_type> &indices,
                    Teuchos::ArrayView<const scalar_type> &values) const;
+#endif
 
   //! \brief Get a copy of the diagonal entries owned by this node, with local row indices.
   /*! Returns a distributed Vector object partitioned according to this matrix's row map, containing the
@@ -339,6 +367,10 @@ public:
 
   virtual Teuchos::RCP<const row_matrix_type> getUnderlyingMatrix() const;
 
+  Teuchos::RCP<const row_matrix_type> getExtMatrix() const;
+
+  Teuchos::ArrayView<const size_t> getExtHaloStarts() const;
+
 private:
   typedef Tpetra::Map<local_ordinal_type, global_ordinal_type, node_type> map_type;
   typedef Tpetra::Import<local_ordinal_type, global_ordinal_type, node_type> import_type;
@@ -364,14 +396,15 @@ private:
   Teuchos::RCP<const crs_matrix_type> ExtMatrix_;
   Teuchos::RCP<const map_type>        ExtMap_;
   Teuchos::RCP<const import_type>     ExtImporter_;
+  Teuchos::Array<size_t>              ExtHaloStarts_;
 
   //! Graph of the matrix (as returned by getGraph()).
   Teuchos::RCP<const row_graph_type> graph_;
+  //! Used in apply(), to avoid allocation each time.
+  mutable nonconst_local_inds_host_view_type Indices_;
+  //! Used in apply(), to avoid allocation each time.
+  mutable nonconst_values_host_view_type Values_;
 
-  //! Used in apply(), to avoid allocation each time.
-  mutable Teuchos::Array<local_ordinal_type> Indices_;
-  //! Used in apply(), to avoid allocation each time.
-  mutable Teuchos::Array<scalar_type> Values_;
 
 }; // class OverlappingRowMatrix
 

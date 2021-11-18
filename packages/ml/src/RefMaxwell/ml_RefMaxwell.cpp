@@ -19,6 +19,7 @@
 #include "Teuchos_ArrayRCP.hpp"
 
 #include "EpetraExt_RowMatrixOut.h"
+#include "EpetraExt_MatrixMatrix.h"
 #include "ml_ifpack_epetra_wrap.h"
 
 
@@ -82,7 +83,7 @@ void FindLocalDirichletLikeRowsFromOnesAndZeros(const Epetra_CrsMatrix & Matrix,
   }/*end for*/
   //  printf("[%2d] Dirichlet Rows Detected 11 %5d/%5d 22 %5d/%5d\n",Matrix.Comm().MyPID(),numBCRows11,Nrows,numBCRows22,Nrows);
   dirichletRows11_rcp.resize(numBCRows11);
-  dirichletRows22_rcp.resize(numBCRows22);
+  dirichletRows22_rcp.resize(numBCRows22); 
 }/*end FindLocalDirichletLikeRowsFromOnesAndZeros*/
 
 
@@ -215,11 +216,11 @@ int ML_Epetra::RefMaxwellPreconditioner::ComputePreconditioner(const bool /* Che
   StartTimer(&t_time_start);
   t_time_curr=t_time_start;
 #endif
-
   int output_level=List_.get("ML output",0);
   output_level=List_.get("output",output_level);
 
   Teuchos::ParameterList dummy;
+  Teuchos::ParameterList List11=List_.get("refmaxwell: 11list",dummy);
 
   /* Validate List */
   Teuchos::ParameterList newList;
@@ -238,7 +239,10 @@ int ML_Epetra::RefMaxwellPreconditioner::ComputePreconditioner(const bool /* Che
   else very_verbose_=verbose_=false;
   aggregate_with_sigma= List_.get("refmaxwell: aggregate with sigma",true);
   bool disable_addon = List_.get("refmaxwell: disable addon",true);
+  std::string matrix11 = List_.get("refmaxwell: 11matrix","SM");
   double rowsum_threshold = List_.get("refmaxwell: rowsum threshold",-1.0);
+
+
 
   /* Nuke everything if we've done this already */
   if(IsComputePreconditionerOK_) DestroyPreconditioner();
@@ -351,7 +355,17 @@ int ML_Epetra::RefMaxwellPreconditioner::ComputePreconditioner(const bool /* Che
     if(verbose_ && !Comm_->MyPID()) printf("EMFP: Aggregating with M1\n");
   }
   // Nuke Dirichlet / Rowsum rows of TMT_Agg_Matrix
-  Apply_BCsToMatrixRows(dirichletNodes11.data(),dirichletNodes11.size(),*TMT_Agg_Matrix_);
+  // CMS - TEST CODE
+  bool use_nodal_dirichlet = List11.get("refmaxwell: use nodal dirichlet aggregation",false);
+  if(use_nodal_dirichlet) {
+    int dim = List11.get<int>("PDE equations");
+    if(verbose_ && !Comm_->MyPID()) printf("EMFP: Using nodal dirichlet aggregation %d pdes/node\n",dim);
+    Apply_BCsToMatrixRowsNodal(dirichletNodes11.data(),dirichletNodes11.size(), List11.get<int>("PDE equations"),*TMT_Agg_Matrix_);
+  }
+  else {
+    if(verbose_ && !Comm_->MyPID()) printf("EMFP: Using normal dirichlet conditions\n");
+    //    Apply_BCsToMatrixRows(dirichletNodes11.data(),dirichletNodes11.size(),*TMT_Agg_Matrix_);
+  }
 
   Remove_Zeroed_Rows(*TMT_Agg_Matrix_);
 
@@ -408,10 +422,31 @@ int ML_Epetra::RefMaxwellPreconditioner::ComputePreconditioner(const bool /* Che
 #endif
 
   /* Build the (1,1) Block Operator, if needed */
-  if(disable_addon)
-    Operator11_=rcp((Epetra_CrsMatrix*)SM_Matrix_,false);
+#ifdef ENABLE_MS_MATRIX
+  if (matrix11 == "M") {
+    if(verbose_ && !Comm_->MyPID()) 
+      printf("Using the 'M' Matrix for (1,1)\n");      
+    Operator11_=rcp((Epetra_CrsMatrix*)Ms_Matrix_,false);
+  }
+  else if(matrix11 == "S") {
+    if(verbose_ && !Comm_->MyPID()) 
+      printf("Using the 'S' Matrix for (1,1)\n");      
+    Epetra_CrsMatrix* S=0;
+    EpetraExt::MatrixMatrix::Add(*(Epetra_CrsMatrix*)SM_Matrix_,false,1.0,*(Epetra_CrsMatrix*)Ms_Matrix_,false,-1.0,S);
+    S->FillComplete();
+    Operator11_ = rcp(S);
+  }
   else
-    Operator11_=rcp(new ML_RefMaxwell_11_Operator(*SM_Matrix_,*D0_Matrix_,*M0inv_Matrix_,*M1_Matrix_));
+#endif
+  {
+    if(verbose_ && !Comm_->MyPID()) 
+      printf("Using the 'S+M' Matrix for (1,1)\n");      
+
+    if(disable_addon)
+      Operator11_=rcp((Epetra_CrsMatrix*)SM_Matrix_,false);
+    else
+      Operator11_=rcp(new ML_RefMaxwell_11_Operator(*SM_Matrix_,*D0_Matrix_,*M0inv_Matrix_,*M1_Matrix_));
+  }
 
 #ifdef ML_TIMING
   StopTimer(&t_time_curr,&(t_diff[3]));
@@ -427,7 +462,6 @@ int ML_Epetra::RefMaxwellPreconditioner::ComputePreconditioner(const bool /* Che
 
   /* Build the (1,1) Block Preconditioner */
   std::string solver11=List_.get("refmaxwell: 11solver","edge matrix free");
-  Teuchos::ParameterList List11=List_.get("refmaxwell: 11list",dummy);
   if (List11.name() == "ANONYMOUS") List11.setName("refmaxwell: 11list");
   if(solver11=="edge matrix free") {
     if(verbose_ && !Comm_->MyPID()) printf("Using EMFP for edge coarse problem\n");
@@ -990,6 +1024,7 @@ int ML_Epetra::SetDefaultsRefMaxwell(Teuchos::ParameterList & inList,bool OverWr
   List11.set("cycle applications",1);
   List11.set("aggregation: type","Uncoupled");
   List11.set("smoother: sweeps",0);
+  List11.set("aggregation: damping factor",0.0);
   List11.set("edge matrix free: coarse",List11c);
   List11.set("aggregation: threshold",.01);
   ML_Epetra::UpdateList(List11,List11_,OverWrite);

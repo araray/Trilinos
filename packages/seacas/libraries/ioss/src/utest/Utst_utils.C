@@ -1,6 +1,13 @@
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
+// of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+// NTESS, the U.S. Government retains certain rights in this software.
+//
+// See packages/seacas/LICENSE for details
+
 #define CATCH_CONFIG_MAIN
 #include <catch.hpp>
 
+#include <Ioss_CodeTypes.h>
 #include <Ioss_Utils.h>
 #include <exception>
 #include <numeric>
@@ -26,7 +33,7 @@ TEST_CASE("number_width", "[number_width]")
 
   SECTION("triple digit")
   {
-    for (int i = 111; i < 1000; i += 111) {
+    for (int i = 111; i < 1'000; i += 111) {
       REQUIRE(3 == Ioss::Utils::number_width(i));
       REQUIRE(3 == Ioss::Utils::number_width(i, true));
     }
@@ -34,7 +41,7 @@ TEST_CASE("number_width", "[number_width]")
 
   SECTION("quad digit")
   {
-    for (int i = 1111; i < 10000; i += 1111) {
+    for (int i = 1111; i < 10'000; i += 1111) {
       REQUIRE(4 == Ioss::Utils::number_width(i));
       REQUIRE(5 == Ioss::Utils::number_width(i, true));
     }
@@ -42,13 +49,52 @@ TEST_CASE("number_width", "[number_width]")
 
   SECTION("larger")
   {
-    REQUIRE(6 == Ioss::Utils::number_width(999999));
-    REQUIRE(7 == Ioss::Utils::number_width(999999, true));
-    REQUIRE(7 == Ioss::Utils::number_width(1000000));
-    REQUIRE(9 == Ioss::Utils::number_width(1000000, true));
-    REQUIRE(10 == Ioss::Utils::number_width(1111111111));
-    REQUIRE(13 == Ioss::Utils::number_width(1111111111, true));
+    REQUIRE(6 == Ioss::Utils::number_width(999'999));
+    REQUIRE(7 == Ioss::Utils::number_width(999'999, true));
+    REQUIRE(7 == Ioss::Utils::number_width(1'000'000));
+    REQUIRE(9 == Ioss::Utils::number_width(1'000'000, true));
+    REQUIRE(10 == Ioss::Utils::number_width(1'111'111'111));
+    REQUIRE(13 == Ioss::Utils::number_width(1'111'111'111, true));
+#if !defined(__IOSS_WINDOWS__)
+    REQUIRE(15 == Ioss::Utils::number_width(111'111'111'111, true));
+#endif
   }
+}
+
+#if !defined __NVCC__
+TEST_CASE("str_equal", "[str_equal]")
+{
+  REQUIRE(Ioss::Utils::str_equal("", ""));
+  REQUIRE(!Ioss::Utils::str_equal("", "a"));
+  REQUIRE(!Ioss::Utils::str_equal("a", ""));
+  REQUIRE(Ioss::Utils::str_equal("a", "a"));
+  REQUIRE(Ioss::Utils::str_equal("A", "a"));
+  REQUIRE(Ioss::Utils::str_equal("a", "A"));
+
+  REQUIRE(Ioss::Utils::str_equal("longer_than_single_character", "longer_than_single_character"));
+  REQUIRE(Ioss::Utils::str_equal("longer_than_single_character", "LONGER_THAN_SINGLE_CHARACTER"));
+  REQUIRE(Ioss::Utils::str_equal("LONGER_THAN_SINGLE_CHARACTER", "longer_than_single_character"));
+  REQUIRE(Ioss::Utils::str_equal("LONGER_THAN_SINGLE_CHARACTER", "LONGER_THAN_SINGLE_CHARACTER"));
+  REQUIRE(Ioss::Utils::str_equal("LoNgEr_ThAn_SiNgLe_ChArAcTeR", "lOnGeR_tHaN_sInGlE_cHaRaCtEr"));
+
+  REQUIRE(!Ioss::Utils::str_equal("Almost_The_Same", "almost_the_sam"));
+}
+
+TEST_CASE("substr_equal", "[substr_equal]")
+{
+  REQUIRE(Ioss::Utils::substr_equal("", ""));
+  REQUIRE(Ioss::Utils::substr_equal("", "a"));
+  REQUIRE(!Ioss::Utils::substr_equal("a", ""));
+  REQUIRE(Ioss::Utils::substr_equal("a", "a"));
+  REQUIRE(Ioss::Utils::substr_equal("A", "a"));
+  REQUIRE(Ioss::Utils::substr_equal("a", "A"));
+
+  REQUIRE(!Ioss::Utils::substr_equal("prefix", "pref"));
+  REQUIRE(Ioss::Utils::substr_equal("prefix", "PREFIX"));
+  REQUIRE(Ioss::Utils::substr_equal("pre", "PREFIX"));
+  REQUIRE(Ioss::Utils::substr_equal("pre", "prefix"));
+  REQUIRE(Ioss::Utils::substr_equal("PRe", "prefix"));
+  REQUIRE(Ioss::Utils::substr_equal("PRe", "PREFIX"));
 }
 
 TEST_CASE("format_id_list", "[format_id_list]")
@@ -115,7 +161,7 @@ TEST_CASE("format_id_list", "[format_id_list]")
 
   SECTION("ids large range")
   {
-    std::vector<size_t> range(100000);
+    std::vector<size_t> range(100'000);
     std::iota(range.begin(), range.end(), 42);
     std::string ret = Ioss::Utils::format_id_list(range, "--");
     REQUIRE(ret == std::string("42--100041"));
@@ -123,7 +169,7 @@ TEST_CASE("format_id_list", "[format_id_list]")
 
   SECTION("ids large range with singles")
   {
-    std::vector<size_t> range(100000);
+    std::vector<size_t> range(100'000);
     std::iota(range.begin(), range.end(), 42);
     range[0] = 1;
     range[range.size() - 1]++;
@@ -133,7 +179,7 @@ TEST_CASE("format_id_list", "[format_id_list]")
 
   SECTION("ids large range with singles with to")
   {
-    std::vector<size_t> range(100000);
+    std::vector<size_t> range(100'000);
     std::iota(range.begin(), range.end(), 42);
     range[0] = 1;
     range[range.size() - 1]++;
@@ -143,7 +189,7 @@ TEST_CASE("format_id_list", "[format_id_list]")
 
   SECTION("ids large range with singles with colon")
   {
-    std::vector<size_t> range(100000);
+    std::vector<size_t> range(100'000);
     std::iota(range.begin(), range.end(), 42);
     range[0] = 1;
     range[range.size() - 1]++;
@@ -153,7 +199,7 @@ TEST_CASE("format_id_list", "[format_id_list]")
 
   SECTION("ids large range with singles with words")
   {
-    std::vector<size_t> range(100000);
+    std::vector<size_t> range(100'000);
     std::iota(range.begin(), range.end(), 42);
     range[0] = 1;
     range[range.size() - 1]++;
@@ -170,3 +216,4 @@ TEST_CASE("format_id_list", "[format_id_list]")
     CHECK_THROWS(Ioss::Utils::format_id_list({1, 2, 3, 3, 4, 5, 6}));
   }
 }
+#endif

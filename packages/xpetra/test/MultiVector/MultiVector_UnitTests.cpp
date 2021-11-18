@@ -465,6 +465,7 @@ namespace {
   ////
   TEUCHOS_UNIT_TEST_TEMPLATE_7_DECL( MultiVector, NonMemberConstructorsEpetra, M, MV, V, Scalar, LocalOrdinal, GlobalOrdinal, Node )
   {
+#ifdef HAVE_XPETRA_EPETRA
     // typedef typename ScalarTraits<Scalar>::magnitudeType Magnitude;
     const global_size_t INVALID = OrdinalTraits<global_size_t>::invalid();
     RCP<const Comm<int> > comm = getDefaultComm();
@@ -476,7 +477,6 @@ namespace {
     RCP<const Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> > map =
         Xpetra::UnitTestHelpers::createContigMapWithNode<LocalOrdinal,GlobalOrdinal,Node>(mylib, INVALID,numLocal,comm);
     //Xpetra::MapFactory<LocalOrdinal,GlobalOrdinal,Node>::Build(Xpetra::UseEpetra, INVALID, numLocal, 0, comm);
-#ifdef HAVE_XPETRA_EPETRA
     if(mylib==Xpetra::UseEpetra) {
       RCP<const Xpetra::EpetraMapT<GlobalOrdinal,Node> > emap = Teuchos::rcp_dynamic_cast<const Xpetra::EpetraMapT<GlobalOrdinal,Node> >(map);
       RCP<Epetra_MultiVector> mvec = Teuchos::rcp(new Epetra_MultiVector(emap->getEpetra_Map(),numVecs));
@@ -543,7 +543,7 @@ namespace {
     #endif
     {
       if(!(is_same<typename MV::scalar_type, int>::value || is_same<typename MV::scalar_type, long long int>::value)) {
-        std::cout << "Running the norm tests!" << std::endl;
+        out << "Running the norm tests!" << std::endl;
         // we zeroed it out in the constructor; all norms should be zero
         Array<Magnitude> norms(numVecs), zeros(numVecs);
         std::fill(zeros.begin(),zeros.end(),ScalarTraits<Magnitude>::zero());
@@ -559,7 +559,7 @@ namespace {
     Scalar testValue = 2, sumValue = 3;
     LocalOrdinal  testLID = 7;
     GlobalOrdinal testGID = myRank*numLocal + testLID;
-    std::cout << "myRank: " << myRank << ", testGID=" << testGID << std::endl;
+    out << "myRank: " << myRank << ", testGID=" << testGID << std::endl;
     mvec.replaceLocalValue(testLID, 3, testValue);
     mvec.replaceLocalValue(testLID, 4, testValue);
     mvec.sumIntoLocalValue(testLID, 4, sumValue);
@@ -2506,6 +2506,14 @@ namespace {
       typedef Xpetra::EpetraMapT<GlobalOrdinal, Kokkos::Compat::KokkosCudaWrapperNode> mm;
       TEST_THROW(mm(10, 0, comm), Xpetra::Exceptions::RuntimeError);
       typedef Xpetra::EpetraMultiVectorT<GlobalOrdinal, Kokkos::Compat::KokkosCudaWrapperNode> mx;
+      TEST_THROW(mx(Teuchos::null, 3), Xpetra::Exceptions::RuntimeError);
+    }
+#endif
+#if defined(HAVE_XPETRA_TPETRA) && defined(HAVE_TPETRA_INST_HIP)
+    {
+      typedef Xpetra::EpetraMapT<GlobalOrdinal, Kokkos::Compat::KokkosHIPWrapperNode> mm;
+      TEST_THROW(mm(10, 0, comm), Xpetra::Exceptions::RuntimeError);
+      typedef Xpetra::EpetraMultiVectorT<GlobalOrdinal, Kokkos::Compat::KokkosHIPWrapperNode> mx;
       TEST_THROW(mx(Teuchos::null, 3), Xpetra::Exceptions::RuntimeError);
     }
 #endif

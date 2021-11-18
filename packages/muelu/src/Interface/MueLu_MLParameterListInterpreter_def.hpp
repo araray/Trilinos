@@ -49,11 +49,12 @@
 #include <Teuchos_XMLParameterListHelpers.hpp>
 
 #include "MueLu_ConfigDefs.hpp"
-#if defined(HAVE_MUELU_ML) && defined(HAVE_MUELU_EPETRA)
+#if defined(HAVE_MUELU_ML)
 #include <ml_ValidateParameters.h>
 #endif
 
 #include <Xpetra_Matrix.hpp>
+#include <Xpetra_MatrixUtils.hpp>
 #include <Xpetra_MultiVector.hpp>
 #include <Xpetra_MultiVectorFactory.hpp>
 #include <Xpetra_Operator.hpp>
@@ -196,10 +197,26 @@ namespace MueLu {
 
     // pull out "use kokkos refactor"
     bool setKokkosRefactor = false;
-#if ( defined(HAVE_MUELU_KOKKOS_REFACTOR) && defined(HAVE_MUELU_KOKKOS_REFACTOR_USE_BY_DEFAULT) )
-    bool useKokkosRefactor = true;
+    bool useKokkosRefactor;
+#if !defined(HAVE_MUELU_KOKKOS_REFACTOR)
+    useKokkosRefactor = false;
 #else
-    bool useKokkosRefactor = false;
+# ifdef HAVE_MUELU_SERIAL
+    if (typeid(Node).name() == typeid(Kokkos::Compat::KokkosSerialWrapperNode).name())
+      useKokkosRefactor = false;
+# endif
+# ifdef HAVE_MUELU_OPENMP
+    if (typeid(Node).name() == typeid(Kokkos::Compat::KokkosOpenMPWrapperNode).name())
+      useKokkosRefactor = true;
+# endif
+# ifdef HAVE_MUELU_CUDA
+    if (typeid(Node).name() == typeid(Kokkos::Compat::KokkosCudaWrapperNode).name())
+      useKokkosRefactor = true;
+# endif
+# ifdef HAVE_MUELU_HIP
+    if (typeid(Node).name() == typeid(Kokkos::Compat::KokkosHIPWrapperNode).name())
+      useKokkosRefactor = true;
+# endif
 #endif
     if (paramList.isType<bool>("use kokkos refactor")) {
       useKokkosRefactor = paramList.get<bool>("use kokkos refactor");
@@ -243,6 +260,7 @@ namespace MueLu {
     if (verbosityLevel >= 10) eVerbLevel = High;
     if (verbosityLevel >= 11) eVerbLevel = Extreme;
     if (verbosityLevel >= 42) eVerbLevel = Test;
+    if (verbosityLevel >= 43) eVerbLevel = InterfaceTest;
     this->verbosity_ = eVerbLevel;
 
 
@@ -599,7 +617,7 @@ namespace MueLu {
           Teuchos::ArrayRCP<Scalar> coordsi  = coordinates->getDataNonConst(i);
           const size_t              myLength = coordinates->getLocalLength();
           for (size_t j = 0; j < myLength; j++) {
-            coordsi[j] = coordPTR[0][j];
+            coordsi[j] = coordPTR[i][j];
           }
         }
         fineLevel->Set("Coordinates",coordinates);
@@ -712,7 +730,7 @@ namespace MueLu {
       // Validator: following upper/lower case is what is allowed by ML
       bool valid = false;
       const int  validatorSize = 5;
-      std::string validator[validatorSize] = {"Superlu", "Superludist", "KLU", "UMFPACK"}; /* TODO: should "" be allowed? */
+      std::string validator[validatorSize] = {"Superlu", "Superludist", "KLU", "UMFPACK", "MUMPS"}; /* TODO: should "" be allowed? */
       for (int i=0; i < validatorSize; i++) { if (validator[i] == solverType) valid = true; }
       TEUCHOS_TEST_FOR_EXCEPTION(!valid, Exceptions::RuntimeError, "MueLu::MLParameterListInterpreter: unknown smoother type. '" << type << "' not supported.");
 
@@ -764,11 +782,15 @@ namespace MueLu {
   void MLParameterListInterpreter<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupOperator(Operator & Op) const {
     try {
       Matrix& A = dynamic_cast<Matrix&>(Op);
-      if (A.GetFixedBlockSize() != blksize_)
+      if (A.IsFixedBlockSizeSet() && (A.GetFixedBlockSize() != blksize_))
         this->GetOStream(Warnings0) << "Setting matrix block size to " << blksize_ << " (value of the parameter in the list) "
             << "instead of " << A.GetFixedBlockSize() << " (provided matrix)." << std::endl;
 
       A.SetFixedBlockSize(blksize_);
+
+#ifdef HAVE_MUELU_DEBUG
+      MatrixUtils::checkLocalRowMapMatchesColMap(A);
+#endif // HAVE_MUELU_DEBUG
 
     } catch (std::bad_cast& e) {
       this->GetOStream(Warnings0) << "Skipping setting block size as the operator is not a matrix" << std::endl;

@@ -1,3 +1,5 @@
+INCLUDE(MueluAddSerialAndMpiTest)
+
 ASSERT_DEFINED(
   ${PACKAGE_NAME}_ENABLE_Tpetra
   ${PACKAGE_NAME}_ENABLE_Ifpack2
@@ -28,6 +30,7 @@ ENDIF()
 TRIBITS_ADD_TEST_DIRECTORIES(factories)
 TRIBITS_ADD_TEST_DIRECTORIES(maxwell)
 TRIBITS_ADD_TEST_DIRECTORIES(navierstokes)
+TRIBITS_ADD_TEST_DIRECTORIES(meshtying)
 if (NOT MUELU_VALGRIND_TESTING)
   # JJH 4Feb2014:  This is failing the nightly MPI valgrind test.  It runs fine
   # interactively.  If/when I figure out the cause, I'll reenable this during
@@ -37,11 +40,7 @@ ENDIF()
 TRIBITS_ADD_TEST_DIRECTORIES(permutation)
 TRIBITS_ADD_TEST_DIRECTORIES(profiling)
 TRIBITS_ADD_TEST_DIRECTORIES(simple1D)
-IF(NOT ${PACKAGE_NAME}_ENABLE_Kokkos_Refactor)
-  # AggregationExportFactory can't work with
-  # Aggregates_kokkos (yet)
-  TRIBITS_ADD_TEST_DIRECTORIES(viz)
-ENDIF()
+TRIBITS_ADD_TEST_DIRECTORIES(viz)
 TRIBITS_ADD_TEST_DIRECTORIES(toggletransfer)
 TRIBITS_ADD_TEST_DIRECTORIES(perf_tests)
 

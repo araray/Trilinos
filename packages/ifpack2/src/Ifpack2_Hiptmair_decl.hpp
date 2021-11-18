@@ -48,6 +48,7 @@
 #define IFPACK2_HIPTMAIR_DECL_HPP
 
 #include "Ifpack2_Preconditioner.hpp"
+#include "Tpetra_Map_fwd.hpp"
 #include <type_traits>
 
 namespace Teuchos {
@@ -110,6 +111,10 @@ namespace Ifpack2 {
     // \name Constructors and Destructors
     //@{
 
+    //! Constructor that takes 1 Tpetra matrix (assumes we'll get the rest off the parameter list)
+    explicit Hiptmair (const Teuchos::RCP<const row_matrix_type>& A);
+
+
     //! Constructor that takes 3 Tpetra matrices.
     explicit Hiptmair (const Teuchos::RCP<const row_matrix_type>& A,
                        const Teuchos::RCP<const row_matrix_type>& PtAP,
@@ -132,6 +137,10 @@ namespace Ifpack2 {
     ///   - "hiptmair: pre or post" (\c std::string)
     ///   - "hiptmair: zero starting solution" (\c bool)
     void setParameters (const Teuchos::ParameterList& params);
+
+    bool supportsZeroStartingSolution() { return true; }
+
+    void setZeroStartingSolution (bool zeroStartingSolution) { ZeroStartingSolution_ = zeroStartingSolution; };
 
     //! Do any initialization that depends on the input matrix's structure.
     void initialize ();

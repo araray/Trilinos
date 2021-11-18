@@ -135,9 +135,7 @@ Teko::LinearOp FullMaxwellPreconditionerFactory::buildPreconditionerOperator(Tek
          RCP<const Thyra::TpetraLinearOp<Scalar,LocalOrdinal,GlobalOrdinal,Node> > tOp = rcp_dynamic_cast<const Thyra::TpetraLinearOp<Scalar,LocalOrdinal,GlobalOrdinal,Node> >(K2,true);
          RCP<Thyra::TpetraLinearOp<Scalar,LocalOrdinal,GlobalOrdinal,Node> > tOp2 = Teuchos::rcp_const_cast<Thyra::TpetraLinearOp<Scalar,LocalOrdinal,GlobalOrdinal,Node>>(tOp);
          RCP<Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > crsOp = rcp_dynamic_cast<Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> >(tOp2->getTpetraOperator(),true);
-         crsOp->resumeFill();
          crsOp->scale(dt);
-         crsOp->fillComplete(crsOp->getDomainMap(),crsOp->getRangeMap());
          diffK = Teko::explicitAdd(K, Teko::scale(-1.0,K2));
 
          writeOut("DiscreteCurl.mm",*C);
@@ -266,16 +264,22 @@ Teko::LinearOp FullMaxwellPreconditionerFactory::buildPreconditionerOperator(Tek
          if (useAsPreconditioner)
            invS_E = Teko::buildInverse(*S_E_prec_factory,S_E);
          else {
-           Teko::LinearOp S_E_prec = Teko::buildInverse(*S_E_prec_factory,S_E);
-           invS_E = Teko::buildInverse(*invLib.getInverseFactory("S_E Solve"),S_E,S_E_prec);
+           if (S_E_prec_.is_null())
+             S_E_prec_ = Teko::buildInverse(*S_E_prec_factory,S_E);
+           else
+             Teko::rebuildInverse(*S_E_prec_factory,S_E, S_E_prec_);
+           invS_E = Teko::buildInverse(*invLib.getInverseFactory("S_E Solve"),S_E,S_E_prec_);
          }
        } 
      } else {
        if (useAsPreconditioner)
          invS_E = Teko::buildInverse(*invLib.getInverseFactory("S_E Preconditioner"),S_E);
        else {
-         Teko::LinearOp S_E_prec = Teko::buildInverse(*invLib.getInverseFactory("S_E Preconditioner"),S_E);
-         invS_E = Teko::buildInverse(*invLib.getInverseFactory("S_E Solve"),S_E,S_E_prec);
+         if (S_E_prec_.is_null())
+           S_E_prec_ = Teko::buildInverse(*invLib.getInverseFactory("S_E Preconditioner"),S_E);
+         else
+           Teko::rebuildInverse(*invLib.getInverseFactory("S_E Preconditioner"),S_E, S_E_prec_);
+         invS_E = Teko::buildInverse(*invLib.getInverseFactory("S_E Solve"),S_E,S_E_prec_);
        }
      }
    }
@@ -400,9 +404,9 @@ void FullMaxwellPreconditionerFactory::initializeFromParameterList(const Teuchos
                           Q_B_prec_pl.get<std::string>("Prec Type"),
                           Q_B_prec_pl.sublist("Prec Types"));
 
-   if (S_E_prec_type_ == "MueLuRefMaxwell-Tpetra" || S_E_prec_type_ == "MueLuRefMaxwell" || S_E_prec_type_ == "ML") { // RefMaxwell based solve
+   dt = params.get<double>("dt");
 
-     dt = params.get<double>("dt");
+   if (S_E_prec_type_ == "MueLuRefMaxwell-Tpetra" || S_E_prec_type_ == "MueLuRefMaxwell" || S_E_prec_type_ == "ML") { // RefMaxwell based solve
 
      // S_E solve
      Teuchos::ParameterList ml_pl = pl.sublist("S_E Solve");

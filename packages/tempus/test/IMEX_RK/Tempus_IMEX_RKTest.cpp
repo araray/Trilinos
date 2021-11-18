@@ -36,12 +36,7 @@ using Tempus::IntegratorBasic;
 using Tempus::SolutionHistory;
 using Tempus::SolutionState;
 
-// Comment out any of the following tests to exclude from build/run.
-#define TEST_CONSTRUCTING_FROM_DEFAULTS
-#define TEST_VANDERPOL
 
-
-#ifdef TEST_CONSTRUCTING_FROM_DEFAULTS
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(IMEX_RK, ConstructingFromDefaults)
@@ -68,14 +63,12 @@ TEUCHOS_UNIT_TEST(IMEX_RK, ConstructingFromDefaults)
   // Setup Stepper for field solve ----------------------------
   auto stepper = rcp(new Tempus::StepperIMEX_RK<double>());
   stepper->setModel(model);
-  stepper->setSolver();
   stepper->initialize();
 
   // Setup TimeStepControl ------------------------------------
   auto timeStepControl = rcp(new Tempus::TimeStepControl<double>());
   ParameterList tscPL = pl->sublist("Default Integrator")
                            .sublist("Time Step Control");
-  timeStepControl->setStepType (tscPL.get<std::string>("Integrator Step Type"));
   timeStepControl->setInitIndex(tscPL.get<int>   ("Initial Time Index"));
   timeStepControl->setInitTime (tscPL.get<double>("Initial Time"));
   timeStepControl->setFinalTime(tscPL.get<double>("Final Time"));
@@ -83,10 +76,9 @@ TEUCHOS_UNIT_TEST(IMEX_RK, ConstructingFromDefaults)
   timeStepControl->initialize();
 
   // Setup initial condition SolutionState --------------------
-  Thyra::ModelEvaluatorBase::InArgs<double> inArgsIC =
-    stepper->getModel()->getNominalValues();
+  auto inArgsIC = model->getNominalValues();
   auto icSolution = rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x());
-  auto icState = rcp(new Tempus::SolutionState<double>(icSolution));
+  auto icState = Tempus::createSolutionStateX(icSolution);
   icState->setTime    (timeStepControl->getInitTime());
   icState->setIndex   (timeStepControl->getInitIndex());
   icState->setTimeStep(0.0);
@@ -102,11 +94,10 @@ TEUCHOS_UNIT_TEST(IMEX_RK, ConstructingFromDefaults)
 
   // Setup Integrator -----------------------------------------
   RCP<Tempus::IntegratorBasic<double> > integrator =
-    Tempus::integratorBasic<double>();
-  integrator->setStepperWStepper(stepper);
+    Tempus::createIntegratorBasic<double>();
+  integrator->setStepper(stepper);
   integrator->setTimeStepControl(timeStepControl);
   integrator->setSolutionHistory(solutionHistory);
-  //integrator->setObserver(...);
   integrator->initialize();
 
 
@@ -133,37 +124,51 @@ TEUCHOS_UNIT_TEST(IMEX_RK, ConstructingFromDefaults)
   TEST_FLOATING_EQUALITY(get_ele(*(x), 0),  1.810210, 1.0e-4 );
   TEST_FLOATING_EQUALITY(get_ele(*(x), 1), -0.754602, 1.0e-4 );
 }
-#endif // TEST_CONSTRUCTING_FROM_DEFAULTS
 
 
-#ifdef TEST_VANDERPOL
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(IMEX_RK, VanDerPol)
 {
   std::vector<std::string> stepperTypes;
   stepperTypes.push_back("IMEX RK 1st order");
+  stepperTypes.push_back("SSP1_111"         );
   stepperTypes.push_back("IMEX RK SSP2"     );
+  stepperTypes.push_back("SSP2_222"         );
   stepperTypes.push_back("IMEX RK ARS 233"  );
   stepperTypes.push_back("General IMEX RK"  );
+  stepperTypes.push_back("IMEX RK SSP3"     );
 
   std::vector<double> stepperOrders;
   stepperOrders.push_back(1.07964);
+  stepperOrders.push_back(1.07964); // SSP1_111
   stepperOrders.push_back(2.00408);
+  stepperOrders.push_back(2.76941); //SSP2_222
   stepperOrders.push_back(2.70655);
+  stepperOrders.push_back(2.00211);
   stepperOrders.push_back(2.00211);
 
   std::vector<double> stepperErrors;
   stepperErrors.push_back(0.0046423);
+  stepperErrors.push_back(0.103569); // SSP1_111
   stepperErrors.push_back(0.0154534);
+  stepperErrors.push_back(0.000533759); // SSP2_222
   stepperErrors.push_back(0.000298908);
   stepperErrors.push_back(0.0071546);
+  stepperErrors.push_back(0.0151202);
 
   std::vector<double> stepperInitDt;
+  stepperInitDt.push_back(0.0125);
   stepperInitDt.push_back(0.0125);
   stepperInitDt.push_back(0.05);
   stepperInitDt.push_back(0.05);
   stepperInitDt.push_back(0.05);
+  stepperInitDt.push_back(0.05);
+  stepperInitDt.push_back(0.05);
+
+  TEUCHOS_ASSERT( stepperTypes.size() == stepperOrders.size() );
+  TEUCHOS_ASSERT( stepperTypes.size() == stepperErrors.size() );
+  TEUCHOS_ASSERT( stepperTypes.size() == stepperInitDt.size() );
 
   std::vector<std::string>::size_type m;
   for(m = 0; m != stepperTypes.size(); m++) {
@@ -216,7 +221,7 @@ TEUCHOS_UNIT_TEST(IMEX_RK, VanDerPol)
       // Setup the Integrator and reset initial time step
       pl->sublist("Default Integrator")
          .sublist("Time Step Control").set("Initial Time Step", dt);
-      integrator = Tempus::integratorBasic<double>(pl, model);
+      integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
       // Integrate to timeMax
       bool integratorStatus = integrator->advanceTime();
@@ -235,12 +240,12 @@ TEUCHOS_UNIT_TEST(IMEX_RK, VanDerPol)
       Thyra::copy(*(integrator->getX()),solution.ptr());
       solutions.push_back(solution);
       auto solutionDot = Thyra::createMember(model->get_x_space());
-      Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+      Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
       solutionsDot.push_back(solutionDot);
 
       // Output finest temporal solution for plotting
       // This only works for ONE MPI process
-      if ((n == 0) or (n == nTimeStepSizes-1)) {
+      if ((n == 0) || (n == nTimeStepSizes-1)) {
         std::string fname = "Tempus_"+stepperName+"_VanDerPol-Ref.dat";
         if (n == 0) fname = "Tempus_"+stepperName+"_VanDerPol.dat";
         RCP<const SolutionHistory<double> > solutionHistory =
@@ -254,6 +259,10 @@ TEUCHOS_UNIT_TEST(IMEX_RK, VanDerPol)
     double xDotSlope = 0.0;
     RCP<Tempus::Stepper<double> > stepper = integrator->getStepper();
     //double order = stepper->getOrder();
+
+    // xDot not yet available for IMEX-RK methods, e.g., are not calc. and zero.
+    solutionsDot.clear();
+
     writeOrderError("Tempus_"+stepperName+"_VanDerPol-Error.dat",
                     stepper, StepSize,
                     solutions,    xErrorNorm,    xSlope,
@@ -261,14 +270,12 @@ TEUCHOS_UNIT_TEST(IMEX_RK, VanDerPol)
 
     TEST_FLOATING_EQUALITY( xSlope,        stepperOrders[m],   0.02 );
     TEST_FLOATING_EQUALITY( xErrorNorm[0], stepperErrors[m], 1.0e-4 );
-    // xDot not yet available for IMEX_RK.
     //TEST_FLOATING_EQUALITY( xDotSlope,        1.74898, 0.10 );
     //TEST_FLOATING_EQUALITY( xDotErrorNorm[0],  1.0038, 1.0e-4 );
 
   }
   //Teuchos::TimeMonitor::summarize();
 }
-#endif // TEST_VANDERPOL
 
 
 } // namespace Tempus_Test

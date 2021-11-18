@@ -52,15 +52,16 @@
 
 #include <Teuchos_RCP.hpp>
 #include <Teuchos_Describable.hpp>
-#include <Xpetra_Import.hpp>
-#include <Xpetra_Map.hpp>
 
 #include <Xpetra_Import.hpp>
 #include <Xpetra_ImportFactory.hpp>
-#include <Xpetra_MapFactory.hpp>
+#include <Xpetra_Map_decl.hpp>
+#include <Xpetra_MapFactory_decl.hpp>
 #include <Xpetra_MapUtils.hpp>
-#include <Xpetra_MultiVector.hpp>
+#include <Xpetra_MultiVector_decl.hpp>
 #include <Xpetra_Vector.hpp>
+#include <Xpetra_BlockedMultiVector_decl.hpp>
+#include <Xpetra_MultiVectorFactory_decl.hpp>
 
 namespace Xpetra {
 
@@ -68,7 +69,7 @@ namespace Xpetra {
   // forward declaration of BlockedMultiVector, needed to prevent circular inclusions
   template<class S, class LO, class GO, class N> class BlockedMultiVector;
 
-  // forward declaration of BlockedMap, needed because some functions take them as parameters 
+  // forward declaration of BlockedMap, needed because some functions take them as parameters
   // (This should go away when BlockedMap is converted to ETI)
   template<class LO, class GO, class N> class BlockedMap;
 #endif
@@ -117,9 +118,9 @@ namespace Xpetra {
      * Constructor which accepts a const version
      * of a blocked map
      *
-     * \param map BlockedMap defining the block structure of the multi vector
+     * \param blockedMap BlockedMap defining the block structure of the multi vector
      */
-    MapExtractor(const Teuchos::RCP< const Xpetra::BlockedMap<LocalOrdinal,GlobalOrdinal,Node> > &map);
+    MapExtractor(const Teuchos::RCP<const Xpetra::BlockedMap<LocalOrdinal,GlobalOrdinal,Node>>& blockedMap);
 
 
     //! copy constructor
@@ -195,7 +196,8 @@ namespace Xpetra {
     //@}
 
   private:
-    Teuchos::RCP<const Xpetra::BlockedMap<LocalOrdinal,GlobalOrdinal,Node>> map_;         ///< blocked map containing the sub block maps (either thyra or xpetra mode)
+    //! blocked map containing the sub block maps (either thyra or xpetra mode)
+    Teuchos::RCP<const Xpetra::BlockedMap<LocalOrdinal,GlobalOrdinal,Node>> map_;
   };
 
 

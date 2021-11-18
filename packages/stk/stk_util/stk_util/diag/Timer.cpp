@@ -32,42 +32,17 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <math.h>
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
-#include <functional>
-#include <stdexcept>
-#include <limits>
-
-#include <sys/times.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-
-#ifdef __JVN
-#include <sys/wait.h>
-#endif
-
-#include <stk_util/util/FeatureTest.hpp>
-
-#include <math.h>
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
-#include <functional>
-#include <stdexcept>
-#include <limits>
-
-#include <memory>
-
-#include <stk_util/util/Writer.hpp>
-#include <stk_util/diag/Timer.hpp>
-#include <stk_util/diag/PrintTable.hpp>
-#include <stk_util/parallel/MPI.hpp>
-
-#include <stk_util/util/string_case_compare.hpp>
-
-#include <stk_util/diag/WriterExt.hpp>
+#include "stk_util/diag/Timer.hpp"
+#include "stk_util/diag/WriterExt.hpp"            // for operator<<
+#include "stk_util/stk_config.h"                  // for STK_HAS_MPI
+#include "stk_util/util/Writer.hpp"               // for operator<<, Writer, dendl, pop, push
+#include "stk_util/util/string_case_compare.hpp"  // for equal_case
+#include <algorithm>                              // for find_if
+#include <exception>                              // for exception
+#include <functional>                             // for unary_function
+#include <memory>                                 // for shared_ptr, __shared_ptr_access
+#include <stdexcept>                              // for runtime_error
+#include <vector>                                 // for vector
 
 namespace stk {
 namespace diag {
@@ -351,6 +326,8 @@ private:
    *        specified name.
    */
   TimerImpl *addSubtimer(const std::string &name, TimerMask timer_mask, const TimerSet &timer_set);
+  TimerImpl & child_notifies_of_start();
+  TimerImpl & child_notifies_of_stop();
 
 private:
   std::string           m_name;                 ///< Name of the timer
@@ -358,6 +335,8 @@ private:
   TimerImpl *           m_parentTimer;          ///< Parent timer
   mutable double        m_subtimerLapCount;     ///< Sum of subtimer lap counts and m_lapCount
   unsigned              m_lapStartCount;        ///< Number of pending lap stops
+  unsigned              m_activeChildCount;     ///< How many children timers have been started
+  bool                  m_childCausedStart;     ///< Was this timer started because a child was started?
 
   TimerList             m_subtimerList;         ///< List of subordinate timers
 
@@ -410,6 +389,8 @@ TimerImpl::TimerImpl(
     m_parentTimer(parent_timer),
     m_subtimerLapCount(0.0),
     m_lapStartCount(0),
+    m_activeChildCount(0),
+    m_childCausedStart(false),
     m_subtimerList(),
     m_timerSet(timer_set)
 {}
@@ -472,6 +453,8 @@ void
 TimerImpl::reset()
 {
   m_lapStartCount = 0;
+  m_childCausedStart = false;
+  m_activeChildCount = 0;
 
   m_lapCount.reset();
   m_cpuTime.reset();
@@ -517,7 +500,8 @@ TimerImpl &
 TimerImpl::start()
 {
   if (shouldRecord()) {
-    if (m_lapStartCount++ == 0) {
+    if (m_lapStartCount == 0) {
+      ++m_lapStartCount;
       m_lapCount.m_lapStart = m_lapCount.m_lapStop;
 
       m_cpuTime.m_lapStop = m_cpuTime.m_lapStart = value_now<CPUTime>();
@@ -525,6 +509,8 @@ TimerImpl::start()
       m_MPICount.m_lapStop = m_MPICount.m_lapStart = value_now<MPICount>();
       m_MPIByteCount.m_lapStop = m_MPIByteCount.m_lapStart = value_now<MPIByteCount>();
       m_heapAlloc.m_lapStop = m_heapAlloc.m_lapStart = value_now<HeapAlloc>();
+      if(m_parentTimer)
+        m_parentTimer->child_notifies_of_start();
     }
   }
 
@@ -548,14 +534,38 @@ TimerImpl::lap()
   return *this;
 }
 
+TimerImpl & TimerImpl::child_notifies_of_start()
+{
+  //Start only if not already started and this isn't a root timer
+  if(m_lapStartCount == 0 && m_parentTimer) 
+  {
+    start();
+    m_childCausedStart = true;
+  }
+  m_activeChildCount++;
+
+  return *this;
+}
+
+TimerImpl & TimerImpl::child_notifies_of_stop()
+{
+  m_activeChildCount--;
+  if(m_activeChildCount == 0 && m_childCausedStart)
+  {
+    stop();
+  }
+  return *this;
+}
 
 TimerImpl &
 TimerImpl::stop()
 {
   if (shouldRecord()) {
-    if (--m_lapStartCount <= 0) {
+    if (m_lapStartCount > 0) {
       m_lapStartCount = 0;
       m_lapCount.m_lapStop++;
+      m_childCausedStart = false;
+      m_activeChildCount = 0;
 
       m_cpuTime.m_lapStop = value_now<CPUTime>();
       m_wallTime.m_lapStop = value_now<WallTime>();
@@ -569,6 +579,8 @@ TimerImpl::stop()
       m_MPICount.addLap();
       m_MPIByteCount.addLap();
       m_heapAlloc.addLap();
+      if(m_parentTimer)
+        m_parentTimer->child_notifies_of_stop();
     }
   }
 

@@ -67,14 +67,14 @@ namespace Intrepid2 {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     }
     
-    template<typename ValueType, typename DeviceSpaceType>
+    template<typename ValueType, typename DeviceType>
     int HCURL_TRI_I1_FEM_Test01(const bool verbose) {
       
       Teuchos::RCP<std::ostream> outStream;
@@ -87,7 +87,7 @@ namespace Intrepid2 {
       
       Teuchos::oblackholestream oldFormatState;
       oldFormatState.copyfmt(std::cout);
-      
+      using DeviceSpaceType = typename DeviceType::execution_space;       
       typedef typename
         Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType ;
       
@@ -112,7 +112,7 @@ namespace Intrepid2 {
     << "|                                                                             |\n" 
     << "===============================================================================\n";
 
-      typedef Kokkos::DynRankView<ValueType,DeviceSpaceType> DynRankView;
+      typedef Kokkos::DynRankView<ValueType,DeviceType> DynRankView;
       typedef Kokkos::DynRankView<ValueType,HostSpaceType> DynRankViewHost;
 #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
       const ValueType tol = tolerence();
@@ -122,7 +122,7 @@ namespace Intrepid2 {
       // for virtual function, value and point types are declared in the class
       typedef ValueType outputValueType;
       typedef ValueType pointValueType;
-      Basis_HCURL_TRI_I1_FEM<DeviceSpaceType,outputValueType,pointValueType> triBasis;
+      Basis_HCURL_TRI_I1_FEM<DeviceType,outputValueType,pointValueType> triBasis;
 
     *outStream
     << "\n"
@@ -215,7 +215,7 @@ namespace Intrepid2 {
       *outStream << std::setw(70) << "^^^^----FAILURE!" << "\n";
       *outStream << "# of catch ("<< ncatch << ") is different from # of throw (" << nthrow << ")\n";
     }
-  } catch (std::logic_error err) {
+  } catch (std::logic_error &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -276,7 +276,7 @@ namespace Intrepid2 {
       }
     }
   }
-  catch (std::logic_error err){
+  catch (std::logic_error &err){
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   };
@@ -291,21 +291,21 @@ namespace Intrepid2 {
   
   // VALUE: correct values in (P,F,D) layout
   const ValueType basisValues[] = {
-    1.000, 0, 0, 0, 0, -1.000, 1.000, 1.000, 0, 1.000, 0, 0, 0, 0, \
-    -1.000, 0, -1.000, -1.000, 1.000, 0.5000, 0, 0.5000, 0, -0.5000, \
-    0.5000, 0.5000, -0.5000, 0.5000, -0.5000, -0.5000, 0.5000, 0, \
-    -0.5000, 0, -0.5000, -1.000, 0.7500, 0.2500, -0.2500, 0.2500, \
-    -0.2500, -0.7500};
+    2.0, 0, 0, 0, 0, -2.0, 2.0, 2.0, 0, 2.0, 0, 0, 0, 0, \
+    -2.0, 0, -2.0, -2.0, 2.0, 1.0, 0, 1.0, 0, -1.0, \
+    1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 0, \
+    -1.0, 0, -1.0, -2.0, 1.5, 0.5, -0.5, 0.5, \
+    -0.5, -1.5};
   
   // CURL: correct values in (P,F) layout
   const ValueType basisCurls[] = {   
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0,  
-    2.0,  2.0,  2.0  
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0,
+    4.0,  4.0,  4.0
   };
   
   try{
@@ -320,7 +320,7 @@ namespace Intrepid2 {
     // Inside Triangle
     triNodesHost(6,0) =  0.25; triNodesHost(6,1) =  0.25;  
 
-    auto triNodes = Kokkos::create_mirror_view(typename DeviceSpaceType::memory_space(), triNodesHost);
+    auto triNodes = Kokkos::create_mirror_view(typename DeviceType::memory_space(), triNodesHost);
     Kokkos::deep_copy(triNodes, triNodesHost);
 
     // Dimensions for the output arrays:
@@ -380,7 +380,7 @@ namespace Intrepid2 {
   } //end try
    
   // Catch unexpected errors
-  catch (std::logic_error err) {
+  catch (std::logic_error &err) {
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   };
@@ -455,7 +455,7 @@ namespace Intrepid2 {
     }
 
   }
-  catch (std::logic_error err){
+  catch (std::logic_error &err){
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   };
@@ -482,7 +482,7 @@ namespace Intrepid2 {
       }
       errorFlag++;
     }
-  } catch (std::logic_error err){
+  } catch (std::logic_error &err){
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";

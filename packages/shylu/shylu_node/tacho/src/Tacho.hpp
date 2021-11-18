@@ -1,85 +1,172 @@
 #ifndef __TACHO_HPP__
 #define __TACHO_HPP__
 
+#include "Tacho_config.h" 
+
+#include "Kokkos_Core.hpp"
+#include "impl/Kokkos_Timer.hpp"
+
+#include <cstddef>
+#include <fstream>
+#include <iostream>
+#include <iomanip>
+#include <limits>
+#include <memory>
+#include <string>
+#include <stdexcept>
+#include <vector>
+
 /// \file Tacho.hpp
-/// \brief Main header file
+/// \brief Header to be included by users
 /// \author Kyungjoo Kim (kyukim@sandia.gov)
 
-#include "ShyLU_NodeTacho_config.h"
+namespace Tacho {
 
-#include <Kokkos_Core.hpp>
-#include <Kokkos_Random.hpp>
-#include <Kokkos_DualView.hpp>
-#include <impl/Kokkos_Timer.hpp>
+  ///
+  /// default ordinal and size type
+  ///
 
-#include "Tacho_Util.hpp"
-#include "Tacho_Partition.hpp"
+#if defined( TACHO_USE_INT_INT )
+  typedef int ordinal_type;
+  typedef int size_type;
+#elif defined( TACHO_USE_INT_SIZE_T )
+  typedef int ordinal_type;
+  typedef size_t size_type;
+#else
+  typedef int ordinal_type;
+  typedef size_t size_type;
+#endif
 
-#include "Tacho_CrsMatrixBase.hpp"
-#include "Tacho_DenseMatrixView.hpp"
+  ///
+  /// default device type used in tacho
+  ///
+  template<typename ExecSpace>
+  struct UseThisDevice {
+    using exec_space = ExecSpace;
+    using memory_space = typename exec_space::memory_space;
+    using type = Kokkos::Device<exec_space,memory_space>;
+    using device_type = type;
+  };
 
-#include "Tacho_MatrixMarket.hpp"           
+  template<typename ExecSpace>
+  struct UseThisScheduler {
+    using type = Kokkos::TaskSchedulerMultiple<ExecSpace>;
+    using scheduler_type = type;
+  };
 
-#include "Tacho_Graph.hpp"
-#include "Tacho_GraphTools_CAMD.hpp"        
-#include "Tacho_GraphTools_Metis.hpp"       
-//#include "Tacho_GraphTools_MetisMT.hpp"       
-#include "Tacho_GraphTools_Scotch.hpp"      
+  /// until kokkos dual view issue is resolved, we follow the default space in Trilinos (uvm)
+#if defined(KOKKOS_ENABLE_CUDA)
+  template<>
+  struct UseThisDevice<Kokkos::Cuda> { 
+    using type = Kokkos::Device<Kokkos::Cuda,Kokkos::CudaSpace>; 
+    using device_type = type;
+  };
+#endif
+#if defined(KOKKOS_ENABLE_OPENMP)
+  template<>
+  struct UseThisDevice<Kokkos::OpenMP> { 
+    using type = Kokkos::Device<Kokkos::OpenMP,Kokkos::HostSpace>; 
+    using device_type = type; 
+  };
+#endif
+#if defined(KOKKOS_ENABLE_SERIAL)
+  template<>
+  struct UseThisDevice<Kokkos::Serial> { 
+    using type = Kokkos::Device<Kokkos::Serial,Kokkos::HostSpace>;
+    using device_type = type;
+  };
+#endif
 
-#include "Tacho_SupernodeInfo.hpp"
-#include "Tacho_SymbolicTools.hpp"
+  ///
+  /// print execution spaces
+  ///
+  template<typename SpT>
+  void printExecSpaceConfiguration(std::string name, const bool detail = false) {
+    if (!Kokkos::Impl::is_space<SpT>::value) {
+      std::string msg("SpT is not Kokkos execution space");
+      fprintf(stderr, ">> Error in file %s, line %d\n",__FILE__,__LINE__);
+      fprintf(stderr, "   %s\n", msg.c_str());
+      throw std::logic_error(msg.c_str());
+    }
+    std::cout << std::setw(16) << name << "::  ";
+    SpT::print_configuration(std::cout, detail);
+  }
 
-#include "Tacho_Lapack_External.hpp"
-#include "Tacho_Lapack_Team.hpp"
+  template<typename T>
+  struct ArithTraits;
 
-#include "Tacho_Blas_External.hpp"
-#include "Tacho_Blas_Team.hpp"
+  template<>
+  struct ArithTraits<float> {
+    typedef float val_type;
+    typedef float mag_type;
 
-#include "Tacho_Chol.hpp"
-#include "Tacho_Chol_External.hpp"
-#include "Tacho_Chol_Internal.hpp"
-#include "Tacho_Chol_ByBlocks.hpp"
+    enum : bool { is_complex = false };
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type abs (const val_type& x) { return x > 0 ? x : -x; }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type real(const val_type& x) { return x; }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type imag(const val_type& x) { return x; }
+    static KOKKOS_FORCEINLINE_FUNCTION val_type conj(const val_type& x) { return x; }
+  };
 
-#include "Tacho_Trsm.hpp"
-#include "Tacho_Trsm_External.hpp"
-#include "Tacho_Trsm_Internal.hpp"
-#include "Tacho_Trsm_ByBlocks.hpp"
+  template<>
+  struct ArithTraits<double> {
+    typedef double val_type;
+    typedef double mag_type;
 
-#include "Tacho_Herk.hpp"
-#include "Tacho_Herk_External.hpp"
-#include "Tacho_Herk_Internal.hpp"
-#include "Tacho_Herk_ByBlocks.hpp"          
+    enum : bool { is_complex = false };
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type abs (const val_type& x) { return x > 0 ? x : -x; }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type real(const val_type& x) { return x; }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type imag(const val_type& x) { return x; }
+    static KOKKOS_FORCEINLINE_FUNCTION val_type conj(const val_type& x) { return x; }
+  };
 
-#include "Tacho_Gemm.hpp"
-#include "Tacho_Gemm_External.hpp"
-#include "Tacho_Gemm_Internal.hpp"
-#include "Tacho_Gemm_ByBlocks.hpp"
+  template<>
+  struct ArithTraits<std::complex<float> > {
+    typedef std::complex<float> val_type;
+    typedef float mag_type;
 
-#include "Tacho_Trsv.hpp"
-#include "Tacho_Trsv_External.hpp"
-#include "Tacho_Trsv_Internal.hpp"
+    enum : bool { is_complex = true };
+    static inline mag_type abs (const val_type& x) { return std::abs(x); }
+    static inline mag_type real(const val_type& x) { return x.real(); }
+    static inline mag_type imag(const val_type& x) { return x.imag(); }
+    static inline val_type conj(const val_type& x) { return std::conj(x); }
+  };
 
-#include "Tacho_Gemv.hpp"
-#include "Tacho_Gemv_External.hpp"
-#include "Tacho_Gemv_Internal.hpp"
+  template<>
+  struct ArithTraits<std::complex<double> > {
+    typedef std::complex<double> val_type;
+    typedef double mag_type;
 
-#include "Tacho_CholSupernodes.hpp"
-#include "Tacho_CholSupernodes_Serial.hpp"
-#include "Tacho_CholSupernodes_SerialPanel.hpp"
+    enum : bool { is_complex = true };
+    static inline mag_type abs (const val_type& x) { return std::abs(x); }
+    static inline mag_type real(const val_type& x) { return x.real(); }
+    static inline mag_type imag(const val_type& x) { return x.imag(); }
+    static inline val_type conj(const val_type& x) { return std::conj(x); }
+  };
+    
+  template<>
+  struct ArithTraits<Kokkos::complex<float> > {
+    typedef Kokkos::complex<float> val_type;
+    typedef float mag_type;
 
-#include "Tacho_TaskFunctor_FactorizeChol.hpp"
-#include "Tacho_TaskFunctor_FactorizeCholPanel.hpp"
-#include "Tacho_TaskFunctor_FactorizeCholByBlocks.hpp"
-#include "Tacho_TaskFunctor_FactorizeCholByBlocksPanel.hpp"
+    enum : bool { is_complex = true };
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type abs (const val_type& x) { return Kokkos::abs(x); }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type real(const val_type& x) { return x.real(); }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type imag(const val_type& x) { return x.imag(); }
+    static KOKKOS_FORCEINLINE_FUNCTION val_type conj(const val_type& x) { return Kokkos::conj(x); }
+  };
 
-#include "Tacho_TaskFunctor_SolveLowerChol.hpp"
-#include "Tacho_TaskFunctor_SolveUpperChol.hpp"
+  template<>
+  struct ArithTraits<Kokkos::complex<double> > {
+    typedef Kokkos::complex<double> val_type;
+    typedef double mag_type;
 
-#include "Tacho_NumericTools.hpp"
+    enum : bool { is_complex = true };
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type abs (const val_type& x) { return Kokkos::abs(x); }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type real(const val_type& x) { return x.real(); }
+    static KOKKOS_FORCEINLINE_FUNCTION mag_type imag(const val_type& x) { return x.imag(); }
+    static KOKKOS_FORCEINLINE_FUNCTION val_type conj(const val_type& x) { return Kokkos::conj(x); }
+  };
 
-// Do not include this. 
-// In a gcc (4.9.x), this causes some multiple definition link error with gcc headers.
-// No idea yet why it happens as the code is guarded by Tacho::Experimental namespace.
-//#include "Tacho_CommandLineParser.hpp" 
+}
 
 #endif

@@ -52,14 +52,13 @@
 #include <cstdlib>
 #include <cctype>
 #include <cmath>
+#include <stk_util/util/ReportHandler.hpp>
 
 #include <math.h>
 #include <time.h>
 
 #include <stk_expreval/Evaluator.hpp>
 #include <stk_expreval/Lexer.hpp>
-
-#include <Kokkos_Core.hpp>
 
 using std::cout;
 using std::endl;
@@ -76,7 +75,8 @@ struct expression_evaluation_exception : public virtual std::exception
 struct expression_undefined_exception : public virtual std::exception
 {
   virtual const char* what() const throw() {
-    std::string rtnMsg = "Found undefined function with name: " + m_msg + " and " + std::to_string(m_numArgs)  + " argument(s)";
+    static std::string rtnMsg;
+    rtnMsg = "Found undefined function with name: " + m_msg + " and " + std::to_string(m_numArgs)  + " argument(s)";
     return rtnMsg.c_str();
   }
 
@@ -90,55 +90,9 @@ struct expression_undefined_exception : public virtual std::exception
 namespace stk {
 namespace expreval {
 
-/**
- * @brief Enumeration <b>Opcode</b> lists the operation codes which can be
- * executed using the execution virtual machine.
- *
- */
-enum Opcode {
-  OPCODE_UNDEFINED,
-  OPCODE_CONSTANT,
-  OPCODE_RVALUE,
-  OPCODE_STATEMENT,
-  OPCODE_ARGUMENT,
-
-  OPCODE_TIERNARY,
-
-
-
-  OPCODE_MULTIPLY,
-  OPCODE_DIVIDE,
-  OPCODE_MODULUS,
-  OPCODE_ADD,
-  OPCODE_SUBTRACT,
-  OPCODE_UNARY_MINUS,
-  OPCODE_FUNCTION,
-
-  OPCODE_EQUAL,
-  OPCODE_NOT_EQUAL,
-  OPCODE_LESS,
-  OPCODE_GREATER,
-  OPCODE_LESS_EQUAL,
-  OPCODE_GREATER_EQUAL,
-
-  OPCODE_UNARY_NOT,
-  OPCODE_LOGICAL_AND,
-  OPCODE_LOGICAL_OR,
-
-  OPCODE_EXPONENIATION,
-
-  OPCODE_ASSIGN
-};
-
-
 class Node
 {
-  //
-  // 0,1,2,3,4 argument overloads allowed. Increase this
-  // value when 5 argument functions are added. Probably
-  // some way to automate this given that it's related to
-  // the number of CFunction classes defined.
-  //
+  
 public:
   enum { MAXIMUM_NUMBER_OF_OVERLOADED_FUNCTION_NAMES = 5 };
   enum { MAXIMUM_FUNCTION_NAME_LENGTH = 32 };
@@ -176,7 +130,7 @@ public:
 
     struct _variable
     {
-      Variable *variable;
+      Variable* variable;
     } variable;
 
     struct _function
@@ -184,15 +138,396 @@ public:
       CFunctionBase* function[MAXIMUM_NUMBER_OF_OVERLOADED_FUNCTION_NAMES];
       bool undefinedFunction;
       char functionName[MAXIMUM_FUNCTION_NAME_LENGTH];
+      FunctionType functionType;
     } function;
   } m_data;
 
+  int m_currentNodeIndex;
   Node* m_left;
   Node* m_right;
   Node* m_other;
   Eval* m_owner;
 };
 
+NgpNode::NgpNode()
+  : m_opcode(OPCODE_UNDEFINED),
+    m_data{{0.0}},
+    m_currentNodeIndex(-1),
+    m_leftNodeIndex(-1),
+    m_rightNodeIndex(-1),
+    m_otherNodeIndex(-1)
+{}
+
+NgpNode::NgpNode(const Node& node)
+  : m_opcode(node.m_opcode),
+    m_currentNodeIndex(node.m_currentNodeIndex),
+    m_leftNodeIndex((node.m_left != nullptr) ? node.m_left->m_currentNodeIndex : -1),
+    m_rightNodeIndex((node.m_right != nullptr) ? node.m_right->m_currentNodeIndex : -1),
+    m_otherNodeIndex((node.m_other != nullptr) ? node.m_other->m_currentNodeIndex : -1)
+{
+  if (m_opcode == OPCODE_CONSTANT) {
+    m_data.constant.value = node.m_data.constant.value;
+  } 
+  else if (m_opcode == OPCODE_RVALUE) {
+    m_data.variable.variableIndex = node.m_data.variable.variable->get_index(); 
+  }
+  else if (m_opcode == OPCODE_ASSIGN) {
+    m_data.variable.variableIndex = node.m_data.variable.variable->get_index(); 
+    m_data.variable.variableType = node.m_data.variable.variable->get_type();
+    m_data.variable.variableSize = node.m_data.variable.variable->getLength(); 
+  }
+  else if (m_opcode == OPCODE_FUNCTION) {
+    m_data.function.functionType = node.m_data.function.functionType;
+  }
+}
+
+KOKKOS_FUNCTION
+double
+NgpNode::evaluate_function(int argumentCount, double* arguments) const
+{
+  switch (m_data.function.functionType) {
+    case FunctionType::ABS :
+      if (argumentCount == 1) {
+        return std::fabs(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for abs function");  
+      break;
+    case FunctionType::MAX :
+      if (argumentCount == 2) {
+        return max_2(arguments[0], arguments[1]);
+      }
+      else if (argumentCount == 3) {
+        return max_3(arguments[0], arguments[1], arguments[2]);
+      }
+      else if (argumentCount == 4) {
+        return max_4(arguments[0], arguments[1], arguments[2], arguments[3]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for max function");
+      break;
+    case FunctionType::MIN :
+      if (argumentCount == 2) {
+        return min_2(arguments[0], arguments[1]);
+      }
+      else if (argumentCount == 3) {
+        return min_3(arguments[0], arguments[1], arguments[2]);
+      }
+      else if (argumentCount == 4) {
+        return min_4(arguments[0], arguments[1], arguments[2], arguments[3]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for min function");
+      break;
+    case FunctionType::SIGN :
+      if (argumentCount == 1) {
+        return sign(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for sign function");
+      break;
+    case FunctionType::IPART :
+      if (argumentCount == 1) {
+        return ipart(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for ipart function");
+      break;
+    case FunctionType::FPART :
+      if (argumentCount == 1) {
+        return fpart(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for fpart function");
+      break;
+    case FunctionType::CEIL :
+      if (argumentCount == 1) {
+        return std::ceil(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for ceil function");
+      break;
+    case FunctionType::FLOOR :
+      if (argumentCount == 1) {
+        return std::floor(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for floor function");
+      break;
+    case FunctionType::MOD :
+      if (argumentCount == 2) {
+        return std::fmod(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for fmod or mod function");
+      break;
+    case FunctionType::POW :
+      if (argumentCount == 2) {
+        return std::pow(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for pow function");
+      break;
+    case FunctionType::SQRT :
+      if (argumentCount == 1) {
+        return std::sqrt(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for sqrt function");
+      break;
+    case FunctionType::EXP :
+      if (argumentCount == 1) {
+        return std::exp(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for exp function");
+      break;
+    case FunctionType::LN :
+      if (argumentCount == 1) {
+        return std::log(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for ln or log function");
+      break;
+    case FunctionType::LOG10 :
+      if (argumentCount == 1) {
+        return std::log10(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for log10 function");
+      break;
+    case FunctionType::DEG :
+      if (argumentCount == 1) {
+        return radian_to_degree()*arguments[0];
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for deg function");
+      break;
+    case FunctionType::RAD :
+      if (argumentCount == 1) {
+        return degree_to_radian()*arguments[0];
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for rad function");
+      break;
+    case FunctionType::SIN :
+      if (argumentCount == 1) {
+        return std::sin(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for sin function");
+      break;
+    case FunctionType::COS :
+      if (argumentCount == 1) {
+        return std::cos(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for cos function");
+      break;
+    case FunctionType::TAN :
+      if (argumentCount == 1) {
+        return std::tan(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for tan function");
+      break;
+    case FunctionType::ASIN :
+      if (argumentCount == 1) {
+        return std::asin(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for asin function");
+      break;
+    case FunctionType::ACOS :
+      if (argumentCount == 1) {
+        return std::acos(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for acos function");
+      break;
+    case FunctionType::ATAN :
+      if (argumentCount == 1) {
+        return std::atan(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for atan function");
+      break;
+    case FunctionType::ATAN2 :
+      if (argumentCount == 2) {
+        return std::atan2(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for atan2 function");
+      break;
+    case FunctionType::SINH :
+      if (argumentCount == 1) {
+        return std::sinh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for sinh function");
+      break;
+    case FunctionType::COSH :
+      if (argumentCount == 1) {
+        return std::cosh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arugments for cosh function");
+      break;
+    case FunctionType::TANH :
+      if (argumentCount == 1) {
+        return std::tanh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arugments for tanh function");
+      break;
+    case FunctionType::ASINH :
+      if (argumentCount == 1) {
+        return std::asinh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for asinh function");
+      break;
+    case FunctionType::ACOSH :
+      if (argumentCount == 1) {
+        return std::acosh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for acosh function");
+      break;
+    case FunctionType::ATANH :
+      if (argumentCount == 1) {
+        return std::atanh(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for atanh function");
+      break;
+    case FunctionType::ERF :
+      if (argumentCount == 1) {
+        return std::erf(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for erf function");
+      break;
+    case FunctionType::ERFC :
+      if (argumentCount == 1) {
+        return std::erfc(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for erfc function");
+      break;
+    case FunctionType::POLTORECTX :
+      if (argumentCount == 2) {
+        return poltorectx(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for poltorectx function");
+      break;
+    case FunctionType::POLTORECTY :
+      if (argumentCount == 2) {
+        return poltorecty(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for poltorecty function");
+      break;
+    case FunctionType::RECTTOPOLR :
+      if (argumentCount == 2) {
+        return recttopolr(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for recttopolr function");
+      break;
+    case FunctionType::RECTTOPOLA :
+      if (argumentCount == 2) {
+        return recttopola(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for recttopola function");
+      break;
+    case FunctionType::UNIT_STEP :
+      if (argumentCount == 3) {
+        return unit_step3(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for unit_step function");
+      break;
+    case FunctionType::CYCLOIDAL_RAMP :
+      if (argumentCount == 3) {
+        return cycloidal_ramp(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for cycloidal_ramp function");
+      break;
+    case FunctionType::COS_RAMP :
+      if (argumentCount == 1) {
+        return cosine_ramp1(arguments[0]);
+      }
+      else if (argumentCount == 2) {
+        return cosine_ramp2(arguments[0], arguments[1]);
+      }
+      else if (argumentCount == 3) {
+        return cosine_ramp3(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for cos_ramp or cosine_ramp function");
+      break;
+    case FunctionType::HAVERSINE_PULSE :
+      if (argumentCount == 3) {
+        return haversine_pulse(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for haversine_pulse function");
+      break;
+    case FunctionType::POINT2D :
+      if (argumentCount == 4) {
+        return point_2(arguments[0], arguments[1], arguments[2], arguments[3]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for pulse_2 function");
+      break;
+    case FunctionType::POINT3D :
+      if (argumentCount == 5) {
+        return point_3(arguments[0], arguments[1], arguments[2], arguments[3], arguments[4]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for pulse_3 function");
+      break;
+    case FunctionType::EXPONENTIAL_PDF :
+      if (argumentCount == 2) {
+        return exponential_pdf(arguments[0], arguments[1]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for exponential_pdf function");
+      break;
+    case FunctionType::LOG_UNIFORM_PDF :
+      if (argumentCount == 3) {
+        return log_uniform_pdf(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for log_uniform_pdf function");
+      break;
+    case FunctionType::NORMAL_PDF :
+      if (argumentCount == 3) {
+        return normal_pdf(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for normal_pdf function");
+      break;
+    case FunctionType::WEIBULL_PDF :
+      if (argumentCount == 3) {
+        return weibull_pdf(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for weibull_pdf function");
+      break;
+    case FunctionType::GAMMA_PDF :
+      if (argumentCount == 3) {
+        return gamma_pdf(arguments[0], arguments[1], arguments[2]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for gamma_pdf function");
+      break;
+    case FunctionType::RAND :
+      if (argumentCount == 0) {
+        return real_rand();
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for rand function");
+      break;
+    case FunctionType::SRAND :
+      if (argumentCount == 1) {
+        return real_srand(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for srand function");
+      break;
+    case FunctionType::RANDOM :
+      if (argumentCount == 0) {
+        return random0();
+      }
+      else if (argumentCount == 1) {
+        return random1(arguments[0]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for random function");
+      break;
+    case FunctionType::TS_RANDOM :
+      if (argumentCount == 4) {
+        return time_space_random(arguments[0], arguments[1], arguments[2], arguments[3]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for ts_random function");
+      break;
+    case FunctionType::TS_NORMAL :
+      if (argumentCount == 8) {
+        return time_space_normal(arguments[0], arguments[1], arguments[2], arguments[3], arguments[4],
+                                 arguments[5], arguments[6], arguments[7]);
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for ts_normal function");
+      break;
+    case FunctionType::TIME :
+      if (argumentCount == 0) {
+        return current_time();
+      }
+      NGP_ThrowErrorMsg("Incorrect number of arguments for time function");
+      break;
+    case FunctionType::UNDEFINED :
+      NGP_ThrowErrorMsg("Undefined function type");
+      break;
+    default :
+      break;
+  }
+  return 0.0;
+}
 
 double
 Node::eval() const
@@ -263,7 +598,7 @@ Node::eval() const
     double right = m_right->eval();
     return (left != s_false) || (right != s_false) ? s_true : s_false;
   }
-  case OPCODE_TIERNARY:
+  case OPCODE_TERNARY:
     return m_left->eval() != s_false ? m_right->eval() : m_other->eval();
 
   case OPCODE_UNARY_MINUS:
@@ -321,7 +656,7 @@ Node *parseFactor(Eval &eval, LexemVector::const_iterator from, LexemVector::con
 Node *parseRelation(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator factor, LexemVector::const_iterator to);
 Node *parseLogical(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator factor, LexemVector::const_iterator to);
 Node *parseUnary(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator unary, LexemVector::const_iterator to);
-Node *parseTiernary(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator question, LexemVector::const_iterator colon, LexemVector::const_iterator to);
+Node *parseTernary(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator question, LexemVector::const_iterator colon, LexemVector::const_iterator to);
 Node *parseFunction(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator lparen, LexemVector::const_iterator rparen, LexemVector::const_iterator to);
 Node *parseFunctionArg(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator to);
 Node *parseRValue(Eval &eval, LexemVector::const_iterator from, LexemVector::const_iterator to);
@@ -387,7 +722,7 @@ parseExpression(
 
   LexemVector::const_iterator relation_it = to;         // Last relational at paren_level 0 for relational operator
   LexemVector::const_iterator logical_it = to;          // Last logical at paren_level 0 for logical operator
-  LexemVector::const_iterator question_it = to;         // Last tiernary at paren_level 0 for tiernary operator
+  LexemVector::const_iterator question_it = to;         // Last ternary at paren_level 0 for ternary operator
   LexemVector::const_iterator colon_it = to;
   LexemVector::const_iterator unary_it = to;            // First +,- at plevel 0 for positive,negative
   LexemVector::const_iterator last_unary_it = to;       // Last +,- found at plevel for for positive,negative
@@ -516,9 +851,9 @@ parseExpression(
   if (assign_it != to)
     return parseAssign(eval, from, assign_it, to);
 
-  // Tiernary operator
+  // Ternary operator
   if (question_it != to || colon_it != to)
-    return parseTiernary(eval, from, question_it, colon_it, to);
+    return parseTernary(eval, from, question_it, colon_it, to);
 
   // Logical
   if (logical_it != to)
@@ -592,7 +927,7 @@ parseAssign(
   LexemVector::const_iterator assign_it,
   LexemVector::const_iterator to)
 {
-  if ((*from).getToken() != TOKEN_IDENTIFIER) //  || from + 1 != assign_it) {
+  if ((*from).getToken() != TOKEN_IDENTIFIER)
     throw std::runtime_error("stk::expreval::parseAssign: expected identifier");
 
   Node *assign;
@@ -719,7 +1054,7 @@ parseLogical(
 
 
 Node *
-parseTiernary(
+parseTernary(
   Eval & eval,
   LexemVector::const_iterator from,
   LexemVector::const_iterator question_it,
@@ -729,13 +1064,13 @@ parseTiernary(
   if (question_it == to || colon_it == to)
     throw std::runtime_error("syntax error parsing ?: operator");
 
-  Node *tiernary = eval.newNode(OPCODE_TIERNARY);
+  Node *ternary = eval.newNode(OPCODE_TERNARY);
 
-  tiernary->m_left = parseExpression(eval, from, question_it);
-  tiernary->m_right = parseExpression(eval, question_it + 1, colon_it);
-  tiernary->m_other = parseExpression(eval, colon_it + 1, to);
+  ternary->m_left = parseExpression(eval, from, question_it);
+  ternary->m_right = parseExpression(eval, question_it + 1, colon_it);
+  ternary->m_other = parseExpression(eval, colon_it + 1, to);
 
-  return tiernary;
+  return ternary;
 }
 
 
@@ -781,6 +1116,10 @@ parseFunction(
   CFunctionBase *c_function = nullptr;
   CFunctionMap::iterator it = getCFunctionMap().find(function_name);
   Node *function = eval.newNode(OPCODE_FUNCTION);
+
+  FunctionType functionType = eval.get_function_type(function_name);
+  function->m_data.function.functionType = functionType;
+
   // only 1 function found with that function name.
   if ( getCFunctionMap().count(function_name) == 1 ) {
     if (it != getCFunctionMap().end()) {
@@ -793,18 +1132,16 @@ parseFunction(
 
     if (!c_function)
       eval.getUndefinedFunctionSet().insert(function_name);
-
-  } else {
+  } 
+  else {
     std::pair<CFunctionMap::iterator, CFunctionMap::iterator> ppp;
     ppp = getCFunctionMap().equal_range(function_name);
-    //cout << endl << "Range of \"function_name\" elements:" << endl;
     int iCount=0;
     for (CFunctionMap::iterator it2 = ppp.first;
         it2 != ppp.second;
         ++it2,
         ++iCount)
     {
-//      cout << "  [" << (*it2).first << ", " << (*it2).second->getArgCount() << "]" << endl;
       c_function = (*it2).second;
       function->m_data.function.function[iCount] = c_function;
       std::strncpy(function->m_data.function.functionName,
@@ -816,7 +1153,6 @@ parseFunction(
         eval.getUndefinedFunctionSet().insert(function_name);
     }
     if( iCount == Node::MAXIMUM_NUMBER_OF_OVERLOADED_FUNCTION_NAMES) {
-      //cout << "Found multiple functions with the same name" << endl;
       throw std::runtime_error(std::string("Exceeded maximum number of overloaded function names for function named= ") + function_name);
     }
   }
@@ -948,52 +1284,54 @@ parseRValue(
 
 } // namespace Parser
 
-Eval::Eval(
-  VariableMap::Resolver & resolver,
-  const std::string & expression,
-  Variable::ArrayOffset arrayOffsetType)
+Eval::Eval(VariableMap::Resolver & resolver, const std::string & expression, Variable::ArrayOffset arrayOffsetType)
   : m_variableMap(resolver),
     m_expression(expression),
     m_syntaxStatus(false),
     m_parseStatus(false),
     m_headNode(nullptr),
-    m_arrayOffsetType(arrayOffsetType)
-{}
+    m_arrayOffsetType(arrayOffsetType),
+    m_parsedEval(nullptr)
+{
+  initialize_function_map();
+}
 
-Eval::Eval(
-  const std::string & expression,
-  Variable::ArrayOffset arrayOffsetType)
+Eval::Eval(const std::string & expression, Variable::ArrayOffset arrayOffsetType)
   : m_variableMap(VariableMap::getDefaultResolver()),
     m_expression(expression),
     m_syntaxStatus(false),
     m_parseStatus(false),
     m_headNode(nullptr),
-    m_arrayOffsetType(arrayOffsetType)
-{}
-
-Eval::~Eval()
+    m_arrayOffsetType(arrayOffsetType),
+    m_parsedEval(nullptr)
 {
-  auto& myThreadData = m_nodes.getMyThreadEntry();
-  for (auto& node : myThreadData) {
-    delete node;
-  }
+  initialize_function_map();
 }
 
-Node *
-Eval::newNode(
-  int           opcode)
+Eval::Eval(const Eval& otherEval) 
+  : m_variableMap(otherEval.m_variableMap),
+    m_undefinedFunctionSet(otherEval.m_undefinedFunctionSet),
+    m_functionMap(otherEval.m_functionMap),
+    m_expression(otherEval.m_expression),
+    m_syntaxStatus(otherEval.m_syntaxStatus),
+    m_parseStatus(otherEval.m_parseStatus),
+    m_headNode(otherEval.m_headNode),
+    m_nodes(otherEval.m_nodes),
+    m_arrayOffsetType(otherEval.m_arrayOffsetType),
+    m_parsedEval(nullptr)
+{} 
+
+Eval::~Eval() 
 {
-  auto& myThreadData = m_nodes.getMyThreadEntry();
-  myThreadData.push_back(new Node(static_cast<Opcode>(opcode), this));
-  return myThreadData.back();
+  delete m_parsedEval;
 }
 
-std::size_t concurrency() {
-#if defined( _OPENMP )
-  return omp_get_max_threads();
-#else
-  return 1;
-#endif
+Node*
+Eval::newNode(int opcode)
+{
+  m_nodes.push_back(std::make_shared<Node>(static_cast<Opcode>(opcode), this));
+  m_nodes.back().get()->m_currentNodeIndex = m_nodes.size() - 1;
+  return m_nodes.back().get();
 }
 
 void
@@ -1002,23 +1340,16 @@ Eval::syntax()
   m_syntaxStatus = false;
   m_parseStatus = false;
 
-#ifdef _OPENMP
-  std::size_t N = concurrency();
-#pragma omp parallel for
-  for(std::size_t j = 0; j < N; ++j)
-#endif
-  {
-    try {
-      // Validate the characters
-      LexemVector lex_vector = tokenize(m_expression);
+  try {
+    // Validate the characters
+    LexemVector lex_vector = tokenize(m_expression);
 
-      // Call the multiparse routine to parse subexpressions
-      m_headNode.getMyThreadEntry() = Parser::parseStatements(*this, lex_vector.begin(), lex_vector.end());
+    // Call the multiparse routine to parse subexpressions
+    m_headNode = Parser::parseStatements(*this, lex_vector.begin(), lex_vector.end());
 
-      m_syntaxStatus = true;
-    }
-    catch (std::runtime_error &) {
-    }
+    m_syntaxStatus = true;
+  }
+  catch (std::runtime_error &) {
   }
 }
 
@@ -1047,14 +1378,20 @@ Eval::parse()
   catch (std::runtime_error & ) {
     throw;
   }
+
+  int index = 0;
+  for (VariableMap::iterator it = m_variableMap.begin(); it != m_variableMap.end(); ++it) {
+    it->second->set_index(index);
+    ++index;
+  }
+  
 }
 
 void
 Eval::resolve()
 {
-  auto& variableMap = m_variableMap.getMyThreadEntry();
-  for (VariableMap::iterator it = variableMap.begin(); it != variableMap.end(); ++it) {
-    variableMap.getResolver().resolve(it);
+  for (VariableMap::iterator it = m_variableMap.begin(); it != m_variableMap.end(); ++it) {
+    m_variableMap.getResolver().resolve(it);
   }
 }
 
@@ -1069,9 +1406,8 @@ Eval::evaluate() const
   double returnValue = 0.0;
   try
   {
-    auto headNode = m_headNode.getMyThreadEntry();
-    if(headNode) {
-      returnValue = headNode->eval();
+    if(m_headNode) {
+      returnValue = m_headNode->eval();
     }
   }
   catch(expression_evaluation_exception &)
@@ -1085,12 +1421,197 @@ bool
 Eval::undefinedFunction() const
 {
   /* Check for an undefined function in any allocated node */
-  auto& myThreadData = m_nodes.getMyThreadEntry();
-  for (unsigned int i=0; i<myThreadData.size(); i++) {
-    if (myThreadData[i]->m_data.function.undefinedFunction) return true;
+  for (const auto& node : m_nodes) {
+    if (node->m_data.function.undefinedFunction) return true;
   }
   return false;
 }
+
+bool 
+Eval::is_constant_expression() const
+{
+  return m_variableMap.empty();
+}
+
+bool 
+Eval::is_variable(const std::string& variableName) const
+{
+  return (m_variableMap.count(variableName) > 0);
+}
+
+bool
+Eval::is_scalar(const std::string& variableName) const
+{
+  auto variableIterator = m_variableMap.find(variableName);
+
+  if (variableIterator == m_variableMap.end()) { 
+    return false; 
+  }
+  
+  int variableLength = variableIterator->second->getLength();
+  return variableLength == 1 || variableLength == std::numeric_limits<int>::max();  
+}
+
+std::vector<std::string> 
+Eval::get_variable_names() const
+{
+  std::vector<std::string> variableList;
+  for(auto& currentVariable : m_variableMap) {
+    std::string variableName = currentVariable.first;
+    variableList.push_back(variableName);
+  }
+  
+  return variableList;
+}
+
+std::vector<std::string> 
+Eval::get_dependent_variable_names() const
+{
+  std::vector<std::string> dependentVariableList;
+  for(auto& currentVariable : m_variableMap) {
+    std::string variableName = currentVariable.first;
+    stk::expreval::Variable* variable = currentVariable.second.get();
+    if (variable->isDependent()) {
+      dependentVariableList.push_back(variableName);
+    }
+  }
+  
+  return dependentVariableList;
+}
+
+std::vector<std::string> 
+Eval::get_independent_variable_names() const
+{
+  std::vector<std::string> independentVariableList;
+  for(auto& currentVariable : m_variableMap) {
+    std::string variableName = currentVariable.first;
+    stk::expreval::Variable* variable = currentVariable.second.get();
+    if (!(variable->isDependent())) {
+      independentVariableList.push_back(variableName);
+    }
+  }
+  
+  return independentVariableList;
+}
+
+int
+Eval::get_variable_index(const std::string& variable) const
+{
+  const auto variableIter = m_variableMap.find(variable);
+  ThrowRequireMsg (variableIter != m_variableMap.end(), "Variable " + variable + " Not Found in VariableMap"); 
+  return variableIter->second->get_index();
+}
+
+int 
+Eval::get_head_node_index() const 
+{ 
+  return (m_headNode) ? m_headNode->m_currentNodeIndex : -1; 
+
+}
+
+FunctionType 
+Eval::get_function_type(const std::string& functionName) const
+{
+  const auto functionIt = m_functionMap.find(functionName);
+  if (functionIt != m_functionMap.end()) {
+    return functionIt->second;
+  }
+  else {
+    return FunctionType::UNDEFINED;
+  }
+}
+
+void
+Eval::initialize_function_map()
+{
+  m_functionMap["abs"] = FunctionType::ABS;
+  m_functionMap["fabs"] = FunctionType::ABS;
+  m_functionMap["max"] = FunctionType::MAX;
+  m_functionMap["min"] = FunctionType::MIN;
+  m_functionMap["sign"] = FunctionType::SIGN;
+  m_functionMap["ipart"] = FunctionType::IPART;
+  m_functionMap["fpart"] = FunctionType::FPART;
+  m_functionMap["ceil"] = FunctionType::CEIL;
+  m_functionMap["floor"] = FunctionType::FLOOR;
+  m_functionMap["mod"] = FunctionType::MOD;
+  m_functionMap["fmod"] = FunctionType::MOD;
+  m_functionMap["pow"] = FunctionType::POW;
+  m_functionMap["sqrt"] = FunctionType::SQRT;
+  m_functionMap["exp"] = FunctionType::EXP;
+  m_functionMap["ln"] = FunctionType::LN;
+  m_functionMap["log"] = FunctionType::LN;
+  m_functionMap["log10"] = FunctionType::LOG10;
+
+
+  m_functionMap["deg"] = FunctionType::DEG;
+  m_functionMap["rad"] = FunctionType::RAD;
+  m_functionMap["sin"] = FunctionType::SIN;
+  m_functionMap["cos"] = FunctionType::COS;
+  m_functionMap["tan"] = FunctionType::TAN;
+  m_functionMap["asin"] = FunctionType::ASIN;
+  m_functionMap["acos"] = FunctionType::ACOS;
+  m_functionMap["atan"] = FunctionType::ATAN;
+  m_functionMap["atan2"] = FunctionType::ATAN2;
+  m_functionMap["sinh"] = FunctionType::SINH;
+  m_functionMap["cosh"] = FunctionType::COSH;
+  m_functionMap["tanh"] = FunctionType::TANH;
+  m_functionMap["asinh"] = FunctionType::ASINH;
+  m_functionMap["acosh"] = FunctionType::ACOSH;
+  m_functionMap["atanh"] = FunctionType::ATANH;
+  m_functionMap["erf"] = FunctionType::ERF;
+  m_functionMap["erfc"] = FunctionType::ERFC;
+  m_functionMap["poltorectx"] = FunctionType::POLTORECTX;
+  m_functionMap["poltorecty"] = FunctionType::POLTORECTY;
+  m_functionMap["recttopolr"] = FunctionType::RECTTOPOLR;
+  m_functionMap["recttopola"] = FunctionType::RECTTOPOLA;
+
+  m_functionMap["unit_step"] = FunctionType::UNIT_STEP;
+  m_functionMap["cycloidal_ramp"] = FunctionType::CYCLOIDAL_RAMP;
+  m_functionMap["cos_ramp"] = FunctionType::COS_RAMP;
+  m_functionMap["cosine_ramp"] = FunctionType::COS_RAMP;
+  m_functionMap["haversine_pulse"] = FunctionType::HAVERSINE_PULSE;
+  m_functionMap["point2d"] = FunctionType::POINT2D;
+  m_functionMap["point3d"] = FunctionType::POINT3D;
+
+  m_functionMap["exponential_pdf"] = FunctionType::EXPONENTIAL_PDF;
+  m_functionMap["log_uniform_pdf"] = FunctionType::LOG_UNIFORM_PDF;
+  m_functionMap["normal_pdf"] = FunctionType::NORMAL_PDF;
+  m_functionMap["weibull_pdf"] = FunctionType::WEIBULL_PDF;
+  m_functionMap["gamma_pdf"] = FunctionType::GAMMA_PDF;
+
+  m_functionMap["rand"] = FunctionType::RAND;
+  m_functionMap["srand"] = FunctionType::SRAND;
+  m_functionMap["random"] = FunctionType::RANDOM;
+  m_functionMap["ts_random"] = FunctionType::TS_RANDOM;
+  m_functionMap["ts_normal"] = FunctionType::TS_NORMAL;
+  m_functionMap["time"] = FunctionType::TIME;
+
+}
+
+ParsedEval& 
+Eval::get_parsed_eval() {
+  if (m_parsedEval == nullptr) {
+    m_parsedEval = new ParsedEval(*this);
+  }
+  return *m_parsedEval;
+}
+
+ParsedEval::ParsedEval(Eval& eval)
+  : m_numVariables(eval.get_variable_count()),
+    m_arrayOffsetType(eval.getArrayOffsetType()),
+    m_headNodeIndex(eval.get_head_node_index()),
+    m_deviceNodes(Kokkos::view_alloc(Kokkos::WithoutInitializing, "deviceNodeTree"), eval.get_node_count()),
+    m_hostNodes(Kokkos::view_alloc(Kokkos::WithoutInitializing, "hostNodeTree"), eval.get_node_count())
+{
+  ThrowRequireMsg (eval.getParseStatus(), std::string("Expression '") + eval.getExpression() + "' did not parse successfully");  
+
+  for (int i = 0; i < eval.get_node_count(); ++i) {
+      m_hostNodes(i) = NgpNode(*(eval.get_node(i)));
+  } 
+  Kokkos::deep_copy(m_deviceNodes, m_hostNodes);
+}
+
+
 
 } // namespace expreval
 } // namespace stk

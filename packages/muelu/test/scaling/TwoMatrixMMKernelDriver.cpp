@@ -217,7 +217,7 @@ void MM2_MKL(const Xpetra::Matrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> &A, co
     copy_view(Arowptr,ArowptrMKL);
     copy_view(Acolind,AcolindMKL);
 
-    if(Kokkos::Impl::is_same<Scalar,double>::value) {
+    if(std::is_same<Scalar,double>::value) {
       mkl_sparse_d_create_csr(&AMKL, SPARSE_INDEX_BASE_ZERO, Au->getNodeNumRows(), Au->getNodeNumCols(), ArowptrMKL.data(),ArowptrMKL.data()+1,AcolindMKL.data(),(double*)Avals.data());
       mkl_sparse_d_create_csr(&B1MKL, SPARSE_INDEX_BASE_ZERO, Nb+Ni, Ccolmap->getNodeNumElements(), B1rowptrMKL.data(),B1rowptrMKL.data()+1,B1colindMKL.data(),(double*)B1vals.data());
       mkl_sparse_d_create_csr(&B2MKL, SPARSE_INDEX_BASE_ZERO, Nb+Ni, Ccolmap->getNodeNumElements(), B2rowptrMKL.data(),B2rowptrMKL.data()+1,B2colindMKL.data(),(double*)B2vals.data());
@@ -501,10 +501,10 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
     
 
     switch (clp.parse(argc,argv)) {
-      case Teuchos::CommandLineProcessor::PARSE_HELP_PRINTED:        return EXIT_SUCCESS; break;
+      case Teuchos::CommandLineProcessor::PARSE_HELP_PRINTED:        return EXIT_SUCCESS;
       case Teuchos::CommandLineProcessor::PARSE_ERROR:
-      case Teuchos::CommandLineProcessor::PARSE_UNRECOGNIZED_OPTION: return EXIT_FAILURE; break;
-      case Teuchos::CommandLineProcessor::PARSE_SUCCESSFUL:                               break;
+      case Teuchos::CommandLineProcessor::PARSE_UNRECOGNIZED_OPTION: return EXIT_FAILURE;
+      case Teuchos::CommandLineProcessor::PARSE_SUCCESSFUL:          break;
     }
 
     if(percent_rows_to_remove < 0.0) percent_rows_to_remove = 0.0;

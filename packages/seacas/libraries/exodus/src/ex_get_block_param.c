@@ -1,36 +1,9 @@
 /*
- * Copyright (c) 2005-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 /*!
  *
@@ -63,7 +36,6 @@
 int ex_get_block_param(int exoid, ex_block *block)
 {
   int         dimid, connid, blk_id_ndx;
-  size_t      len, i;
   char        errmsg[MAX_ERR_LENGTH];
   int         status;
   const char *dnument = NULL;
@@ -74,11 +46,9 @@ int ex_get_block_param(int exoid, ex_block *block)
   const char *ablknam = NULL;
   const char *vblkcon = NULL;
 
-  struct ex__file_item *file = NULL;
-
   EX_FUNC_ENTER();
 
-  file = ex__find_file_item(exoid);
+  struct ex__file_item *file = ex__find_file_item(exoid);
   if (!file) {
     snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: unknown file id %d in ex_get_block_param().", exoid);
     ex_err_fn(exoid, __func__, errmsg, EX_BADFILEID);
@@ -111,8 +81,8 @@ int ex_get_block_param(int exoid, ex_block *block)
   case EX_EDGE_BLOCK:
     dnument = DIM_NUM_ED_IN_EBLK(blk_id_ndx);
     dnumnod = DIM_NUM_NOD_PER_ED(blk_id_ndx);
-    dnumedg = 0;
-    dnumfac = 0;
+    dnumedg = NULL;
+    dnumfac = NULL;
     dnumatt = DIM_NUM_ATT_IN_EBLK(blk_id_ndx);
     vblkcon = VAR_EBCONN(blk_id_ndx);
     ablknam = ATT_NAME_ELB;
@@ -120,8 +90,8 @@ int ex_get_block_param(int exoid, ex_block *block)
   case EX_FACE_BLOCK:
     dnument = DIM_NUM_FA_IN_FBLK(blk_id_ndx);
     dnumnod = DIM_NUM_NOD_PER_FA(blk_id_ndx);
-    dnumedg = 0; /* it is possible this might be non-NULL some day */
-    dnumfac = 0;
+    dnumedg = NULL; /* it is possible this might be non-NULL some day */
+    dnumfac = NULL;
     dnumatt = DIM_NUM_ATT_IN_FBLK(blk_id_ndx);
     vblkcon = VAR_FBCONN(blk_id_ndx);
     ablknam = ATT_NAME_ELB;
@@ -151,6 +121,7 @@ int ex_get_block_param(int exoid, ex_block *block)
     EX_FUNC_LEAVE(EX_FATAL);
   }
 
+  size_t len;
   if ((status = nc_inq_dimlen(exoid, dimid, &len)) != NC_NOERR) {
     snprintf(errmsg, MAX_ERR_LENGTH,
              "ERROR: failed to get number of %ss in block  %" PRId64 " in file id %d",
@@ -270,7 +241,7 @@ int ex_get_block_param(int exoid, ex_block *block)
       ex_err_fn(exoid, __func__, errmsg, EX_MSG);
     }
 
-    for (i = 0; i < MAX_STR_LENGTH + 1; i++) {
+    for (int i = 0; i < MAX_STR_LENGTH + 1; i++) {
       block->topology[i] = '\0';
 
       /* get the element type name */

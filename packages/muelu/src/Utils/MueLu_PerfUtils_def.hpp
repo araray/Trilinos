@@ -56,6 +56,7 @@
 #include <Xpetra_Export.hpp>
 #include <Xpetra_Import.hpp>
 #include <Xpetra_Matrix.hpp>
+#include <Xpetra_CrsMatrixWrap.hpp>
 
 #include "MueLu_PerfUtils_decl.hpp"
 
@@ -64,33 +65,57 @@
 namespace MueLu {
 
   template<class Type>
-  void calculateStats(Type& minVal, Type& maxVal, double& avgVal, double& devVal, const RCP<const Teuchos::Comm<int> >& comm, int numActiveProcs, const Type& v) {
+  void calculateStats(Type& minVal, Type& maxVal, double& avgVal, double& devVal, int& minProc, int& maxProc, const RCP<const Teuchos::Comm<int> >& comm, int numActiveProcs, const Type& v) {
 
-    Type sumVal, sum2Val;
+    Type sumVal, sum2Val, v2 = v*v;
+    double zero = Teuchos::ScalarTraits<double>::zero();
 
-    MueLu_sumAll(comm,   v, sumVal);
-    MueLu_sumAll(comm, v*v, sum2Val);
-    MueLu_minAll(comm,   v, minVal);
-    MueLu_maxAll(comm,   v, maxVal);
+    MueLu_sumAll(comm,  v, sumVal);
+    MueLu_sumAll(comm, v2, sum2Val);
+    MueLu_minAll(comm,  v, minVal);
+    MueLu_maxAll(comm,  v, maxVal);
 
-    avgVal = (numActiveProcs > 0 ? as<double>(sumVal) / numActiveProcs : 0);
-    devVal = (numActiveProcs > 1 ? sqrt((sum2Val - sumVal*avgVal)/(numActiveProcs-1)) : 0);
+    int w;
+    w = (minVal == v) ? comm->getRank() : -1;
+    MueLu_maxAll(comm,   w, maxProc);
+    w = (maxVal == v) ? comm->getRank() : -1;
+    MueLu_maxAll(comm,   w, minProc);
+
+    avgVal = (numActiveProcs > 0 ? (as<double>(Teuchos::ScalarTraits<Type>::real(sumVal)) / numActiveProcs) : zero);
+    devVal = (numActiveProcs > 1 ? sqrt((as<double>(Teuchos::ScalarTraits<Type>::real(sum2Val - sumVal*avgVal)))/(numActiveProcs-1)) : zero);
   }
 
   template<class Type>
   std::string stringStats(const RCP<const Teuchos::Comm<int> >& comm, int numActiveProcs, const Type& v, RCP<ParameterList> paramList = Teuchos::null) {
     Type minVal, maxVal;
     double avgVal, devVal;
-    calculateStats<Type>(minVal, maxVal, avgVal, devVal, comm, numActiveProcs, v);
+    int minProc, maxProc;
+    calculateStats<Type>(minVal, maxVal, avgVal, devVal, minProc, maxProc, comm, numActiveProcs, v);
 
-    char buf[256];
-    if (avgVal && (paramList.is_null() || !paramList->isParameter("print abs") || paramList->get<bool>("print abs") == false))
-      sprintf(buf, "avg = %.2e,  dev = %5.1f%%,  min = %+6.1f%%,  max = %+6.1f%%", avgVal,
-              (devVal/avgVal)*100, (minVal/avgVal-1)*100, (maxVal/avgVal-1)*100);
-    else
-      sprintf(buf, "avg = %8.2f,  dev = %6.2f,  min = %6.1f ,  max = %6.1f", avgVal,
-              devVal, as<double>(minVal), as<double>(maxVal));
-    return buf;
+    const double zero = Teuchos::ScalarTraits<double>::zero();
+    const double one = Teuchos::ScalarTraits<double>::one();
+    std::ostringstream buf;
+    buf << std::fixed;
+    if ((avgVal != zero) && (paramList.is_null() || !paramList->isParameter("print abs") || paramList->get<bool>("print abs") == false)) {
+      double relDev = (devVal/avgVal)*100;
+      double relMin = (as<double>(Teuchos::ScalarTraits<Type>::real(minVal))/avgVal-one)*100;
+      double relMax = (as<double>(Teuchos::ScalarTraits<Type>::real(maxVal))/avgVal-one)*100;
+      buf << "avg = " << std::scientific << std::setw(10) << std::setprecision(2) << avgVal << ",  "
+          << "dev = " << std::fixed << std::setw(6) << std::setprecision(1) << relDev << "%,  "
+          << "min = " << std::fixed << std::setw(7) << std::setprecision(1) << std::setw(7) << relMin << "%"
+          << " (" << std::scientific << std::setw(10) << std::setprecision(2) << minVal << " on " << std::fixed << std::setw(4) << minProc << "),  "
+          << "max = " << std::fixed << std::setw(7) << std::setprecision(1)  << relMax << "%"
+          << " (" << std::scientific << std::setw(10) << std::setprecision(2) << maxVal << " on " << std::fixed << std::setw(4) << maxProc << ")";
+    } else {
+      double relDev = (avgVal != zero ? (devVal/avgVal)*100 : zero);
+      buf << "avg = " << std::scientific << std::setw(10) << std::setprecision(2) << avgVal << ",  "
+          << "dev = " << std::fixed << std::setw(6) << std::setprecision(1) << relDev << "%,  "
+          << "min = " << std::scientific << std::setw(10) << std::setprecision(2) << minVal
+          << "  (on " << std::fixed << std::setw(4) << minProc << "),          "
+          << "max = " << std::scientific << std::setw(10) << std::setprecision(2) << maxVal
+          << "  (on " << std::fixed << std::setw(4) << maxProc << ")";
+    }
+    return buf.str();
   }
 
   template<class Map>
@@ -115,13 +140,15 @@ namespace MueLu {
     if (params.is_null())
       return ss.str();
 
-    bool printLoadBalanceInfo = false, printCommInfo = false;
+    bool printLoadBalanceInfo = false, printCommInfo = false, printEntryStats = false;
     if (params->isParameter("printLoadBalancingInfo") && params->get<bool>("printLoadBalancingInfo"))
       printLoadBalanceInfo = true;
     if (params->isParameter("printCommInfo") && params->get<bool>("printCommInfo"))
       printCommInfo = true;
+    if (params->isParameter("printEntryStats") && params->get<bool>("printEntryStats"))
+      printEntryStats = true;
 
-    if (!printLoadBalanceInfo && !printCommInfo)
+    if (!printLoadBalanceInfo && !printCommInfo && !printEntryStats)
       return ss.str();
 
     RCP<const Import> importer = A.getCrsGraph()->getImporter();
@@ -169,6 +196,79 @@ namespace MueLu {
     std::string outstr;
     ParameterList absList;
     absList.set("print abs", true);
+
+    RCP<const Matrix> rcpA = rcpFromRef(A);
+    RCP<const CrsMatrixWrap> crsWrapA = rcp_dynamic_cast<const Xpetra::CrsMatrixWrap<Scalar, LocalOrdinal, GlobalOrdinal, Node> >(rcpA);
+    RCP<const CrsMatrix> crsA;
+    if (!crsWrapA.is_null())
+      crsA = crsWrapA->getCrsMatrix();
+    if (printEntryStats && !crsA.is_null()) {
+      typedef Teuchos::ScalarTraits<Scalar> STS;
+      typedef typename STS::magnitudeType magnitudeType;
+      typedef Teuchos::ScalarTraits<magnitudeType> MTS;
+      ArrayRCP<const size_t>       rowptr_RCP;
+      ArrayRCP<const LocalOrdinal> colind_RCP;
+      ArrayRCP<const Scalar>       vals_RCP;
+      ArrayRCP<size_t>             offsets_RCP;
+      ArrayView<const size_t>      rowptr;
+      ArrayView<const Scalar>      vals;
+      ArrayView<size_t>            offsets;
+
+      crsA->getAllValues(rowptr_RCP, colind_RCP, vals_RCP);
+      crsA->getLocalDiagOffsets(offsets_RCP);
+      rowptr  = rowptr_RCP();
+      vals    = vals_RCP();
+      offsets = offsets_RCP();
+
+      Scalar val, minVal, maxVal;
+      magnitudeType absVal, minAbsVal, maxAbsVal;
+      {
+        minVal = STS::rmax();
+        maxVal = STS::rmin();
+        minAbsVal = MTS::rmax();
+        maxAbsVal = MTS::zero();
+
+        for (int i = 0; i < offsets.size(); i++) {
+          val = vals[rowptr[i]+offsets[i]];
+          if (STS::real(val) < STS::real(minVal))
+            minVal = val;
+          if (STS::real(val) > STS::real(maxVal))
+            maxVal = val;
+          absVal    = STS::magnitude(val);
+          minAbsVal = std::min(minAbsVal, absVal);
+          maxAbsVal = std::max(maxAbsVal, absVal);
+        }
+
+        ss << msgTag << " diag min       : " << stringStats<Scalar>(origComm, numActiveProcs, minVal) << std::endl;
+        ss << msgTag << " diag max       : " << stringStats<Scalar>(origComm, numActiveProcs, maxVal) << std::endl;
+        ss << msgTag << " abs(diag) min  : " << stringStats<Scalar>(origComm, numActiveProcs, minAbsVal) << std::endl;
+        ss << msgTag << " abs(diag) max  : " << stringStats<Scalar>(origComm, numActiveProcs, maxAbsVal) << std::endl;
+      }
+
+      {
+        minVal = STS::rmax();
+        maxVal = STS::rmin();
+        minAbsVal = MTS::rmax();
+        maxAbsVal = MTS::zero();
+
+        for (int i = 0; i < vals.size(); i++) {
+          val = vals[i];
+          if (STS::real(val) < STS::real(minVal))
+            minVal = val;
+          if (STS::real(val) > STS::real(maxVal))
+            maxVal = val;
+          absVal    = STS::magnitude(val);
+          minAbsVal = std::min(minAbsVal, absVal);
+          maxAbsVal = std::max(maxAbsVal, absVal);
+        }
+
+        ss << msgTag << " entry min      : " << stringStats<Scalar>(origComm, numActiveProcs, minVal) << std::endl;
+        ss << msgTag << " entry max      : " << stringStats<Scalar>(origComm, numActiveProcs, maxVal) << std::endl;
+        ss << msgTag << " abs(entry) min : " << stringStats<Scalar>(origComm, numActiveProcs, minAbsVal) << std::endl;
+        ss << msgTag << " abs(entry) max : " << stringStats<Scalar>(origComm, numActiveProcs, maxAbsVal) << std::endl;
+      }
+    }
+
 
     if (printLoadBalanceInfo) {
       ss << msgTag << " Load balancing info"    << std::endl;

@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ************************************************************************
 // @HEADER
 
@@ -106,6 +104,20 @@ namespace Tpetra {
   template<class LO, class GO, class Node>
   Teuchos::RCP<const Tpetra::Map<LO,GO,Node>>
   createMeshMap(LO const &blockSize, const Tpetra::Map<LO,GO,Node> &pointMap);
+
+  /// \brief Non-member constructor that creates a point CrsMatrix from an existing BlockCrsMatrix.
+  ///
+  /// This function accepts an already constructed block matrix.
+  template<class Scalar, class LO, class GO, class Node>
+  Teuchos::RCP<CrsMatrix<Scalar, LO, GO, Node>>
+  convertToCrsMatrix(const Tpetra::BlockCrsMatrix<Scalar, LO, GO, Node>& blockMatrix);
+
+  /// @brief Helper function to generate a point map from a block map (with a given block size)
+  /// GIDs associated with a single mesh GID appear consecutively in the output map
+  template<class LO, class GO, class Node>
+  Teuchos::RCP<const Tpetra::Map<LO,GO,Node>>
+  createPointMap(LO const &blockSize, const Tpetra::Map<LO,GO,Node> &blockMap);
+
 
 } // namespace Tpetra
 

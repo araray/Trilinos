@@ -999,17 +999,14 @@ protected:
     typename ::Tpetra::DistObject<char, LO, GO, NT>::buffer_device_type;
 
   virtual void
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  copyAndPermuteNew
-#else // TPETRA_ENABLE_DEPRECATED_CODE
   copyAndPermute
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
   (const ::Tpetra::SrcDistObject& sourceObject,
    const size_t numSameIDs,
    const Kokkos::DualView<const LO*,
      buffer_device_type>& permuteToLIDs,
    const Kokkos::DualView<const LO*,
-     buffer_device_type>& permuteFromLIDs)
+     buffer_device_type>& permuteFromLIDs,
+   const CombineMode /* CM */)
   {
     using std::endl;
     using this_type = CooMatrix<SC, LO, GO, NT>;
@@ -1204,11 +1201,7 @@ protected:
   }
 
   virtual void
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  packAndPrepareNew
-#else // TPETRA_ENABLE_DEPRECATED_CODE
   packAndPrepare
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
   (const ::Tpetra::SrcDistObject& sourceObject,
    const Kokkos::DualView<const local_ordinal_type*,
      buffer_device_type>& exportLIDs,
@@ -1216,8 +1209,7 @@ protected:
      buffer_device_type>& exports,
    Kokkos::DualView<size_t*,
      buffer_device_type> numPacketsPerLID,
-   size_t& constantNumPackets,
-   ::Tpetra::Distributor& /* distor */)
+   size_t& constantNumPackets)
   {
     using Teuchos::Comm;
     using Teuchos::RCP;
@@ -1405,11 +1397,7 @@ protected:
   }
 
   virtual void
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  unpackAndCombineNew
-#else // TPETRA_ENABLE_DEPRECATED_CODE
   unpackAndCombine
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
   (const Kokkos::DualView<const local_ordinal_type*,
      buffer_device_type>& importLIDs,
    Kokkos::DualView<packet_type*,
@@ -1417,7 +1405,6 @@ protected:
    Kokkos::DualView<size_t*,
      buffer_device_type> numPacketsPerLID,
    const size_t /* constantNumPackets */,
-   ::Tpetra::Distributor& /* distor */,
    const ::Tpetra::CombineMode /* combineMode */)
   {
     using Teuchos::Comm;

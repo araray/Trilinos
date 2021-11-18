@@ -69,21 +69,6 @@ MapFactory()
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-Build(UnderlyingLib                                 lib,
-      global_size_t                                 numGlobalElements,
-      GlobalOrdinal                                 indexBase,
-      const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-      LocalGlobal                                   lg,
-      const Teuchos::RCP<Node>&                     /* node */)
-{
-    return Build(lib, numGlobalElements, indexBase, comm, lg);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 
@@ -109,21 +94,6 @@ Build(UnderlyingLib                                 lib,
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-Build(UnderlyingLib                                 lib,
-      global_size_t                                 numGlobalElements,
-      size_t                                        numLocalElements,
-      GlobalOrdinal                                 indexBase,
-      const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-      const Teuchos::RCP<Node>&                     /* node */)
-{
-    return Build(lib, numGlobalElements, numLocalElements, indexBase, comm);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 
@@ -149,21 +119,6 @@ Build(UnderlyingLib                                 lib,
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-Build(UnderlyingLib                                  lib,
-      global_size_t                                  numGlobalElements,
-      const Teuchos::ArrayView<const GlobalOrdinal>& elementList,
-      GlobalOrdinal                                  indexBase,
-      const Teuchos::RCP<const Teuchos::Comm<int>>&  comm,
-      const Teuchos::RCP<Node>&                      /* node */)
-{
-    return Build(lib, numGlobalElements, elementList, indexBase, comm);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 
@@ -192,43 +147,42 @@ Build(UnderlyingLib                                  lib,
 template<class LocalOrdinal, class GlobalOrdinal, class Node>
 Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
 MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-Build(const Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
-      LocalOrdinal                                                      numDofPerNode)
+Build(const Teuchos::RCP<const Map<LocalOrdinal,GlobalOrdinal,Node>>& nodeMap,
+    const LocalOrdinal numDofPerNode, const GlobalOrdinal gidOffset)
 {
-    XPETRA_MONITOR("MapFactory::Build");
+  XPETRA_MONITOR("MapFactory::Build");
 
-    RCP<const BlockedMap<LocalOrdinal, GlobalOrdinal, Node>> bmap =
-      Teuchos::rcp_dynamic_cast<const BlockedMap<LocalOrdinal, GlobalOrdinal, Node>>(map);
-    if(!bmap.is_null())
-    {
-        TEUCHOS_TEST_FOR_EXCEPTION(numDofPerNode != 1,
-                                   Xpetra::Exceptions::RuntimeError,
-                                   "Xpetra::MapFactory::Build: When provided a BlockedMap numDofPerNode must set to be one. It is set to "
-                                     << numDofPerNode << ".");
-        return rcp(new Xpetra::BlockedMap<LocalOrdinal, GlobalOrdinal, Node>(*bmap));
-    }
+  RCP<const BlockedMap<LocalOrdinal,GlobalOrdinal,Node>> bmap =
+      Teuchos::rcp_dynamic_cast<const BlockedMap<LocalOrdinal,GlobalOrdinal,Node>>(nodeMap);
+
+  if(!bmap.is_null())
+  {
+    TEUCHOS_TEST_FOR_EXCEPTION(numDofPerNode != 1, Xpetra::Exceptions::RuntimeError,
+        "Xpetra::MapFactory::Build: When provided a BlockedMap numDofPerNode must set to be one. It is set to "
+            << numDofPerNode << ".");
+    return rcp(new Xpetra::BlockedMap<LocalOrdinal,GlobalOrdinal,Node>(*bmap));
+  }
 
 #ifdef HAVE_XPETRA_TPETRA
-    LocalOrdinal                            N           = map->getNodeNumElements();
-    Teuchos::ArrayView<const GlobalOrdinal> oldElements = map->getNodeElementList();
-    Teuchos::Array<GlobalOrdinal>           newElements(map->getNodeNumElements() * numDofPerNode);
-    for(LocalOrdinal i = 0; i < N; i++)
+  LocalOrdinal numLocalElements = nodeMap->getNodeNumElements();
+  Teuchos::ArrayView<const GlobalOrdinal> oldElements = nodeMap->getNodeElementList();
+  Teuchos::Array<GlobalOrdinal> newElements(nodeMap->getNodeNumElements() * numDofPerNode);
+  for (LocalOrdinal i = 0; i < numLocalElements; i++)
+  {
+    for (LocalOrdinal j = 0; j < numDofPerNode; j++)
     {
-        for(LocalOrdinal j = 0; j < numDofPerNode; j++)
-        {
-            newElements[ i * numDofPerNode + j ] = oldElements[ i ] * numDofPerNode + j;
-        }
+      newElements[i * numDofPerNode + j] = oldElements[i] * numDofPerNode + j + gidOffset;
     }
-    if(map->lib() == UseTpetra)
-    {
-        return rcp(new TpetraMap<LocalOrdinal, GlobalOrdinal, Node>
-                          (map->getGlobalNumElements() * numDofPerNode, newElements, map->getIndexBase(), map->getComm())
-                  );
-    }
+  }
+  if (nodeMap->lib() == UseTpetra)
+  {
+    return rcp(new TpetraMap<LocalOrdinal, GlobalOrdinal, Node>
+        (nodeMap->getGlobalNumElements() * numDofPerNode, newElements, nodeMap->getIndexBase(), nodeMap->getComm()));
+  }
 #endif
 
-    XPETRA_FACTORY_ERROR_IF_EPETRA(map->lib());
-    XPETRA_FACTORY_END;
+  XPETRA_FACTORY_ERROR_IF_EPETRA(nodeMap->lib());
+  XPETRA_FACTORY_END;
 }
 
 
@@ -267,8 +221,8 @@ createLocalMap(UnderlyingLib                                 lib,
 #ifdef HAVE_XPETRA_TPETRA
     if(lib == UseTpetra)
     {
-        // Pre-ETI code called Tpetra::createLocalMap() but this can result in compile erros 
-        // when Trilinos is built with multiple node-types, specifically the GCC 4.8.4 PR 
+        // Pre-ETI code called Tpetra::createLocalMap() but this can result in compile erros
+        // when Trilinos is built with multiple node-types, specifically the GCC 4.8.4 PR
         // build generates an error because it would try to match Tpetra::Map objects where
         // Node is Serial in one and OpenMP in the other. See Issue #5672 / PR #5723 for more
         // information.
@@ -283,19 +237,6 @@ createLocalMap(UnderlyingLib                                 lib,
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-createLocalMapWithNode(UnderlyingLib                                 lib,
-                       size_t                                        numElements,
-                       const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                       const Teuchos::RCP<Node>& /* node */)
-{
-    return createLocalMapWithNode(lib, numElements, comm);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 template<class LocalOrdinal, class GlobalOrdinal, class Node>
@@ -320,19 +261,6 @@ createLocalMapWithNode(UnderlyingLib                                 lib,
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-createUniformContigMapWithNode(UnderlyingLib                                 lib,
-                               global_size_t                                 numElements,
-                               const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                               const Teuchos::RCP<Node>& /* node */)
-{
-    return createUniformContigMapWithNode(lib, numElements, comm);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 
@@ -399,20 +327,6 @@ createContigMap(UnderlyingLib                                 lib,
 
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-template<class LocalOrdinal, class GlobalOrdinal, class Node>
-TPETRA_DEPRECATED
-Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-MapFactory<LocalOrdinal, GlobalOrdinal, Node>::
-createContigMapWithNode(UnderlyingLib                                 lib,
-                        global_size_t                                 numElements,
-                        size_t                                        localNumElements,
-                        const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                        const Teuchos::RCP<Node>& /* node */)
-{
-    return createContigMapWithNode(lib, numElements, localNumElements, comm);
-}
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 

@@ -8,9 +8,9 @@ TRIBITS_PACKAGE_DEFINE_DEPENDENCIES(
   Chaco       libraries/chaco         PT  OPTIONAL
   Aprepro_lib libraries/aprepro_lib   PT  OPTIONAL
   Supes       libraries/supes         PT  OPTIONAL
-  SuplibCpp   libraries/suplib_cpp    PT  OPTIONAL
-  SuplibC     libraries/suplib_c      PT  OPTIONAL
   Suplib      libraries/suplib        PT  OPTIONAL
+  SuplibC     libraries/suplib_c      PT  OPTIONAL
+  SuplibCpp   libraries/suplib_cpp    PT  OPTIONAL
   SVDI        libraries/svdi          ST  OPTIONAL
   PLT         libraries/plt           ST  OPTIONAL
   Algebra     applications/algebra    PT  OPTIONAL
@@ -19,6 +19,7 @@ TRIBITS_PACKAGE_DEFINE_DEPENDENCIES(
   Conjoin     applications/conjoin    PT  OPTIONAL
   Ejoin       applications/ejoin      PT  OPTIONAL
   Epu         applications/epu        PT  OPTIONAL
+  Cpup        applications/cpup       PT  OPTIONAL
   Exo2mat     applications/exo2mat    ST  OPTIONAL
   Exodiff     applications/exodiff    PT  OPTIONAL
   Exomatlab   applications/exomatlab  ST  OPTIONAL
@@ -36,10 +37,12 @@ TRIBITS_PACKAGE_DEFINE_DEPENDENCIES(
   Mapvar      applications/mapvar     PT  OPTIONAL
   Mapvar-kd   applications/mapvar-kd  PT  OPTIONAL
   Mat2exo     applications/mat2exo    ST  OPTIONAL
+  Nas2exo     applications/nas2exo    PT  OPTIONAL
+  Zellij      applications/zellij     ST  OPTIONAL
   Nemslice    applications/nem_slice  PT  OPTIONAL
   Nemspread   applications/nem_spread PT  OPTIONAL
   Numbers     applications/numbers    PT  OPTIONAL
-  Slice       applications/slice      EX  OPTIONAL
+  Slice       applications/slice      ST  OPTIONAL
   Txtexo      applications/txtexo     PT  OPTIONAL
   Ex2ex1v2    applications/ex2ex1v2   PT  OPTIONAL
 )

@@ -1,4 +1,4 @@
-#include "Tacho.hpp"
+#include "Tacho_Internal.hpp"
 #include "Tacho_Solver.hpp"
 
 #include "Tacho_CommandLineParser.hpp"
@@ -21,34 +21,14 @@
 #include "cholmod.h"
 #endif
 
-/// select a kokkos task scheudler
-/// - DeprecatedTaskScheduler, DeprecatedTaskSchedulerMultiple
-/// - TaskScheduler, TaskSchedulerMultiple, ChaseLevTaskScheduler
-#if defined(TACHO_USE_DEPRECATED_TASKSCHEDULER)
-template<typename T> using TaskSchedulerType = Kokkos::DeprecatedTaskScheduler<T>;
-static const char * scheduler_name = "DeprecatedTaskScheduler";
-#endif
-#if defined(TACHO_USE_DEPRECATED_TASKSCHEDULER_MULTIPLE)
-template<typename T> using TaskSchedulerType = Kokkos::DeprecatedTaskSchedulerMultiple<T>;
-static const char * scheduler_name = "DeprecatedTaskSchedulerMultiple";
-#endif
-#if defined(TACHO_USE_TASKSCHEDULER)
-template<typename T> using TaskSchedulerType = Kokkos::TaskScheduler<T>;
-static const char * scheduler_name = "TaskScheduler";
-#endif
-#if defined(TACHO_USE_TASKSCHEDULER_MULTIPLE)
 template<typename T> using TaskSchedulerType = Kokkos::TaskSchedulerMultiple<T>;
 static const char * scheduler_name = "TaskSchedulerMultiple";
-#endif
-#if defined(TACHO_USE_CHASELEV_TASKSCHEDULER)
-template<typename T> using TaskSchedulerType = Kokkos::ChaseLevTaskScheduler<T>;
-static const char * scheduler_name = "ChaseLevTaskScheduler";
-#endif
 
 int main (int argc, char *argv[]) {
   int nthreads = 1; 
 
   bool verbose = true;
+  bool sanitize = false;
   std::string file = "test.mtx";
   int nrhs = 1;
   int niter_solve = 50;
@@ -71,6 +51,7 @@ int main (int argc, char *argv[]) {
 
   // common testing environment
   opts.set_option<bool>("verbose", "Flag for verbose printing", &verbose);
+  opts.set_option<bool>("sanitize", "Flag to sanitize input matrix (remove zeros)", &sanitize);
   opts.set_option<std::string>("file", "Input file (MatrixMarket SPD matrix)", &file);
   opts.set_option<int>("nrhs", "Number of RHS vectors", &nrhs);
   opts.set_option<int>("niter-solve", "Number of solve iterations for timing", &niter_solve);
@@ -96,21 +77,24 @@ int main (int argc, char *argv[]) {
   
   const bool r_parse = opts.parse(argc, argv);
   if (r_parse) return 0; 
+  int r_val = 0;
 
+#if !defined(KOKKOS_ENABLE_CUDA)
   Kokkos::initialize(argc, argv);
   Kokkos::DefaultHostExecutionSpace::print_configuration(std::cout, false);
-
-  int r_val = 0;
 
   {
     /// basic typedef
     typedef int ordinal_type;
     typedef double value_type;
 
+    /// device type
+    typedef typename Tacho::UseThisDevice<Kokkos::DefaultHostExecutionSpace>::type host_device_type;
+
     /// crs matrix format and dense multi vector
-    typedef Tacho::CrsMatrixBase<value_type,Kokkos::DefaultHostExecutionSpace> CrsMatrixBaseType;
-    typedef Kokkos::View<value_type**,Kokkos::LayoutLeft,Kokkos::DefaultHostExecutionSpace> DenseMultiVectorType;
-    //typedef Kokkos::View<ordinal_type*,Kokkos::DefaultHostExecutionSpace> OrdinalTypeArray;
+    typedef Tacho::CrsMatrixBase<value_type,host_device_type> CrsMatrixBaseType;
+    typedef Kokkos::View<value_type**,Kokkos::LayoutLeft,host_device_type> DenseMultiVectorType;
+    //typedef Kokkos::View<ordinal_type*,host_device_type> OrdinalTypeArray;
 
     ///
     /// problem setting
@@ -125,7 +109,7 @@ int main (int argc, char *argv[]) {
           return -1;
         }
       }
-      Tacho::MatrixMarket<value_type>::read(file, A, verbose);
+      Tacho::MatrixMarket<value_type>::read(file, A, sanitize, verbose);
     }
 
     DenseMultiVectorType
@@ -139,7 +123,7 @@ int main (int argc, char *argv[]) {
 #elif defined(TACHO_HAVE_SCOTCH)
     Tacho::GraphTools_Scotch G(graph);
 #else
-    Tacho::GraphTools_CAMD G(graph);
+    Tacho::GraphTools G(graph);
 #endif
     G.reorder(verbose);
 
@@ -202,7 +186,7 @@ int main (int argc, char *argv[]) {
       }
 
       // 32bit vs 64bit integers; A uses size_t for size array
-      Kokkos::View<ordinal_type*,Kokkos::DefaultHostExecutionSpace> rowptr("rowptr", Asym.NumRows()+1);
+      Kokkos::View<ordinal_type*,host_device_type> rowptr("rowptr", Asym.NumRows()+1);
       for (ordinal_type i=0;i<=Asym.NumRows();++i)
         rowptr(i) = Asym.RowPtrBegin(i);
 
@@ -265,7 +249,7 @@ int main (int argc, char *argv[]) {
         pardiso.showStat(std::cout, Pardiso::Solve) << std::endl;   
       }
 
-      const double res = Tacho::NumericTools<value_type,Kokkos::DefaultHostExecutionSpace>::computeRelativeResidual(A, x, b);
+      const double res = Tacho::computeRelativeResidual(A, x, b);
       std::cout << "PardisoChol:: residual = " << res << "\n\n";
 
       r_val = pardiso.run(Pardiso::ReleaseAll);
@@ -493,6 +477,9 @@ int main (int argc, char *argv[]) {
 
   }
   Kokkos::finalize();
+#else
+  std::cout << "PerfTest is not instanciated when CUDA is enabled\n";
+#endif
   return r_val;
 }
 

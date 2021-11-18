@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ************************************************************************
 // @HEADER
 
@@ -44,18 +42,15 @@
 
 /// \file Tpetra_DistObject_decl.hpp
 /// \brief Declaration of the Tpetra::DistObject class
-///
-/// If you want to use Tpetra::DistObject, include
-/// "Tpetra_DistObject.hpp" (a file which CMake generates and installs
-/// for you).  If you only want the declaration of Tpetra::DistObject,
-/// include this file (Tpetra_DistObject_decl.hpp).
 
+#include "Tpetra_Details_DistributorActor.hpp"
 #include "Tpetra_Map.hpp"
 #include "Tpetra_Import.hpp"
 #include "Tpetra_Export.hpp"
 #include "Tpetra_SrcDistObject.hpp"
 #include "Tpetra_DistObject_fwd.hpp"
 #include "Kokkos_ArithTraits.hpp"
+#include <memory>
 #include <type_traits>
 
 // #ifndef HAVE_TPETRA_TRANSFER_TIMERS
@@ -73,7 +68,7 @@ namespace KokkosClassic {
   ///   compatibility.
   enum ReadWriteOption {
     ReadWrite = 0, /*!< Indicates that the view may be safely read and written. */
-    WriteOnly = 1 /*!< Indicates that the contents of the view are undefined until set on the host. */
+    OverwriteAll = 1 /*!< Indicates that the contents of the view are undefined until set on the host. */
   };
 } // namespace KokkosClassic
 
@@ -521,6 +516,54 @@ namespace Tpetra {
               const CombineMode CM,
               const bool restrictedMode = false);
 
+    void
+    beginImport(const SrcDistObject& source,
+                const Import<LocalOrdinal, GlobalOrdinal, Node>& importer,
+                const CombineMode CM,
+                const bool restrictedMode = false);
+
+    void
+    beginExport(const SrcDistObject& source,
+                const Export<LocalOrdinal, GlobalOrdinal, Node>& exporter,
+                const CombineMode CM,
+                const bool restrictedMode = false);
+
+    void
+    beginImport(const SrcDistObject& source,
+                const Export<LocalOrdinal, GlobalOrdinal, Node>& exporter,
+                const CombineMode CM,
+                const bool restrictedMode = false);
+
+    void
+    beginExport(const SrcDistObject& source,
+                const Import<LocalOrdinal, GlobalOrdinal, Node>& importer,
+                const CombineMode CM,
+                const bool restrictedMode = false);
+
+    void
+    endImport(const SrcDistObject& source,
+              const Import<LocalOrdinal, GlobalOrdinal, Node>& importer,
+              const CombineMode CM,
+              const bool restrictedMode = false);
+
+    void
+    endExport(const SrcDistObject& source,
+              const Export<LocalOrdinal, GlobalOrdinal, Node>& exporter,
+              const CombineMode CM,
+              const bool restrictedMode = false);
+
+    void
+    endImport(const SrcDistObject& source,
+              const Export<LocalOrdinal, GlobalOrdinal, Node>& exporter,
+              const CombineMode CM,
+              const bool restrictedMode = false);
+
+    void
+    endExport(const SrcDistObject& source,
+              const Import<LocalOrdinal, GlobalOrdinal, Node>& importer,
+              const CombineMode CM,
+              const bool restrictedMode = false);
+
     //@}
     //! @name Attribute accessor methods
     //@{
@@ -701,30 +744,11 @@ namespace Tpetra {
     reallocArraysForNumPacketsPerLid (const size_t numExportLIDs,
                                       const size_t numImportLIDs);
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Implementation of doTransfer for the "old" DistObject
-    ///   interface.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    doTransferOld (const SrcDistObject& src,
-                   CombineMode CM,
-                   size_t numSameIDs,
-                   const Teuchos::ArrayView<const local_ordinal_type> &permuteToLIDs,
-                   const Teuchos::ArrayView<const local_ordinal_type> &permuteFromLIDs,
-                   const Teuchos::ArrayView<const local_ordinal_type> &remoteLIDs,
-                   const Teuchos::ArrayView<const local_ordinal_type> &exportLIDs,
-                   Distributor &distor,
-                   ReverseOption revOp,
-                   const bool restrictedMode);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     /// \typedef buffer_memory_space
     /// \brief Kokkos memory space for communication buffers.
     using buffer_memory_space =
-      ::Tpetra::Details::DefaultTypes::comm_buffer_memory_space<
-        typename device_type::execution_space>;
+      ::Tpetra::Details::DefaultTypes::comm_buffer_memory_space<device_type>;
 
   public:
     /// \typedef buffer_device_type
@@ -746,22 +770,34 @@ namespace Tpetra {
     /// LID DualViews come from the Transfer object given to
     /// doTransfer.  They are <i>always</i> sync'd on both host and
     /// device.  Users must never attempt to modify or sync them.
-    virtual void
-    doTransferNew (const SrcDistObject& src,
-                   const CombineMode CM,
-                   const size_t numSameIDs,
-                   const Kokkos::DualView<const local_ordinal_type*,
-                     buffer_device_type>& permuteToLIDs,
-                   const Kokkos::DualView<const local_ordinal_type*,
-                     buffer_device_type>& permuteFromLIDs,
-                   const Kokkos::DualView<const local_ordinal_type*,
-                     buffer_device_type>& remoteLIDs,
-                   const Kokkos::DualView<const local_ordinal_type*,
-                     buffer_device_type>& exportLIDs,
-                   Distributor& distor,
-                   const ReverseOption revOp,
-                   const bool commOnHost,
-                   const bool restrictedMode);
+    void beginTransfer(const SrcDistObject& src,
+                       const ::Tpetra::Details::Transfer<local_ordinal_type, global_ordinal_type, node_type>& transfer,
+                       const char modeString[],
+                       const ReverseOption revOp,
+                       const CombineMode CM,
+                       const bool restrictedMode);
+
+    void endTransfer(const SrcDistObject& src,
+                     const ::Tpetra::Details::Transfer<local_ordinal_type, global_ordinal_type, node_type>& transfer,
+                     const char modeString[],
+                     const ReverseOption revOp,
+                     const CombineMode CM,
+                     const bool restrictedMode);
+
+    void doPosts(const Details::DistributorPlan& distributorPlan,
+                 size_t constantNumPackets,
+                 bool commOnHost,
+                 std::shared_ptr<std::string> prefix,
+                 const bool canTryAliasing,
+                 const CombineMode CM);
+
+    void doPackAndPrepare(const SrcDistObject& src,
+                          const Kokkos::DualView<const local_ordinal_type*, buffer_device_type>& exportLIDs,
+                          size_t& constantNumPackets);
+
+    void doUnpackAndCombine(const Kokkos::DualView<const local_ordinal_type*, buffer_device_type>& remoteLIDs,
+                            size_t constantNumPackets,
+                            CombineMode CM);
 
     /// \name Methods implemented by subclasses and used by doTransfer().
     ///
@@ -781,7 +817,6 @@ namespace Tpetra {
     virtual bool
     checkSizes (const SrcDistObject& source) = 0;
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
     /// \brief Perform copies and permutations that are local to the
     ///   calling (MPI) process.
     ///
@@ -808,50 +843,18 @@ namespace Tpetra {
     /// \param permuteFromLIDs [in] List of the elements that are
     ///   permuted.  They are listed by their local index (LID) in the
     ///   source object.
-    virtual void
-    copyAndPermuteNew (const SrcDistObject& source,
-                       const size_t numSameIDs,
-                       const Kokkos::DualView<const local_ordinal_type*,
-                         buffer_device_type>& permuteToLIDs,
-                       const Kokkos::DualView<const local_ordinal_type*,
-                         buffer_device_type>& permuteFromLIDs);
-#else // TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Perform copies and permutations that are local to the
-    ///   calling (MPI) process.
-    ///
-    /// Subclasses <i>must</i> reimplement this function.  Its default
-    /// implementation does nothing.  Note that the <t>target</i>
-    /// object of the Export or Import, namely <tt>*this</tt>, packs
-    /// the <i>source</i> object's data.
-    ///
-    /// \pre permuteToLIDs and permuteFromLIDs are sync'd to both host
-    ///   and device.  That is,
-    ///   <tt>permuteToLIDs.need_sync_host()</tt>,
-    ///   <tt>permuteToLIDs.need_sync_device()</tt>,
-    ///   <tt>permuteFromLIDs.need_sync_host()</tt>, and
-    ///   <tt>permuteFromLIDs.need_sync_device()</tt> are all false.
-    ///
-    /// \param source [in] On entry, the source object of the Export
-    ///   or Import operation.
-    /// \param numSameIDs [in] The number of elements that are the
-    ///   same on the source and target objects.  These elements live
-    ///   on the same process in both the source and target objects.
-    /// \param permuteToLIDs [in] List of the elements that are
-    ///   permuted.  They are listed by their local index (LID) in the
-    ///   destination object.
-    /// \param permuteFromLIDs [in] List of the elements that are
-    ///   permuted.  They are listed by their local index (LID) in the
-    ///   source object.
+    /// \param CM [in] CombineMode to be used during copyAndPermute; 
+    ///   may or may not be used by the particular object being called;
+    ///   behavior with respect to CombineMode may differ by object.
     virtual void
     copyAndPermute (const SrcDistObject& source,
                     const size_t numSameIDs,
                     const Kokkos::DualView<const local_ordinal_type*,
                       buffer_device_type>& permuteToLIDs,
                     const Kokkos::DualView<const local_ordinal_type*,
-                      buffer_device_type>& permuteFromLIDs);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
+                      buffer_device_type>& permuteFromLIDs,
+                    const CombineMode CM);
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
     /// \brief Pack data and metadata for communication (sends).
     ///
     /// Subclasses <i>must</i> reimplement this function.  Its default
@@ -889,60 +892,6 @@ namespace Tpetra {
     /// \param constantNumPackets [out] On exit, 0 if the number of
     ///   packets per LID could differ, else (if nonzero) the number
     ///   of packets per LID (which must be constant).
-    ///
-    /// \param distor [in] The Distributor object we are using.  Most
-    ///   implementations will not use this.
-    virtual void
-    packAndPrepareNew (const SrcDistObject& source,
-                       const Kokkos::DualView<const local_ordinal_type*,
-                         buffer_device_type>& exportLIDs,
-                       Kokkos::DualView<packet_type*,
-                         buffer_device_type>& exports,
-                       Kokkos::DualView<size_t*,
-                         buffer_device_type> numPacketsPerLID,
-                       size_t& constantNumPackets,
-                       Distributor& distor);
-#else // TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Pack data and metadata for communication (sends).
-    ///
-    /// Subclasses <i>must</i> reimplement this function.  Its default
-    /// implementation does nothing.  Note that the <t>target</i>
-    /// object of the Export or Import, namely <tt>*this</tt>, packs
-    /// the <i>source</i> object's data.
-    ///
-    /// \pre exportLIDs is sync'd to both host and device.  That is,
-    ///   <tt>exportLIDs.need_sync_host ()</tt> and
-    ///   <tt>exportLIDs.need_sync_device()</tt> are both false.
-    ///
-    /// \param source [in] Source object for the redistribution.
-    ///
-    /// \param exportLIDs [in] List of the entries (as local IDs in
-    ///   the source object) that Tpetra will send to other processes.
-    ///
-    /// \param exports [out] On exit, the packed data to send.
-    ///   Implementations must reallocate this as needed (prefer
-    ///   reusing the existing allocation if possible), and may modify
-    ///   and/or sync this wherever they like.
-    ///
-    /// \param numPacketsPerLID [out] On exit, the implementation of
-    ///   this method must do one of two things: either set
-    ///   <tt>numPacketsPerLID[i]</tt> to the number of packets to be
-    ///   packed for <tt>exportLIDs[i]</tt> and set
-    ///   <tt>constantNumPackets</tt> to zero, or set
-    ///   <tt>constantNumPackets</tt> to a nonzero value.  If the
-    ///   latter, the implementation must not modify the entries of
-    ///   <tt>numPacketsPerLID</tt>.  If the former, the
-    ///   implementation may sync <tt>numPacketsPerLID</tt> this
-    ///   wherever it likes, either to host or to device.  The
-    ///   allocation belongs to DistObject, not to subclasses; don't
-    ///   be tempted to change this to pass by reference.
-    ///
-    /// \param constantNumPackets [out] On exit, 0 if the number of
-    ///   packets per LID could differ, else (if nonzero) the number
-    ///   of packets per LID (which must be constant).
-    ///
-    /// \param distor [in] The Distributor object we are using.  Most
-    ///   implementations will not use this.
     virtual void
     packAndPrepare (const SrcDistObject& source,
                     const Kokkos::DualView<const local_ordinal_type*,
@@ -951,11 +900,8 @@ namespace Tpetra {
                       buffer_device_type>& exports,
                     Kokkos::DualView<size_t*,
                       buffer_device_type> numPacketsPerLID,
-                    size_t& constantNumPackets,
-                    Distributor& distor);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
+                    size_t& constantNumPackets);
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
     /// \brief Perform any unpacking and combining after
     ///   communication.
     ///
@@ -992,62 +938,6 @@ namespace Tpetra {
     ///   <tt>constantNumPackets</tt> is that number.  If zero, then
     ///   <tt>numPacketsPerLID[i]</tt> is the number of packets to
     ///   unpack for LID <tt>importLIDs[i]</tt>.
-    ///
-    /// \param distor [in] The Distributor object we are using.  Most
-    ///   implementations will not use this.
-    ///
-    /// \param combineMode [in] The CombineMode to use when combining
-    ///   the imported entries with existing entries.
-    virtual void
-    unpackAndCombineNew (const Kokkos::DualView<const local_ordinal_type*,
-                           buffer_device_type>& importLIDs,
-                         Kokkos::DualView<packet_type*,
-                           buffer_device_type> imports,
-                         Kokkos::DualView<size_t*,
-                           buffer_device_type> numPacketsPerLID,
-                         const size_t constantNumPackets,
-                         Distributor& distor,
-                         const CombineMode combineMode);
-#else // TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Perform any unpacking and combining after
-    ///   communication.
-    ///
-    /// Subclasses <i>must</i> reimplement this function.  Its default
-    /// implementation does nothing.  Note that the <t>target</i>
-    /// object of the Export or Import, namely <tt>*this</tt>, unpacks
-    /// the received data into itself, possibly modifying its entries.
-    ///
-    /// \pre importLIDs is sync'd to both host and device.  That is,
-    ///   <tt>importLIDs.need_sync_host ()</tt> and
-    ///   <tt>importLIDs.need_sync_device()</tt> are both false.
-    ///
-    /// \param importLIDs [in] List of the entries (as LIDs in the
-    ///   destination object) we received from other processes.
-    ///
-    /// \param imports [in/out] On input: Buffer of received data to
-    ///   unpack.  DistObject promises nothing about where this is
-    ///   sync'd.  Implementations may sync this wherever they like,
-    ///   either to host or to device.  The allocation belongs to
-    ///   DistObject, not to subclasses; don't be tempted to change
-    ///   this to pass by reference.
-    ///
-    /// \param numPacketsPerLID [in/out] On input: If
-    ///   <tt>constantNumPackets</tt> is zero, then
-    ///   <tt>numPacketsPerLID[i]</tt> contains the number of packets
-    ///   imported for </tt>importLIDs[i]</tt>.  DistObject promises
-    ///   nothing about where this is sync'd.  Implementations may
-    ///   sync this wherever they like, either to host or to device.
-    ///   The allocation belongs to DistObject, not to subclasses;
-    ///   don't be tempted to change this to pass by reference.
-    ///
-    /// \param constantNumPackets [in] If nonzero, then the number of
-    ///   packets per LID is the same for all entries ("constant") and
-    ///   <tt>constantNumPackets</tt> is that number.  If zero, then
-    ///   <tt>numPacketsPerLID[i]</tt> is the number of packets to
-    ///   unpack for LID <tt>importLIDs[i]</tt>.
-    ///
-    /// \param distor [in] The Distributor object we are using.  Most
-    ///   implementations will not use this.
     ///
     /// \param combineMode [in] The CombineMode to use when combining
     ///   the imported entries with existing entries.
@@ -1059,80 +949,17 @@ namespace Tpetra {
                       Kokkos::DualView<size_t*,
                         buffer_device_type> numPacketsPerLID,
                       const size_t constantNumPackets,
-                      Distributor& distor,
                       const CombineMode combineMode);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Whether the subclass implements the "new" or "old" interface.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual bool TPETRA_DEPRECATED useNewInterface () { return true; }
-
-    /// \brief Perform copies and permutations that are local to this
-    ///   process; old interface version.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    copyAndPermute (const SrcDistObject& source,
-                    const size_t numSameIDs,
-                    const Teuchos::ArrayView<const local_ordinal_type>& permuteToLIDs,
-                    const Teuchos::ArrayView<const local_ordinal_type>& permuteFromLIDs);
-
-    /// \brief Pack data and metadata for communication (sends);
-    ///   old interface version.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    packAndPrepare (const SrcDistObject& source,
-                    const Teuchos::ArrayView<const local_ordinal_type>& exportLIDs,
-                    Teuchos::Array<packet_type>& exports,
-                    const Teuchos::ArrayView<size_t>& numPacketsPerLID,
-                    size_t& constantNumPackets,
-                    Distributor& distor);
-
-    /// \brief Perform any unpacking and combining after
-    ///   communication; old interface version.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    unpackAndCombine (const Teuchos::ArrayView<const local_ordinal_type>& importLIDs,
-                      const Teuchos::ArrayView<const packet_type>& imports,
-                      const Teuchos::ArrayView<size_t>& numPacketsPerLID,
-                      const size_t constantNumPackets,
-                      Distributor& distor,
-                      const CombineMode combineMode);
-    //@}
-
-    /// \brief Hook for creating a const view.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    createViews () const;
-
-    /// \brief Hook for creating a nonconst view.
-    ///
-    /// \warning This method is DEPRECATED.  Do not call it, and do
-    ///   not implement it in your subclasses of DistObject.
-    virtual void TPETRA_DEPRECATED
-    createViewsNonConst (KokkosClassic::ReadWriteOption rwo);
-
-    /// \brief Hook for releasing views.
-    ///
-    /// \note This is no longer called (and is therefore no longer
-    ///   needed) for subclasses that implement the "new" interface.
-    virtual void TPETRA_DEPRECATED releaseViews () const;
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     //! The Map over which this object is distributed.
     Teuchos::RCP<const map_type> map_;
 
   protected:
+    std::unique_ptr<std::string>
+    createPrefix(const char className[],
+                 const char methodName[]) const;
+
     /// \brief Buffer into which packed data are imported (received
     ///   from other processes).
     ///
@@ -1159,10 +986,12 @@ namespace Tpetra {
     /// <tt>exports_</tt> always gets passed into packAndPrepare()
     /// by nonconst reference.  Thus, that method can resize the
     /// DualView without needing to call other DistObject methods.
-    bool
+    virtual bool
     reallocImportsIfNeeded (const size_t newSize,
                             const bool verbose,
-                            const std::string* prefix);
+                            const std::string* prefix,
+                            const bool remoteLIDsContiguous=false,
+                            const CombineMode CM=INSERT);
 
     /// \brief Number of packets to receive for each receive operation.
     ///
@@ -1203,6 +1032,8 @@ namespace Tpetra {
 
   private:
     using this_type = DistObject<Packet, LocalOrdinal, GlobalOrdinal, Node>;
+
+    Details::DistributorActor distributorActor_;
 
 #ifdef HAVE_TPETRA_TRANSFER_TIMERS
     Teuchos::RCP<Teuchos::Time> doXferTimer_;

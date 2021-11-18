@@ -42,7 +42,12 @@
 #include <sys/types.h>                  // for int64_t
 #include <iostream>                     // for operator<<, basic_ostream, etc
 #include <map>                          // for map, map<>::value_compare
+#include <string>                       // for string, char_traits
+#include <typeinfo>                     // for type_info
+#include <utility>                      // for pair
+#include <vector>                       // for vector, vector<>::size_type
 #include <stk_util/stk_config.h>
+#include <stk_mesh/base/CoordinateSystems.hpp>
 #include <stk_mesh/base/EntityKey.hpp>  // for EntityKey
 #include <stk_mesh/base/Part.hpp>       // for Part
 #include <stk_mesh/base/Selector.hpp>   // for Selector
@@ -52,13 +57,10 @@
 #include <stk_topology/topology.hpp>    // for topology, topology::rank_t, etc
 #include <stk_util/parallel/Parallel.hpp>  // for ParallelMachine
 #include <stk_util/util/string_case_compare.hpp>  // for equal_case
-#include <string>                       // for string, char_traits
-#include <typeinfo>                     // for type_info
-#include <utility>                      // for pair
-#include <vector>                       // for vector, vector<>::size_type
 #include "Shards_CellTopology.hpp"      // for operator<, CellTopology
 #include "Shards_CellTopologyTraits.hpp"  // for getCellTopologyData
 #include "stk_mesh/base/DataTraits.hpp"  // for DataTraits (ptr only), etc
+#include <stk_mesh/base/Field.hpp>
 #include "stk_mesh/base/FieldBase.hpp"  // for FieldBase
 #include "stk_mesh/base/FieldState.hpp"  // for ::MaximumFieldStates, etc
 #include "stk_mesh/baseImpl/PartImpl.hpp"  // for PartImpl
@@ -67,40 +69,19 @@
 
 namespace shards { class ArrayDimTag; }
 namespace shards { class CellTopologyManagedData; }
-namespace stk { namespace mesh { class Bucket; } }
 namespace stk { namespace mesh { class BulkData; } }
-namespace stk { namespace mesh { class Ghosting; } }
 namespace stk { namespace mesh { class MetaData; } }
 
 namespace stk {
 namespace mesh {
 
+typedef Field<double, stk::mesh::Cartesian> CoordinatesField;
+
 /** \addtogroup stk_mesh_module
  *  \{
  */
 
-/** \brief  Print an entity key for this meta data */
-std::ostream &
-print_entity_key( std::ostream & os, const MetaData & meta_data, const EntityKey & key);
-
-std::string
-print_entity_key( const MetaData & meta_data, const EntityKey & key );
-
 bool is_topology_root_part(const Part & part);
-
-/** set a cell_topology on a part.  Please call set_topology() instead. */
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-STK_DEPRECATED void set_cell_topology( Part &part, const shards::CellTopology cell_topology);
-#endif
-
-/** set a cell_topology on a part.  Please call set_topology<>() instead. */
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-template<class Topology>
-STK_DEPRECATED inline void set_cell_topology(Part & part)
-{
-  stk::mesh::set_cell_topology(part, shards::CellTopology(shards::getCellTopologyData<Topology>()));
-}
-#endif
 
 /** set a stk::topology on a part */
 void set_topology(Part &part, stk::topology topology);
@@ -162,11 +143,9 @@ public:
 
 
   inline static MetaData & get( const Part & part ) { return part.meta_data(); }
-  inline static MetaData & get( const FieldBase & field ) { return field.meta_data(); }
+  inline static MetaData & get( const FieldBase & field ) { return field.mesh_meta_data(); }
 
   static const MetaData & get( const BulkData & bulk_data );
-  static const MetaData & get( const Bucket & bucket );
-  static const MetaData & get( const Ghosting & ghost );
 
   /** \brief  Construct a meta data manager to own parts and fields.  */
   explicit MetaData(size_t spatial_dimension, const std::vector<std::string>& rank_names = std::vector<std::string>());
@@ -344,8 +323,8 @@ public:
   const std::vector<std::string> & entity_rank_names() const
     { return m_entity_rank_names ; }
 
-  std::vector<std::string>::size_type entity_rank_count() const
-    { return m_entity_rank_names.size(); }
+  EntityRank entity_rank_count() const
+    { return static_cast<EntityRank>(m_entity_rank_names.size()); }
 
   const std::string & entity_rank_name( EntityRank entity_rank ) const ;
 
@@ -481,6 +460,7 @@ public:
 
   /** \brief  Allow late field registration */
   void enable_late_fields() { m_are_late_fields_enabled = true; }
+  void disable_late_fields() { m_are_late_fields_enabled = false; }
 
   /** \brief  Query if late fields are allowed */
   bool are_late_fields_enabled() const { return m_are_late_fields_enabled; }
@@ -528,29 +508,10 @@ public:
                                   const unsigned   arg_first_dimension ,
                                   const void*      arg_init_value = NULL );
 
-  /** \brief This function is used to register new cell topologies and their associated ranks with MetaData.
-   *         Please call register_topology() instead.
-   */
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-  STK_DEPRECATED void register_cell_topology(const shards::CellTopology cell_topology, EntityRank in_entity_rank);
-#endif
-
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-  STK_DEPRECATED shards::CellTopology register_super_cell_topology(stk::topology t);
-#endif
-
   /** \brief  Register a new topology with MetaData and create the corresponding
    *          root topology part.
    */
   Part& register_topology(stk::topology stkTopo);
-
-  /** \brief Return the root cell topology part associated with the given cell topology.
-   * This Part is created in register_cell_topology.
-   * Please call get_topology_root_part() instead.
-   */
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-  STK_DEPRECATED Part &get_cell_topology_root_part(const shards::CellTopology cell_topology) const;
-#endif
 
   /** \brief Return the topology part given a stk::topology.
    */
@@ -558,19 +519,7 @@ public:
 
   bool has_topology_root_part(stk::topology topology) const;
 
-  /** \brief Return the cell topology associated with the given part.
-   * The cell topology is set on a part through part subsetting with the root
-   * cell topology part.
-   */
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-  STK_DEPRECATED shards::CellTopology get_cell_topology( const Part & part) const;
-#endif
-
   stk::topology get_topology(const Part & part) const;
-
-#ifndef STK_HIDE_DEPRECATED_CODE // Delete after 2019-07-18
-  STK_DEPRECATED shards::CellTopology get_cell_topology( const std::string & topology_name) const;
-#endif
 
   void dump_all_meta_info(std::ostream& out = std::cout) const;
 
@@ -579,8 +528,10 @@ public:
   void set_surface_to_block_mapping(const stk::mesh::Part* surface, const std::vector<const stk::mesh::Part*> &blocks)
   {
       std::vector<unsigned> partOrdinals(blocks.size());
-      for(size_t i=0;i<blocks.size();++i)
+      for(size_t i=0;i<blocks.size();++i) {
           partOrdinals[i] = blocks[i]->mesh_meta_data_ordinal();
+      }
+      std::sort(partOrdinals.begin(), partOrdinals.end());
       m_surfaceToBlock[surface->mesh_meta_data_ordinal()] = partOrdinals;
   }
 
@@ -599,6 +550,17 @@ public:
       return blockParts;
   }
 
+  size_t count_blocks_touching_surface(const stk::mesh::Part* surface) const
+  {
+      size_t numBlocks = 0;
+      const auto entry = m_surfaceToBlock.find(surface->mesh_meta_data_ordinal());
+      if(entry != m_surfaceToBlock.end())
+      {
+        numBlocks = entry->second.size();
+      }
+      return numBlocks;
+  }
+
   std::vector<const stk::mesh::Part *> get_surfaces_in_surface_to_block_map() const
   {
       std::vector<const stk::mesh::Part *> surfaces;
@@ -607,6 +569,11 @@ public:
       for(; iter != m_surfaceToBlock.end();++iter)
           surfaces.push_back(this->get_parts()[iter->first]);
       return surfaces;
+  }
+
+  size_t count_surfaces_in_surface_to_block_map() const
+  {
+    return m_surfaceToBlock.size();
   }
 
 protected:
@@ -648,7 +615,6 @@ private:
   mutable FieldBase* m_coord_field;
 
   std::vector< std::string >   m_entity_rank_names ;
-  std::vector<shards::CellTopologyManagedData*> m_created_topologies;  // Delete after 2019-07-18
 
   unsigned m_spatial_dimension;
   SurfaceBlockMap m_surfaceToBlock;
@@ -673,6 +639,8 @@ private:
 
   void clean_field_restrictions();
 };
+
+void sync_to_host_and_mark_modified(const MetaData& meta);
 
 /** \brief  Verify that the meta data is identical on all processors */
 void verify_parallel_consistency( const MetaData & , ParallelMachine );
@@ -908,7 +876,7 @@ field_type & MetaData::declare_field( stk::topology::rank_t arg_entity_rank,
     }
 
     for ( unsigned i = 0 ; i < number_of_states ; ++i ) {
-      f[i]->m_impl.set_field_states( f );
+      f[i]->set_field_states( f );
     }
   }
 

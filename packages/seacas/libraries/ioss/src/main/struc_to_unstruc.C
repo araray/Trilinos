@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #include <Ionit_Initializer.h>
 #include <Ioss_CodeTypes.h>
@@ -69,6 +43,8 @@ namespace {
 
   void transfer_sb_fields(const Ioss::Region &region, Ioss::Region &output_region,
                           Ioss::Field::RoleType role);
+  void transfer_nb_fields(const Ioss::Region &region, Ioss::Region &output_region,
+                          Ioss::Field::RoleType role);
 
   template <typename T>
   void transfer_fields(const std::vector<T *> &entities, Ioss::Region &output_region,
@@ -79,11 +55,14 @@ namespace {
 
   void transfer_sb_field_data(const Ioss::Region &region, Ioss::Region &output_region,
                               Ioss::Field::RoleType role);
+  void transfer_nb_field_data(const Ioss::Region &region, Ioss::Region &output_region,
+                              Ioss::Field::RoleType role);
 
   void transfer_coord(std::vector<double> &to, std::vector<double> &from,
                       std::vector<size_t> &node_id_list)
   {
     assert(from.empty() || !node_id_list.empty());
+    assert(from.size() == node_id_list.size());
     for (size_t i = 0; i < from.size(); i++) {
       size_t idx = node_id_list[i];
       to[idx]    = from[i];
@@ -94,7 +73,7 @@ namespace {
 
 namespace {
   std::string codename;
-  std::string version = "4.7";
+  std::string version = "5.01";
 } // namespace
 
 int main(int argc, char *argv[])
@@ -104,8 +83,6 @@ int main(int argc, char *argv[])
   ON_BLOCK_EXIT(MPI_Finalize);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #endif
-
-  codename = Ioss::FileInfo(argv[0]).basename();
 
   if (argc <= 2) {
     if (rank == 0) {
@@ -129,8 +106,9 @@ int main(int argc, char *argv[])
   create_unstructured(in_file, out_file);
   double end = Ioss::Utils::timer();
 
+  codename = Ioss::FileInfo(argv[0]).basename();
   if (rank == 0) {
-    fmt::print(stderr, "\n\tElapsed time = {} seconds.\n", end - begin);
+    fmt::print(stderr, "\n\tElapsed time = {:.2f} seconds.\n", end - begin);
     fmt::print(stderr, "\n{} execution successful.\n", codename);
   }
   return EXIT_SUCCESS;
@@ -139,7 +117,7 @@ int main(int argc, char *argv[])
 namespace {
   void create_unstructured(const std::string &inpfile, const std::string &outfile)
   {
-    Ioss::PropertyManager properties;
+    Ioss::PropertyManager properties{};
     Ioss::DatabaseIO *    dbi =
         Ioss::IOFactory::create("cgns", inpfile, Ioss::READ_MODEL, MPI_COMM_WORLD, properties);
     if (dbi == nullptr || !dbi->ok(true)) {
@@ -199,10 +177,10 @@ namespace {
     output_sidesets(region, output_region);
     output_region.end_mode(Ioss::STATE_MODEL);
 
-    if (region.property_exists("state_count") && region.get_property("state_count").get_int() > 0) {
+    int step_count = region.get_optional_property("state_count", 0);
+    if (step_count > 0) {
       if (rank == 0) {
-        fmt::print(stderr, "\n Number of time steps on database     = {:12n}\n\n",
-                   region.get_property("state_count").get_int());
+        fmt::print(stderr, "\n Number of time steps on database     = {:12L}\n\n", step_count);
       }
 
       output_region.begin_mode(Ioss::STATE_DEFINE_TRANSIENT);
@@ -211,17 +189,13 @@ namespace {
       // blocks, transfer to the output node and element blocks.
       transfer_fields(&region, &output_region, Ioss::Field::TRANSIENT);
       transfer_sb_fields(region, output_region, Ioss::Field::TRANSIENT);
-
-      //      transfer_fields(region.get_structured_blocks(), output_region,
-      //      Ioss::Field::TRANSIENT);
+      transfer_nb_fields(region, output_region, Ioss::Field::TRANSIENT);
 
       output_region.end_mode(Ioss::STATE_DEFINE_TRANSIENT);
 
       output_region.begin_mode(Ioss::STATE_TRANSIENT);
       // Get the timesteps from the input database.  Step through them
       // and transfer fields to output database...
-
-      int step_count = region.get_property("state_count").get_int();
 
       for (int istep = 1; istep <= step_count; istep++) {
         double time = region.get_state_time(istep);
@@ -232,6 +206,7 @@ namespace {
         output_region.begin_state(ostep);
         region.begin_state(istep);
 
+        transfer_nb_field_data(region, output_region, Ioss::Field::TRANSIENT);
         transfer_sb_field_data(region, output_region, Ioss::Field::TRANSIENT);
 
         region.end_state(istep);
@@ -243,13 +218,14 @@ namespace {
 
   void transfer_nodal(const Ioss::Region &region, Ioss::Region &output_region)
   {
-    size_t num_nodes = region.get_node_blocks()[0]->entity_count();
-    auto   nb        = output_region.get_node_blocks()[0];
+    size_t      num_nodes = region.get_node_blocks()[0]->entity_count();
+    const auto &nb        = output_region.get_node_blocks()[0];
+    assert(nb != nullptr);
 
     if (!output_region.get_database()->needs_shared_node_information()) {
       std::vector<int> ids(num_nodes); // To hold the global node id map.
-      auto &           blocks = region.get_structured_blocks();
-      for (auto &block : blocks) {
+      const auto &     blocks = region.get_structured_blocks();
+      for (const auto &block : blocks) {
         std::vector<int> cell_id;
         block->get_field_data("cell_node_ids", cell_id);
 
@@ -261,7 +237,6 @@ namespace {
           }
         }
       }
-      assert(nb != nullptr);
       nb->put_field_data("ids", ids);
     }
 
@@ -269,8 +244,8 @@ namespace {
     std::vector<double> coordinate_y(num_nodes);
     std::vector<double> coordinate_z(num_nodes);
 
-    auto &blocks = region.get_structured_blocks();
-    for (auto &block : blocks) {
+    const auto &blocks = region.get_structured_blocks();
+    for (const auto &block : blocks) {
       std::vector<double> coord_tmp;
       block->get_field_data("mesh_model_coordinates_x", coord_tmp);
       transfer_coord(coordinate_x, coord_tmp, block->m_blockLocalNodeIndex);
@@ -290,7 +265,7 @@ namespace {
   void transfer_connectivity(Ioss::Region &region, Ioss::Region &output_region)
   {
     auto &blocks = region.get_structured_blocks();
-    for (auto &block : blocks) {
+    for (const auto &block : blocks) {
       // We have a structured block of size ni x nj x nk.
       // Need to convert that to element connectivity
       // Node numbers are zero-based offset into this structured block
@@ -358,14 +333,14 @@ namespace {
     static int face_map[] = {4, 1, 5, 2, 3, 6};
 
     const auto &ssets = region.get_sidesets();
-    for (auto ss : ssets) {
+    for (const auto &ss : ssets) {
       // Get corresponding sidset on output region...
-      auto ofs = output_region.get_sideset(ss->name());
+      const auto *ofs = output_region.get_sideset(ss->name());
       assert(ofs != nullptr);
 
       const auto &fbs      = ss->get_side_blocks();
       size_t      fb_index = 0;
-      for (auto fb : fbs) {
+      for (const auto &fb : fbs) {
         // Get corresponding sideblock on output sideset 'ofs'
         // Assumes sideblocks are ordered the same on input and output.
         auto ofb = ofs->get_block(fb_index++);
@@ -379,8 +354,8 @@ namespace {
         Ioss::Utils::check_dynamic_cast(sb_parent);
 
         // Find this sideblock on the parent block...
-        auto &bc_name = fb->name();
-        for (auto &bc : sb_parent->m_boundaryConditions) {
+        const auto &bc_name = fb->name();
+        for (const auto &bc : sb_parent->m_boundaryConditions) {
           auto bc_compose = bc.m_bcName + "/" + sb_parent->name();
           if (bc_name == bc_compose) {
             std::vector<int> elem_side;
@@ -443,8 +418,8 @@ namespace {
 
     if (output_region.get_database()->needs_shared_node_information()) {
       std::vector<int> ids(num_nodes); // To hold the global node id map.
-      auto &           blocks = region.get_structured_blocks();
-      for (auto &block : blocks) {
+      const auto &     blocks = region.get_structured_blocks();
+      for (const auto &block : blocks) {
         std::vector<int> cell_id;
         block->get_field_data("cell_node_ids", cell_id);
 
@@ -470,7 +445,7 @@ namespace {
 
       int              myProcessor = output_region.get_database()->util().parallel_rank();
       std::vector<int> owning_processor(num_nodes, myProcessor);
-      for (auto &block : blocks) {
+      for (const auto &block : blocks) {
         int zone = block->get_property("zone").get_int();
         for (const auto &shared : shared_nodes[zone]) {
           size_t idx = block->m_blockLocalNodeIndex[shared.first];
@@ -482,15 +457,15 @@ namespace {
       nb->put_field_data("owning_processor", owning_processor);
     }
 
-    fmt::print("P[{}] Number of coordinates per node = {:12n}\n", rank, degree);
-    fmt::print("P[{}] Number of nodes                = {:12n}\n", rank, num_nodes);
+    fmt::print("P[{}] Number of coordinates per node = {:12L}\n", rank, degree);
+    fmt::print("P[{}] Number of nodes                = {:12L}\n", rank, num_nodes);
   }
 
   void transfer_elementblocks(Ioss::Region &region, Ioss::Region &output_region)
   {
     const auto &blocks         = region.get_structured_blocks();
     size_t      total_entities = 0;
-    for (auto iblock : blocks) {
+    for (const auto &iblock : blocks) {
       const std::string &name  = iblock->name();
       std::string        type  = Ioss::Hex8::name;
       size_t             count = iblock->get_property("cell_count").get_int();
@@ -502,7 +477,7 @@ namespace {
       total_entities += count;
     }
     fmt::print(
-        "P[{}] Number of Element Blocks       = {:12n}, Number of elements (cells) = {:12n}\n",
+        "P[{}] Number of Element Blocks       = {:12L}, Number of elements (cells) = {:12L}\n",
         rank, blocks.size(), total_entities);
   }
 
@@ -510,16 +485,16 @@ namespace {
   {
     size_t      total_sides = 0;
     const auto &ssets       = region.get_sidesets();
-    for (auto ss : ssets) {
+    for (const auto &ss : ssets) {
       const std::string &name = ss->name();
 
       int                             ss_sides = 0;
       auto                            surf = new Ioss::SideSet(output_region.get_database(), name);
       const Ioss::SideBlockContainer &fbs  = ss->get_side_blocks();
-      for (auto fb : fbs) {
+      for (const auto &fb : fbs) {
         const std::string &fbname   = fb->name();
-        std::string        fbtype   = fb->get_property("topology_type").get_string();
-        std::string        partype  = fb->get_property("parent_topology_type").get_string();
+        std::string        fbtype   = fb->topology()->name();
+        std::string        partype  = fb->parent_element_topology()->name();
         size_t             num_side = fb->entity_count();
         total_sides += num_side;
 
@@ -533,7 +508,7 @@ namespace {
       output_region.add(surf);
     }
     fmt::print(
-        "P[{}] Number of SideSets             = {:12n}, Number of cell faces       = {:12n}\n",
+        "P[{}] Number of SideSets             = {:12L}, Number of cell faces       = {:12L}\n",
         rank, ssets.size(), total_sides);
   }
 
@@ -544,13 +519,34 @@ namespace {
     }
   }
 
+  void transfer_nb_fields(const Ioss::Region &region, Ioss::Region &output_region,
+                          Ioss::Field::RoleType role)
+  {
+    size_t      num_nodes = region.get_node_blocks()[0]->entity_count();
+    const auto &onb       = output_region.get_node_blocks()[0];
+
+    const auto &blocks = region.get_structured_blocks();
+    for (const auto &block : blocks) {
+      const auto &   nb = block->get_node_block();
+      Ioss::NameList fields;
+      nb.field_describe(role, &fields);
+      for (const auto &field_name : fields) {
+        Ioss::Field field = nb.get_field(field_name);
+        if (!onb->field_exists(field_name)) {
+          field.reset_count(num_nodes);
+          onb->field_add(field);
+        }
+      }
+    }
+  }
+
   void transfer_sb_fields(const Ioss::Region &region, Ioss::Region &output_region,
                           Ioss::Field::RoleType role)
   {
-    auto   nb        = output_region.get_node_blocks()[0];
-    size_t num_nodes = region.get_node_blocks()[0]->entity_count();
-    auto & blocks    = region.get_structured_blocks();
-    for (auto &block : blocks) {
+    const auto &nb        = output_region.get_node_blocks()[0];
+    size_t      num_nodes = region.get_node_blocks()[0]->entity_count();
+    const auto &blocks    = region.get_structured_blocks();
+    for (const auto &block : blocks) {
       Ioss::NameList fields;
       block->field_describe(role, &fields);
 
@@ -574,48 +570,54 @@ namespace {
     }
   }
 
-  void transfer_sb_field_data(const Ioss::Region &region, Ioss::Region &output_region,
+  void transfer_nb_field_data(const Ioss::Region &region, Ioss::Region &output_region,
                               Ioss::Field::RoleType role)
   {
-    {
-      auto                nb        = output_region.get_node_blocks()[0];
+    const auto &   onb = output_region.get_node_blocks()[0];
+    Ioss::NameList fields;
+    onb->field_describe(role, &fields);
+
+    for (const auto &field_name : fields) {
+      assert(onb->field_exists(field_name));
+      const Ioss::Field &       field      = onb->get_field(field_name);
+      const Ioss::VariableType *var_type   = field.raw_storage();
+      size_t                    comp_count = var_type->component_count();
+
       size_t              num_nodes = region.get_node_blocks()[0]->entity_count();
-      std::vector<double> node_data(num_nodes);
-      std::vector<double> data;
+      std::vector<double> node_data(num_nodes * comp_count);
 
-      // Handle nodal fields first...
-      Ioss::NameList fields;
-      nb->field_describe(role, &fields);
-
-      for (const auto &field_name : fields) {
-        assert(nb->field_exists(field_name));
-        Ioss::Field               field      = nb->get_field(field_name);
-        const Ioss::VariableType *var_type   = field.raw_storage();
-        size_t                    comp_count = var_type->component_count();
-
-        auto &blocks = region.get_structured_blocks();
-        for (auto &block : blocks) {
-          auto node_id_list = block->m_blockLocalNodeIndex;
+      const auto &blocks = region.get_structured_blocks();
+      for (const auto &block : blocks) {
+        auto &nb = block->get_node_block();
+        if (nb.field_exists(field_name)) {
+          std::vector<double> data;
+          nb.get_field_data(field_name, data);
+          const auto &node_id_list = block->m_blockLocalNodeIndex;
           assert(!node_id_list.empty());
 
           for (size_t i = 0; i < node_id_list.size(); i++) {
             size_t node = node_id_list[i];
+            assert(node < num_nodes);
             for (size_t j = 0; j < comp_count; j++) {
               node_data[comp_count * node + j] = data[comp_count * i + j];
             }
           }
         }
-        nb->put_field_data(field_name, node_data);
       }
+      onb->put_field_data(field_name, node_data);
     }
-    // Now handle the cell-center fields on the structured blocks...
-    auto &blocks = region.get_structured_blocks();
-    for (auto &block : blocks) {
+  }
+
+  void transfer_sb_field_data(const Ioss::Region &region, Ioss::Region &output_region,
+                              Ioss::Field::RoleType role)
+  {
+    const auto &blocks = region.get_structured_blocks();
+    for (const auto &block : blocks) {
       Ioss::NameList fields;
       block->field_describe(role, &fields);
 
-      for (auto field_name : fields) {
-        Ioss::Field field = block->get_field(field_name);
+      for (const auto &field_name : fields) {
+        const Ioss::Field &field = block->get_field(field_name);
         if (Iocgns::Utils::is_cell_field(field)) {
           std::vector<double> data;
           block->get_field_data(field_name, data);
@@ -639,7 +641,7 @@ namespace {
     // Iterate through results fields and transfer to output
     // database...
     for (const auto &field_name : fields) {
-      Ioss::Field field = ige->get_field(field_name);
+      const Ioss::Field &field = ige->get_field(field_name);
       if (field_name != "ids" && !oge->field_exists(field_name)) {
         oge->field_add(field);
       }

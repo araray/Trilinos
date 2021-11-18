@@ -1,47 +1,40 @@
-// Copyright(C) 2008-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// See packages/seacas/LICENSE for details
 
 #include "fmt/color.h"
 #include "fmt/ostream.h"
 #include "util.h"
 #include <cstring> // for nullptr, memset
 #include <iostream>
+#include <stringx.h>
 #include <unistd.h>
+
+#include "ED_SystemInterface.h" // for SystemInterface, interFace
 
 #if defined(_MSC_VER)
 #include <io.h>
 #define isatty _isatty
 #endif
+
+int name_length()
+{
+  static int max_name_length = -1;
+  if (max_name_length < 0) {
+    max_name_length = std::max(max_name_length, max_string_length(interFace.glob_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.node_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.elmt_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.elmt_att_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.ns_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.ss_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.eb_var_names));
+    max_name_length = std::max(max_name_length, max_string_length(interFace.fb_var_names));
+    max_name_length++;
+  }
+  return max_name_length;
+}
 
 char **get_name_array(int size, int length)
 {
@@ -78,7 +71,23 @@ namespace {
   }
 } // namespace
 
+void Error(std::ostringstream &x)
+{
+  std::ostringstream out;
+  fmt::print(out, "exodiff: ERROR: {}", x.str());
+  ERR_OUT(out);
+  exit(EXIT_FAILURE);
+}
+
 void Error(const std::string &x)
+{
+  std::ostringstream out;
+  fmt::print(out, "exodiff: ERROR: {}", x);
+  ERR_OUT(out);
+  exit(EXIT_FAILURE);
+}
+
+void Warning(const std::string &x)
 {
   std::ostringstream out;
   fmt::print(out, "exodiff: ERROR: {}", x);
@@ -95,7 +104,7 @@ void ERR_OUT(std::ostringstream &buf)
   }
 }
 
-void DIFF_OUT(std::ostringstream &buf, fmt::internal::color_type color)
+void DIFF_OUT(std::ostringstream &buf, fmt::detail::color_type color)
 {
   if (term_out()) {
     fmt::print(fmt::fg(color), "{}\n", buf.str());
@@ -105,7 +114,7 @@ void DIFF_OUT(std::ostringstream &buf, fmt::internal::color_type color)
   }
 }
 
-void DIFF_OUT(const std::string &buf, fmt::internal::color_type color)
+void DIFF_OUT(const std::string &buf, fmt::detail::color_type color)
 {
   if (term_out()) {
     fmt::print(fmt::fg(color), "{}\n", buf);

@@ -50,6 +50,8 @@
 #include "Ifpack2_Preconditioner.hpp"
 #include "Ifpack2_Details_CanChangeMatrix.hpp"
 #include "Ifpack2_Details_LapackSupportsScalar.hpp"
+#include "Tpetra_Import_fwd.hpp"
+#include "Tpetra_Export_fwd.hpp"
 #include "Teuchos_SerialDenseMatrix.hpp"
 #include <type_traits>
 
@@ -122,6 +124,12 @@ public:
 
   static_assert(std::is_same<MatrixType, row_matrix_type>::value,
                 "Ifpack2::Details::DenseSolver: Please use MatrixType = Tpetra::RowMatrix.");
+
+  typedef typename row_matrix_type::nonconst_global_inds_host_view_type nonconst_global_inds_host_view_type;
+  typedef typename row_matrix_type::nonconst_local_inds_host_view_type nonconst_local_inds_host_view_type;
+  typedef typename row_matrix_type::nonconst_values_host_view_type nonconst_values_host_view_type;
+
+
 
   //! Specialization of Tpetra::Map used by this class.
   typedef Tpetra::Map<local_ordinal_type, global_ordinal_type, node_type> map_type;

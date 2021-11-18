@@ -137,12 +137,11 @@ postRegistrationSetup(typename TRAITS::SetupData d,
 
     int fieldNum = fieldIds_[fd];
     const std::vector<int> & offsets = globalIndexer_->getGIDFieldOffsets(blockId,fieldNum);
-    scratch_offsets_[fd] = Kokkos::View<int*,PHX::Device>("offsets",offsets.size());
-    for(std::size_t i=0;i<offsets.size();i++)
-      scratch_offsets_[fd](i) = offsets[i];
+    scratch_offsets_[fd] = PHX::View<int*>("offsets",offsets.size());
+    Kokkos::deep_copy(scratch_offsets_[fd], Kokkos::View<const int*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged>(offsets.data(), offsets.size()));
   }
 
-  scratch_lids_ = Kokkos::View<LO**,PHX::Device>("lids",gatherFields_[0].extent(0),
+  scratch_lids_ = PHX::View<LO**>("lids",gatherFields_[0].extent(0),
                                                  globalIndexer_->getElementBlockGIDCount(blockId));
 
   indexerNames_.clear();  // Don't need this anymore
@@ -182,7 +181,7 @@ evaluateFields(typename TRAITS::EvalData workset)
    else
      x = tpetraContainer_->get_x();
 
-   auto x_data = x->template getLocalView<PHX::Device>();
+   auto x_data = x->getLocalViewDevice(Tpetra::Access::ReadOnly);
 
    globalIndexer_->getElementLIDs(this->wda(workset).cell_local_ids_k,scratch_lids_);
 
@@ -242,6 +241,9 @@ GatherSolution_Tpetra(
     gatherFields_[fd] =
       PHX::MDField<ScalarT,Cell,NODE>(names[fd],basis->functional);
     this->addEvaluatedField(gatherFields_[fd]);
+    // Don't allow for sharing so that we can avoid zeroing out the
+    // off-diagonal values of the FAD derivative array.
+    this->addUnsharedField(gatherFields_[fd].fieldTag().clone());
   }
 
   // Setup dependent tangent fields if requested
@@ -416,6 +418,9 @@ GatherSolution_Tpetra(
     PHX::MDField<ScalarT,Cell,NODE> f(names[fd],basis->functional);
     gatherFields_[fd] = f;
     this->addEvaluatedField(gatherFields_[fd]);
+    // Don't allow for sharing so that we can avoid zeroing out the
+    // off-diagonal values of the FAD derivative array.
+    this->addUnsharedField(gatherFields_[fd].fieldTag().clone());
   }
 
   // figure out what the first active name is
@@ -429,7 +434,7 @@ GatherSolution_Tpetra(
     this->setName(n);
   }
   else {
-    std::string n = "GatherSolution (Tpetra): "+firstName+" ("+PHX::print<EvalT>()+") ";
+    std::string n = "GatherSolution (Tpetra): "+firstName+" (Jacobian) ";
     this->setName(n);
   }
 }
@@ -454,12 +459,11 @@ postRegistrationSetup(typename TRAITS::SetupData d,
 
     int fieldNum = fieldIds_[fd];
     const std::vector<int> & offsets = globalIndexer_->getGIDFieldOffsets(blockId,fieldNum);
-    scratch_offsets_[fd] = Kokkos::View<int*,PHX::Device>("offsets",offsets.size());
-    for(std::size_t i=0;i<offsets.size();i++)
-      scratch_offsets_[fd](i) = offsets[i];
+    scratch_offsets_[fd] = PHX::View<int*>("offsets",offsets.size());
+    Kokkos::deep_copy(scratch_offsets_[fd], Kokkos::View<const int*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged>(offsets.data(), offsets.size()));
   }
 
-  scratch_lids_ = Kokkos::View<LO**,PHX::Device>("lids",gatherFields_[0].extent(0),
+  scratch_lids_ = PHX::View<LO**>("lids",gatherFields_[0].extent(0),
                                                  globalIndexer_->getElementBlockGIDCount(blockId));
 
   indexerNames_.clear();  // Don't need this anymore
@@ -501,8 +505,6 @@ preEvaluate(typename TRAITS::PreEvalData d)
 
     x_vector = ro_ged->getGhostedVector_Tpetra();
 
-    x_vector->template sync<PHX::Device>();
-
     return;
   }
 
@@ -525,8 +527,6 @@ preEvaluate(typename TRAITS::PreEvalData d)
       else
         x_vector = tpetraContainer->get_x();
 
-      x_vector->template sync<PHX::Device>();
-
       return; // epetraContainer was found
     }
   }
@@ -537,8 +537,6 @@ preEvaluate(typename TRAITS::PreEvalData d)
 
     x_vector = ro_ged->getGhostedVector_Tpetra();
   }
-
-  x_vector->template sync<PHX::Device>();
 }
 
 // **********************************************************************
@@ -569,6 +567,16 @@ evaluateFields(typename TRAITS::EvalData workset)
    if(!applySensitivities_)
       seed_value = 0.0;
 
+   // Interface worksets handle DOFs from two element blocks.  The
+   // derivative offset for the other element block must be shifted by
+   // the derivative side of my element block.
+   functor_data.dos = 0;
+   if (this->wda.getDetailsIndex() == 1)
+   {
+     // Get the DOF count for my element block.
+     functor_data.dos = globalIndexer_->getElementBlockGIDCount(workset.details(0).block_id);
+   }
+
    // switch to a faster assembly
    bool use_seed = true;
    if(seed_value==0.0)
@@ -579,7 +587,7 @@ evaluateFields(typename TRAITS::EvalData workset)
    // now setup the fuctor_data, and run the parallel_for loop
    //////////////////////////////////////////////////////////////////////////////////
 
-   functor_data.x_data = x_vector->template getLocalView<PHX::Device>();
+   functor_data.x_data = x_vector->getLocalViewDevice(Tpetra::Access::ReadOnly);
    functor_data.seed_value = seed_value;
    functor_data.lids = scratch_lids_;
 
@@ -596,6 +604,7 @@ evaluateFields(typename TRAITS::EvalData workset)
      else
        Kokkos::parallel_for(Kokkos::RangePolicy<PHX::Device,NoSeed>(0,workset.num_cells),*this);
    }
+   functor_data.x_data = Kokkos::View<const double**, Kokkos::LayoutLeft,PHX::Device>();
 }
 
 // **********************************************************************
@@ -610,8 +619,12 @@ operator()(const int worksetCellIndex) const
     LO lid    = functor_data.lids(worksetCellIndex,offset);
 
     // set the value and seed the FAD object
-    functor_data.field(worksetCellIndex,basis).val() = functor_data.x_data(lid,0);
-    functor_data.field(worksetCellIndex,basis).fastAccessDx(offset) = functor_data.seed_value;
+    if (functor_data.dos == 0)
+      functor_data.field(worksetCellIndex,basis).val() = functor_data.x_data(lid,0);
+    else // Interface conditions need to zero out derivative array
+      functor_data.field(worksetCellIndex,basis) = ScalarT(functor_data.x_data(lid,0));
+
+    functor_data.field(worksetCellIndex,basis).fastAccessDx(functor_data.dos + offset) = functor_data.seed_value;
   }
 }
 

@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ************************************************************************
 // @HEADER
 
@@ -55,7 +53,7 @@
 #include <memory>
 #include <string>
 
-/// \file Tpetra_Details_packCrsGraph.hpp
+/// \file Tpetra_Details_packCrsGraph_def.hpp
 /// \brief Functions for packing the entries of a Tpetra::CrsGraph
 ///   for communication, in the case where it is valid to go to the
 ///   KokkosSparse::CrsGraph (local sparse graph data structure)
@@ -78,11 +76,6 @@
 /// unpacking.
 
 namespace Tpetra {
-
-#ifndef DOXYGEN_SHOULD_SKIP_THIS
-// Forward declaration of Distributor
-class Distributor;
-#endif // DOXYGEN_SHOULD_SKIP_THIS
 
 //
 // Users must never rely on anything in the Details namespace.
@@ -434,9 +427,9 @@ struct PackCrsGraphFunctor {
   using offsets_view_type = Kokkos::View<const size_t*, BufferDeviceType>;
   using exports_view_type = Kokkos::View<Packet*, BufferDeviceType>;
   using export_lids_view_type =
-    typename PackTraits<LO, BufferDeviceType>::input_array_type;
+    typename PackTraits<LO>::input_array_type;
   using source_pids_view_type =
-    typename PackTraits<int, BufferDeviceType>::input_array_type;
+    typename PackTraits<int>::input_array_type;
 
   using count_type =
     typename num_packets_per_lid_view_type::non_const_value_type;
@@ -566,16 +559,13 @@ do_pack(const LocalGraph& local_graph,
         const LocalMap& local_map,
         const Kokkos::View<Packet*, BufferDeviceType>& exports,
         const typename PackTraits<
-            size_t,
-            BufferDeviceType
+            size_t
         >::input_array_type& num_packets_per_lid,
         const typename PackTraits<
-          typename LocalMap::local_ordinal_type,
-          BufferDeviceType
+          typename LocalMap::local_ordinal_type
         >::input_array_type& export_lids,
         const typename PackTraits<
-          int,
-          BufferDeviceType
+          int
         >::input_array_type& source_pids,
         const Kokkos::View<const size_t*, BufferDeviceType>& offsets,
         const bool pack_pids)
@@ -620,33 +610,19 @@ do_pack(const LocalGraph& local_graph,
   Kokkos::parallel_reduce (range, f, result);
 
   if (result.first != 0) {
+    // We can't deep_copy from AnonymousSpace Views, so we can't
+    // print out any information from them in case of error.
     std::ostringstream os;
-
     if (result.first == 1) { // invalid local row index
-      auto export_lids_h = Kokkos::create_mirror_view (export_lids);
-      Kokkos::deep_copy (export_lids_h, export_lids);
-      const auto firstBadLid = export_lids_h(result.second);
-      os << "First bad export LID: export_lids(i=" << result.second << ") = "
-         << firstBadLid;
+      os << "invalid local row index";
     }
     else if (result.first == 2) { // invalid offset
-      auto offsets_h = Kokkos::create_mirror_view (offsets);
-      Kokkos::deep_copy (offsets_h, offsets);
-      const auto firstBadOffset = offsets_h(result.second);
-
-      auto num_packets_per_lid_h =
-        Kokkos::create_mirror_view (num_packets_per_lid);
-      Kokkos::deep_copy (num_packets_per_lid_h, num_packets_per_lid);
-      os << "First bad offset: offsets(i=" << result.second << ") = "
-         << firstBadOffset << ", num_packets_per_lid(i) = "
-         << num_packets_per_lid_h(result.second) << ", buf_size = "
-         << exports.size ();
+      os << "invalid offset";
     }
-
     TEUCHOS_TEST_FOR_EXCEPTION
-      (true, std::runtime_error, prefix << "PackCrsGraphFunctor reported "
-       "error code " << result.first << " for the first bad row "
-       << result.second << ".  " << os.str ());
+      (true, std::runtime_error, prefix << "PackCrsGraphFunctor "
+       "reported error code " << result.first << " (" << os.str ()
+       << ") for the first bad row " << result.second << ".");
   }
 }
 
@@ -697,21 +673,19 @@ packCrsGraph
    typename CrsGraph<LO, GO, NT>::buffer_device_type
  >& export_pids,
  size_t& constant_num_packets,
- const bool pack_pids,
- Distributor& /* dist */)
+ const bool pack_pids)
 {
   using Kokkos::View;
   using crs_graph_type = CrsGraph<LO, GO, NT>;
   using packet_type = typename crs_graph_type::packet_type;
   using buffer_device_type = typename crs_graph_type::buffer_device_type;
-  using execution_space = typename buffer_device_type::execution_space;
   using exports_view_type = Kokkos::DualView<packet_type*, buffer_device_type>;
-  using local_graph_type = typename crs_graph_type::local_graph_type;
+  using local_graph_device_type = typename crs_graph_type::local_graph_device_type;
   using local_map_type = typename Tpetra::Map<LO, GO, NT>::local_map_type;
   const char prefix[] = "Tpetra::Details::packCrsGraph: ";
   constexpr bool debug = false;
 
-  local_graph_type local_graph = sourceGraph.getLocalGraph ();
+  local_graph_device_type local_graph = sourceGraph.getLocalGraphDevice ();
   local_map_type local_col_map = sourceGraph.getColMap ()->getLocalMap ();
 
   // Setting this to zero tells the caller to expect a possibly
@@ -734,12 +708,7 @@ packCrsGraph
   }
 
   if (num_export_lids == 0) {
-    // FIXME (26 Apr 2016) Fences around (UVM) allocations only
-    // temporarily needed for #227 debugging.  Should be able to
-    // remove them after that's fixed.
-    execution_space().fence ();
     exports = exports_view_type ("exports", 0);
-    execution_space().fence ();
     return;
   }
 
@@ -754,17 +723,12 @@ packCrsGraph
 
   // Resize the output pack buffer if needed.
   if (count > size_t (exports.extent (0))) {
-    // FIXME (26 Apr 2016) Fences around (UVM) allocations only
-    // temporarily needed for #227 debugging.  Should be able to
-    // remove them after that's fixed.
-    execution_space().fence ();
     exports = exports_view_type ("exports", count);
     if (debug) {
       std::ostringstream os;
       os << "*** exports resized to " << count << std::endl;
       std::cerr << os.str ();
     }
-    execution_space().fence ();
   }
   if (debug) {
     std::ostringstream os;
@@ -785,7 +749,7 @@ packCrsGraph
 
   exports.modify_device ();
   auto exports_d = exports.view_device ();
-  do_pack<packet_type, local_graph_type, local_map_type, buffer_device_type>
+  do_pack<packet_type, local_graph_device_type, local_map_type, buffer_device_type>
     (local_graph, local_col_map, exports_d, num_packets_per_lid,
      export_lids, export_pids, offsets, pack_pids);
   // If we got this far, we succeeded.
@@ -799,8 +763,7 @@ packCrsGraph (const CrsGraph<LO, GO, NT>& sourceGraph,
               Teuchos::Array<typename CrsGraph<LO,GO,NT>::packet_type>& exports,
               const Teuchos::ArrayView<size_t>& numPacketsPerLID,
               const Teuchos::ArrayView<const LO>& exportLIDs,
-              size_t& constantNumPackets,
-              Distributor& distor)
+              size_t& constantNumPackets)
 {
   using Kokkos::HostSpace;
   using Kokkos::MemoryUnmanaged;
@@ -858,7 +821,7 @@ packCrsGraph (const CrsGraph<LO, GO, NT>& sourceGraph,
 
   PackCrsGraphImpl::packCrsGraph
     (sourceGraph, exports_dv, num_packets_per_lid_d, export_lids_d,
-     export_pids_d, constantNumPackets, pack_pids, distor);
+     export_pids_d, constantNumPackets, pack_pids);
 
   // The counts are an output of packCrsGraph, so we have to copy
   // them back to host.
@@ -902,19 +865,18 @@ packCrsGraphNew (const CrsGraph<LO,GO,NT>& sourceGraph,
                    typename CrsGraph<LO,GO,NT>::buffer_device_type
                  > num_packets_per_lid,
                  size_t& constant_num_packets,
-                 const bool pack_pids,
-                 Distributor& /* dist */)
+                 const bool pack_pids)
 {
   using Kokkos::View;
   using crs_graph_type = CrsGraph<LO,GO,NT>;
   using BDT = typename crs_graph_type::buffer_device_type;
   using PT = typename crs_graph_type::packet_type;
   using exports_dual_view_type = Kokkos::DualView<PT*, BDT>;
-  using LGT = typename crs_graph_type::local_graph_type;
+  using LGT = typename crs_graph_type::local_graph_device_type;
   using LMT = typename crs_graph_type::map_type::local_map_type;
   const char prefix[] = "Tpetra::Details::packCrsGraphNew: ";
 
-  const LGT local_graph = sourceGraph.getLocalGraph ();
+  const LGT local_graph = sourceGraph.getLocalGraphDevice ();
   const LMT local_col_map = sourceGraph.getColMap ()->getLocalMap ();
 
   // Setting this to zero tells the caller to expect a possibly
@@ -992,8 +954,7 @@ packCrsGraphWithOwningPIDs
  const Teuchos::ArrayView<size_t>& numPacketsPerLID,
  const Teuchos::ArrayView<const LO>& exportLIDs,
  const Teuchos::ArrayView<const int>& sourcePIDs,
- size_t& constantNumPackets,
- Distributor& distor)
+ size_t& constantNumPackets)
 {
   using Kokkos::HostSpace;
   using Kokkos::MemoryUnmanaged;
@@ -1028,7 +989,7 @@ packCrsGraphWithOwningPIDs
   constexpr bool pack_pids = true;
   PackCrsGraphImpl::packCrsGraph
     (sourceGraph, exports_dv, num_packets_per_lid_d, export_lids_d,
-     export_pids_d, constantNumPackets, pack_pids, distor);
+     export_pids_d, constantNumPackets, pack_pids);
 
   // The counts are an output of packCrsGraph, so we
   // have to copy them back to host.
@@ -1047,8 +1008,7 @@ packCrsGraphWithOwningPIDs
     Teuchos::Array<CrsGraph<LO,GO,NT>::packet_type>&, \
     const Teuchos::ArrayView<size_t>&, \
     const Teuchos::ArrayView<const LO>&, \
-    size_t&, \
-    Distributor&); \
+    size_t&); \
   template void \
   Details::packCrsGraphNew<LO, GO, NT> ( \
     const CrsGraph<LO, GO, NT>&, \
@@ -1065,8 +1025,7 @@ packCrsGraphWithOwningPIDs
       size_t*, \
       CrsGraph<LO,GO,NT>::buffer_device_type>, \
     size_t&, \
-    const bool, \
-    Distributor&); \
+    const bool); \
   template void \
   Details::packCrsGraphWithOwningPIDs<LO, GO, NT> ( \
     const CrsGraph<LO, GO, NT>&, \
@@ -1074,7 +1033,6 @@ packCrsGraphWithOwningPIDs
     const Teuchos::ArrayView<size_t>&, \
     const Teuchos::ArrayView<const LO>&, \
     const Teuchos::ArrayView<const int>&, \
-    size_t&, \
-    Distributor&);
+    size_t&);
 
 #endif // TPETRA_DETAILS_PACKCRSGRAPH_DEF_HPP

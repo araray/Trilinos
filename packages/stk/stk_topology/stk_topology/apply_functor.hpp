@@ -34,20 +34,10 @@
 #ifndef STKTOPOLOGY_APPLY_FUNCTOR_TCC
 #define STKTOPOLOGY_APPLY_FUNCTOR_TCC
 
-// IWYU pragma: private, include "stk_topology/topology.hpp"
+#include "stk_topology/topology_decl.hpp"
+#include "stk_topology/types.hpp"
 
 namespace stk {
-
-// struct my_functor {
-//
-//  typedef ... result_type;
-//
-//  template <typename Topology>
-//  result_type operator()(Topoolgy)
-//  { ... }
-//
-// };
-
 
 //*****************************************************************************
 // Converts a runtime topology to a compile-time topology_type<Topology>
@@ -78,6 +68,7 @@ struct topology::apply_host_functor
     case TRI_4:        return m_functor( topology_type< TRI_4        >() );
     case TRI_6:        return m_functor( topology_type< TRI_6        >() );
     case QUAD_4:       return m_functor( topology_type< QUAD_4       >() );
+    case QUAD_6:       return m_functor( topology_type< QUAD_6       >() );
     case QUAD_8:       return m_functor( topology_type< QUAD_8       >() );
     case QUAD_9:       return m_functor( topology_type< QUAD_9       >() );
     case PARTICLE:     return m_functor( topology_type< PARTICLE     >() );
@@ -109,6 +100,7 @@ struct topology::apply_host_functor
     case PYRAMID_13:   return m_functor( topology_type< PYRAMID_13   >() );
     case PYRAMID_14:   return m_functor( topology_type< PYRAMID_14   >() );
     case WEDGE_6:      return m_functor( topology_type< WEDGE_6      >() );
+    case WEDGE_12:     return m_functor( topology_type< WEDGE_12     >() );
     case WEDGE_15:     return m_functor( topology_type< WEDGE_15     >() );
     case WEDGE_18:     return m_functor( topology_type< WEDGE_18     >() );
     case HEX_8:        return m_functor( topology_type< HEX_8        >() );
@@ -131,6 +123,7 @@ struct topology::apply_host_functor
     case TRI_4:        return m_functor( topology_type< TRI_4        >() );
     case TRI_6:        return m_functor( topology_type< TRI_6        >() );
     case QUAD_4:       return m_functor( topology_type< QUAD_4       >() );
+    case QUAD_6:       return m_functor( topology_type< QUAD_6       >() );
     case QUAD_8:       return m_functor( topology_type< QUAD_8       >() );
     case QUAD_9:       return m_functor( topology_type< QUAD_9       >() );
     case PARTICLE:     return m_functor( topology_type< PARTICLE     >() );
@@ -162,6 +155,7 @@ struct topology::apply_host_functor
     case PYRAMID_13:   return m_functor( topology_type< PYRAMID_13   >() );
     case PYRAMID_14:   return m_functor( topology_type< PYRAMID_14   >() );
     case WEDGE_6:      return m_functor( topology_type< WEDGE_6      >() );
+    case WEDGE_12:     return m_functor( topology_type< WEDGE_12     >() );
     case WEDGE_15:     return m_functor( topology_type< WEDGE_15     >() );
     case WEDGE_18:     return m_functor( topology_type< WEDGE_18     >() );
     case HEX_8:        return m_functor( topology_type< HEX_8        >() );
@@ -203,6 +197,7 @@ struct topology::apply_functor
     case TRI_4:        return m_functor( topology_type< TRI_4        >() );
     case TRI_6:        return m_functor( topology_type< TRI_6        >() );
     case QUAD_4:       return m_functor( topology_type< QUAD_4       >() );
+    case QUAD_6:       return m_functor( topology_type< QUAD_6       >() );
     case QUAD_8:       return m_functor( topology_type< QUAD_8       >() );
     case QUAD_9:       return m_functor( topology_type< QUAD_9       >() );
     case PARTICLE:     return m_functor( topology_type< PARTICLE     >() );
@@ -234,6 +229,7 @@ struct topology::apply_functor
     case PYRAMID_13:   return m_functor( topology_type< PYRAMID_13   >() );
     case PYRAMID_14:   return m_functor( topology_type< PYRAMID_14   >() );
     case WEDGE_6:      return m_functor( topology_type< WEDGE_6      >() );
+    case WEDGE_12:     return m_functor( topology_type< WEDGE_12     >() );
     case WEDGE_15:     return m_functor( topology_type< WEDGE_15     >() );
     case WEDGE_18:     return m_functor( topology_type< WEDGE_18     >() );
     case HEX_8:        return m_functor( topology_type< HEX_8        >() );
@@ -257,6 +253,7 @@ struct topology::apply_functor
     case TRI_4:        return m_functor( topology_type< TRI_4        >() );
     case TRI_6:        return m_functor( topology_type< TRI_6        >() );
     case QUAD_4:       return m_functor( topology_type< QUAD_4       >() );
+    case QUAD_6:       return m_functor( topology_type< QUAD_6       >() );
     case QUAD_8:       return m_functor( topology_type< QUAD_8       >() );
     case QUAD_9:       return m_functor( topology_type< QUAD_9       >() );
     case PARTICLE:     return m_functor( topology_type< PARTICLE     >() );
@@ -288,6 +285,7 @@ struct topology::apply_functor
     case PYRAMID_13:   return m_functor( topology_type< PYRAMID_13   >() );
     case PYRAMID_14:   return m_functor( topology_type< PYRAMID_14   >() );
     case WEDGE_6:      return m_functor( topology_type< WEDGE_6      >() );
+    case WEDGE_12:     return m_functor( topology_type< WEDGE_12     >() );
     case WEDGE_15:     return m_functor( topology_type< WEDGE_15     >() );
     case WEDGE_18:     return m_functor( topology_type< WEDGE_18     >() );
     case HEX_8:        return m_functor( topology_type< HEX_8        >() );

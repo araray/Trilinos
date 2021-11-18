@@ -19,7 +19,6 @@
 #include "ElementGraphTester.hpp"       // for ElemElemGraphTester
 #include "mpi.h"                        // for MPI_COMM_WORLD, MPI_Comm, etc
 #include "stk_mesh/base/Bucket.hpp"     // for Bucket
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"     // for Entity
 #include "stk_mesh/base/Types.hpp"      // for PartVector, EntityId, etc
 #include "stk_unit_test_utils/unittestMeshUtils.hpp"
@@ -69,9 +68,6 @@ void expect_elem_connected_to_remote_elem_id_via_side(const stk::mesh::BulkData&
 class ElemGraphChangeOwner : public stk::unit_test_util::MeshTestFixture
 {
 protected:
-    typedef std::pair<stk::mesh::EntityId, int> EntityIdProc;
-    typedef std::vector<EntityIdProc> EntityIdProcVector;
-
     void expect_initial_graph_correct()
     {
         if(get_bulk().parallel_rank() == 0)
@@ -152,10 +148,10 @@ protected:
         EXPECT_EQ(perm, parInfo.m_permutation);
     }
 
-    void move_elements(const EntityIdProcVector &elementIdProcsToMove)
+    void move_elements(const stk::mesh::EntityIdProcVec &elementIdProcsToMove)
     {
         stk::mesh::EntityProcVec elemProcPairsToMove;
-        for(const EntityIdProc &entityIdProc : elementIdProcsToMove)
+        for(const stk::mesh::EntityIdProc &entityIdProc : elementIdProcsToMove)
             append_element_if_owned(entityIdProc.first, entityIdProc.second, elemProcPairsToMove);
         get_bulk().change_entity_owner(elemProcPairsToMove);
     }
@@ -213,7 +209,7 @@ protected:
     {
         create_elem_graph();
         expect_initial_graph_correct();
-        move_elements({EntityIdProc(3, 0)});
+        move_elements({stk::mesh::EntityIdProc(3, 0)});
         expect_graph_updated_after_elem_3_moved_to_0();
     }
 
@@ -302,7 +298,7 @@ protected:
     {
         create_elem_graph();
         expect_initial_graph_correct();
-        move_elements({EntityIdProc(3, 0), EntityIdProc(4, 0)});
+        move_elements({stk::mesh::EntityIdProc(3, 0), stk::mesh::EntityIdProc(4, 0)});
 
         if (get_bulk().parallel_rank() == 0) {
             stk::mesh::Entity elem3 = get_bulk().get_entity(stk::topology::ELEM_RANK, 3);
@@ -338,7 +334,7 @@ protected:
     {
         create_elem_graph();
         expect_initial_graph_correct();
-        move_elements({EntityIdProc(2, 1), EntityIdProc(3, 2)});
+        move_elements({stk::mesh::EntityIdProc(2, 1), stk::mesh::EntityIdProc(3, 2)});
 
         if (get_bulk().parallel_rank() == 1) {
             stk::mesh::Entity elem2 = get_bulk().get_entity(stk::topology::ELEM_RANK, 2);
@@ -376,7 +372,7 @@ protected:
     {
         create_elem_graph();
         expect_initial_graph_correct();
-        move_elements({EntityIdProc(2, 2), EntityIdProc(3, 2)});
+        move_elements({stk::mesh::EntityIdProc(2, 2), stk::mesh::EntityIdProc(3, 2)});
 
         if (get_bulk().parallel_rank() == 2) {
             stk::mesh::Entity elem2 = get_bulk().get_entity(stk::topology::ELEM_RANK, 2);
@@ -423,7 +419,7 @@ protected:
     {
         create_elem_graph();
         check_initial_graph();
-        move_elements({EntityIdProc(1, 1), EntityIdProc(3, 3)});
+        move_elements({stk::mesh::EntityIdProc(1, 1), stk::mesh::EntityIdProc(3, 3)});
 
         if (get_bulk().parallel_rank() == 1) {
             stk::mesh::Entity elem1 = get_bulk().get_entity(stk::topology::ELEM_RANK, 1);
@@ -650,7 +646,7 @@ void change_entity_owner_then_death_hex_test_2_procs(bool aura_on)
         stk::mesh::impl::ParallelSelectedInfo remoteActiveSelector;
         stk::mesh::impl::populate_selected_value_for_remote_elements(bulkData, elem_graph, bulkData.mesh_meta_data().universal_part(), remoteActiveSelector);
 
-        process_killed_elements(bulkData, elem_graph, killedElements, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
+        process_killed_elements(bulkData, killedElements, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
 
         if (proc == 1)
         {

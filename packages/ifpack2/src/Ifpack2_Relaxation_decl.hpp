@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ***********************************************************************
 //@HEADER
 */
@@ -52,7 +50,8 @@
 #include "Tpetra_BlockCrsMatrix.hpp"
 #include <type_traits>
 #include <KokkosKernels_Handle.hpp>
-
+#include "Ifpack2_Details_GaussSeidel.hpp"
+#include "Ifpack2_Details_InverseDiagonalKernel.hpp"
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 namespace Ifpack2 {
@@ -209,7 +208,7 @@ option.  See the documentation of setParameters() for details.
 Gauss-Seidel / SOR also comes in a symmetric version.  This method
 first does a Forward sweep, then a Backward sweep.  Only the symmetric
 version of this preconditioner is guaranteed to be symmetric (or Hermitian,
-if the matrix's data are complex).
+if the matrix data are complex).
 
 Users may set the relaxation method via the "relaxation: type"
 parameter.  For all relaxation methods, users may specify the number
@@ -263,12 +262,21 @@ public:
   //! The Node type used by the input MatrixType.
   typedef typename MatrixType::node_type node_type;
 
+  //! The Kokkos device type used by the input MatrixType.
+  typedef typename MatrixType::node_type::device_type device_type;
+
   //! The type of the magnitude (absolute value) of a matrix entry.
   typedef typename Teuchos::ScalarTraits<scalar_type>::magnitudeType magnitude_type;
 
   //! Tpetra::RowMatrix specialization used by this class.
   typedef Tpetra::RowMatrix<scalar_type, local_ordinal_type,
                             global_ordinal_type, node_type> row_matrix_type;
+
+  //! Tpetra::Operator specialization used by this class.
+  typedef Tpetra::Operator<scalar_type,
+                           local_ordinal_type,
+                           global_ordinal_type,
+                           node_type> op_type;
 
   static_assert(std::is_same<MatrixType, row_matrix_type>::value, "Ifpack2::Relaxation: Please use MatrixType = Tpetra::RowMatrix.  This saves build times, library sizes, and executable sizes.  Don't worry, this class still works with CrsMatrix and BlockCrsMatrix; those are both subclasses of RowMatrix.");
 
@@ -394,6 +402,10 @@ public:
   /// If scalar_type is <tt>std::complex<T></tt> for some type \c T,
   /// then magnitude_type is \c T.
   void setParameters (const Teuchos::ParameterList& params);
+
+  bool supportsZeroStartingSolution() { return true; }
+
+  void setZeroStartingSolution (bool zeroStartingSolution) { ZeroStartingSolution_ = zeroStartingSolution; };
 
   //! Return a list of all the parameters that this class accepts.
   Teuchos::RCP<const Teuchos::ParameterList>
@@ -585,33 +597,53 @@ private:
   typedef Teuchos::ScalarTraits<scalar_type> STS;
   typedef Teuchos::ScalarTraits<magnitude_type> STM;
 
+    typedef typename Kokkos::ArithTraits<scalar_type>::val_type impl_scalar_type;
+
   /// \brief Tpetra::CrsMatrix specialization used by this class.
   ///
   /// We use this for dynamic casts to dispatch to the most efficient
   /// implementation of various relaxation kernels.
   typedef Tpetra::CrsMatrix<scalar_type, local_ordinal_type,
                             global_ordinal_type, node_type> crs_matrix_type;
+  typedef Tpetra::CrsGraph<local_ordinal_type,
+                            global_ordinal_type, node_type> crs_graph_type;
+  typedef Tpetra::MultiVector<scalar_type, local_ordinal_type,
+                            global_ordinal_type, node_type> multivector_type;
   typedef Tpetra::BlockCrsMatrix<scalar_type, local_ordinal_type,
                             global_ordinal_type, node_type> block_crs_matrix_type;
   typedef Tpetra::BlockMultiVector<scalar_type, local_ordinal_type,
                             global_ordinal_type, node_type> block_multivector_type;
 
+  typedef Tpetra::Map<local_ordinal_type, global_ordinal_type, node_type> map_type;
+  typedef Tpetra::Import<local_ordinal_type, global_ordinal_type, node_type> import_type;
+
+  typedef typename crs_matrix_type::nonconst_local_inds_host_view_type nonconst_local_inds_host_view_type;
+  typedef typename crs_matrix_type::nonconst_values_host_view_type nonconst_values_host_view_type;
+
+  Teuchos::RCP<Ifpack2::Details::InverseDiagonalKernel<op_type> > invDiagKernel_;
 
   //@}
   //! \name Implementation of multithreaded Gauss-Seidel.
   //@{
 
-  typedef typename crs_matrix_type::local_matrix_type local_matrix_type;
-  typedef typename local_matrix_type::StaticCrsGraphType::row_map_type lno_row_view_t;
-  typedef typename local_matrix_type::StaticCrsGraphType::entries_type lno_nonzero_view_t;
-  typedef typename local_matrix_type::values_type scalar_nonzero_view_t;
-  typedef typename local_matrix_type::StaticCrsGraphType::device_type TemporaryWorkSpace;
-  typedef typename local_matrix_type::StaticCrsGraphType::device_type PersistentWorkSpace;
-  typedef typename local_matrix_type::StaticCrsGraphType::execution_space MyExecSpace;
+  typedef typename crs_matrix_type::local_matrix_device_type local_matrix_device_type;
+  typedef typename local_matrix_device_type::StaticCrsGraphType::row_map_type lno_row_view_t;
+  typedef typename local_matrix_device_type::StaticCrsGraphType::entries_type lno_nonzero_view_t;
+  typedef typename local_matrix_device_type::values_type scalar_nonzero_view_t;
+  typedef typename local_matrix_device_type::StaticCrsGraphType::device_type TemporaryWorkSpace;
+  typedef typename local_matrix_device_type::StaticCrsGraphType::device_type PersistentWorkSpace;
+  typedef typename local_matrix_device_type::StaticCrsGraphType::execution_space MyExecSpace;
   typedef typename KokkosKernels::Experimental::KokkosKernelsHandle
       <typename lno_row_view_t::const_value_type, local_ordinal_type,typename scalar_nonzero_view_t::value_type,
       MyExecSpace, TemporaryWorkSpace,PersistentWorkSpace > mt_kernel_handle_type;
   Teuchos::RCP<mt_kernel_handle_type> mtKernelHandle_;
+
+  //@}
+  //! \name Implementation of serial Gauss-Seidel.
+  //@{
+
+  using SerialGaussSeidel = Ifpack2::Details::GaussSeidel<scalar_type, local_ordinal_type, global_ordinal_type, node_type>;
+  Teuchos::RCP<SerialGaussSeidel> serialGaussSeidel_;
 
   //@}
   //! \name Unimplemented methods that you are syntactically forbidden to call.
@@ -648,38 +680,36 @@ private:
         const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
               Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
 
-  //! Apply Gauss-Seidel to X, returning the result in Y.
-  void ApplyInverseGS(
-        const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-              Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
-
-  //! Apply multi-threaded Gauss-Seidel to X, returning the result in Y.
+  //! Apply multi-threaded Gauss-Seidel for solving AX = B.
   void ApplyInverseMTGS_CrsMatrix(
-          const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-                Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
+      const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& B,
+      Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
+      Tpetra::ESweepDirection direction) const;
 
-
-  //! Apply Gauss-Seidel for a Tpetra::RowMatrix specialization.
-  void ApplyInverseGS_RowMatrix(
+  //! Apply Gauss-Seidel to X, returning the result in Y. Calls one of the Crs/Row/BlockCrs specializations below.
+  void ApplyInverseSerialGS(
         const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-              Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
+              Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y,
+              Tpetra::ESweepDirection direction) const;
 
   //! Apply Gauss-Seidel for a Tpetra::CrsMatrix specialization.
-  void
-  ApplyInverseGS_CrsMatrix (const crs_matrix_type& A,
-                            const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-                            Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
+  void ApplyInverseSerialGS_CrsMatrix (const crs_matrix_type& A,
+      const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& B,
+      Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
+      Tpetra::ESweepDirection direction) const;
+
+  //! Apply Gauss-Seidel for a Tpetra::RowMatrix specialization.
+  void ApplyInverseSerialGS_RowMatrix(
+      const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
+      Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y,
+      Tpetra::ESweepDirection direction) const;
 
   //! Apply Gauss-Seidel for a Tpetra::BlockCrsMatrix specialization.
-  void
-  ApplyInverseGS_BlockCrsMatrix (const block_crs_matrix_type& A,
-                            const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-                            Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y);
-
-  //! Apply symmetric Gauss-Seidel to X, returning the result in Y.
-  void ApplyInverseSGS(
-        const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-              Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
+  void ApplyInverseSerialGS_BlockCrsMatrix(
+      const block_crs_matrix_type& A,
+      const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
+      Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y,
+      Tpetra::ESweepDirection direction);
 
   //! Apply symmetric multi-threaded Gauss-Seidel to X, returning the result in Y.
   void ApplyInverseMTSGS_CrsMatrix(
@@ -690,23 +720,6 @@ private:
       const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& B,
       Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
       const Tpetra::ESweepDirection direction) const;
-
-  //! Apply symmetric Gauss-Seidel for a Tpetra::RowMatrix specialization.
-  void ApplyInverseSGS_RowMatrix(
-        const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-              Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
-
-  //! Apply symmetric Gauss-Seidel for a Tpetra::CrsMatrix specialization.
-  void
-  ApplyInverseSGS_CrsMatrix (const crs_matrix_type& A,
-                             const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-                             Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y) const;
-
-  //! Apply symmetric Gauss-Seidel for a Tpetra::BlockCrsMatrix specialization.
-  void
-  ApplyInverseSGS_BlockCrsMatrix (const block_crs_matrix_type& A,
-                             const Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& X,
-                             Tpetra::MultiVector<scalar_type,local_ordinal_type,global_ordinal_type,node_type>& Y);
 
   void computeBlockCrs ();
 
@@ -730,7 +743,9 @@ private:
   Teuchos::RCP<const row_matrix_type> A_;
   //! Time object to track timing (setup).
   //! Importer for parallel Gauss-Seidel and symmetric Gauss-Seidel.
-  Teuchos::RCP<const Tpetra::Import<local_ordinal_type,global_ordinal_type,node_type> > Importer_;
+  Teuchos::RCP<const import_type> Importer_;
+  //! Importer for block multivector versions of GS and SGS
+  Teuchos::RCP<const import_type> pointImporter_;
   //! Contains the diagonal elements of \c A_.
   Teuchos::RCP<Tpetra::Vector<scalar_type,local_ordinal_type,global_ordinal_type,node_type> > Diagonal_;
   //! MultiVector for caching purposes (so apply doesn't need to allocate one on each call)
@@ -761,71 +776,86 @@ private:
   Teuchos::RCP<block_multivector_type> yBlockColumnPointMap_;
 
   //! How many times to apply the relaxation per apply() call.
-  int NumSweeps_;
+  int NumSweeps_ = 1;
   //! Which relaxation method to use.
-  Details::RelaxationType PrecType_;
+  Details::RelaxationType PrecType_ = Ifpack2::Details::JACOBI;
   //! Damping factor
-  scalar_type DampingFactor_;
+  scalar_type DampingFactor_ = STS::one();
   //! If \c true, more than 1 processor is currently used.
   bool IsParallel_;
   //! If \c true, the starting solution is always the zero vector.
-  bool ZeroStartingSolution_;
+  bool ZeroStartingSolution_ = true;
   //! If true, do backward-mode Gauss-Seidel.
-  bool DoBackwardGS_;
+  bool DoBackwardGS_ = false;
   //! If true, do the L1 version of Jacobi, Gauss-Seidel, or symmetric Gauss-Seidel.
-  bool DoL1Method_;
+  bool DoL1Method_ = false;
   //! Eta parameter for modified L1 method
-  magnitude_type L1Eta_;
+  magnitude_type L1Eta_ = Teuchos::as<magnitude_type>(1.5);
   //! Minimum diagonal value
-  scalar_type MinDiagonalValue_;
+  scalar_type MinDiagonalValue_ = STS::zero();
   //! Whether to fix up zero or tiny diagonal entries.
-  bool fixTinyDiagEntries_;
+  bool fixTinyDiagEntries_ = false;
   //! Whether to spend extra effort and all-reduces checking diagonal entries.
-  bool checkDiagEntries_;
+  bool checkDiagEntries_ = false;
+  //! For MTSGS, the cluster size (use point coloring if equal to 1)
+  int clusterSize_ = 1;
+  //! For MTSGS, the threshold for long/bulk rows (rows with at least this many nonzeros)
+  int longRowThreshold_ = 0;
+
+  //! Number of outer-sweeps for the two-stage Gauss Seidel
+  int NumOuterSweeps_ = 1;
+  //! Number of inner-sweeps for the two-stage Gauss Seidel
+  int NumInnerSweeps_ = 1;
+  //! Whether to use sparse-triangular solve instead of inner-iterations
+  bool InnerSpTrsv_ = false;
+  //! Damping factor for inner-sweeps
+  scalar_type InnerDampingFactor_ = STS::one();
+  //! Whether to use compact form of recurrence for the two-stage Gauss Seidel
+  bool CompactForm_ = false;
 
   //!Wheter the provided matrix is structurally symmetric or not.
-  bool is_matrix_structurally_symmetric_;
+  bool is_matrix_structurally_symmetric_ = false;
 
   //!Whether to write the given input file
-  bool ifpack2_dump_matrix_;
+  bool ifpack2_dump_matrix_ = false;
 
 
   //! If \c true, the preconditioner has been initialized successfully.
-  bool isInitialized_;
+  bool isInitialized_ = false;
   //! If \c true, the preconditioner has been computed successfully.
-  bool IsComputed_;
+  bool IsComputed_ = false;
   //! The number of successful calls to initialize().
-  int NumInitialize_;
+  int NumInitialize_ = 0;
   //! the number of successful calls to compute().
-  int NumCompute_;
+  int NumCompute_ = 0;
   //! The number of successful calls to apply().
-  mutable int NumApply_;
+  mutable int NumApply_ = 0;
   //! Total time in seconds for all successful calls to initialize().
-  double InitializeTime_;
+  double InitializeTime_ = 0.0;
   //! Total time in seconds for all successful calls to compute().
-  double ComputeTime_;
+  double ComputeTime_ = 0.0;
   //! Total time in seconds for all successful calls to apply().
-  mutable double ApplyTime_;
+  mutable double ApplyTime_ = 0.0;
   //! The total number of floating-point operations for all successful calls to compute().
-  double ComputeFlops_;
+  double ComputeFlops_ = 0.0;
   //! The total number of floating-point operations for all successful calls to apply().
-  mutable double ApplyFlops_;
+  mutable double ApplyFlops_ = 0.0;
 
   //! Global magnitude of the diagonal entry with the minimum magnitude.
-  magnitude_type globalMinMagDiagEntryMag_;
+  magnitude_type globalMinMagDiagEntryMag_ = STM::zero();
   //! Global magnitude of the diagonal entry with the maximum magnitude.
-  magnitude_type globalMaxMagDiagEntryMag_;
+  magnitude_type globalMaxMagDiagEntryMag_ = STM::zero();
   //! Global number of small (in magnitude) diagonal entries detected by compute().
-  size_t globalNumSmallDiagEntries_;
+  size_t globalNumSmallDiagEntries_ = 0;
   //! Global number of zero diagonal entries detected by compute().
-  size_t globalNumZeroDiagEntries_;
+  size_t globalNumZeroDiagEntries_ = 0;
   //! Global number of negative (real part) diagonal entries detected by compute().
-  size_t globalNumNegDiagEntries_;
+  size_t globalNumNegDiagEntries_ = 0;
   /// \brief Absolute two-norm difference between computed and actual inverse diagonal.
   ///
   /// "Actual inverse diagonal" means the result of 1/diagonal,
   /// without any protection against zero or small diagonal entries.
-  magnitude_type globalDiagNormDiff_;
+  magnitude_type globalDiagNormDiff_ = STM::zero();
 
   /// \brief Precomputed offsets of local diagonal entries of the matrix.
   ///
@@ -839,9 +869,9 @@ private:
   /// We need this flag because it is not enough just to test if
   /// diagOffsets_ has size zero.  It is perfectly legitimate for the
   /// matrix to have zero rows on the calling process.
-  bool savedDiagOffsets_;
+  bool savedDiagOffsets_ = false;
 
-  bool hasBlockCrsMatrix_;
+  bool hasBlockCrsMatrix_ = false;
 
   /// \brief In case of local/reordered smoothing, the unknowns to use
   Teuchos::ArrayRCP<local_ordinal_type> localSmoothingIndices_;

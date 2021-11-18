@@ -57,6 +57,7 @@
             system).
 */
 
+#include <cstdlib>
 #include "Teuchos_oblackholestream.hpp"
 #include "Teuchos_TimeMonitor.hpp"
 #include "Teuchos_XMLParameterListHelpers.hpp"
@@ -87,11 +88,7 @@ main (int argc, char *argv[])
   using TpetraIntrepidPoissonExample::makeMatrixAndRightHandSide;
   using TpetraIntrepidPoissonExample::solveWithBelos;
   using TpetraIntrepidPoissonExample::solveWithBelosGPU;
-  using IntrepidPoissonExample::makeMeshInput;
-  using IntrepidPoissonExample::parseCommandLineArguments;
-  using IntrepidPoissonExample::setCommandLineArgumentDefaults;
-  using IntrepidPoissonExample::setMaterialTensorOffDiagonalValue;
-  using IntrepidPoissonExample::setUpCommandLineArguments;
+  using namespace IntrepidPoissonExample;
   using Teuchos::Comm;
   using Teuchos::outArg;
   using Teuchos::ParameterList;
@@ -136,7 +133,9 @@ main (int argc, char *argv[])
     int maxNumItersFromCmdLine = -1; // -1 means "read from XML file"
     double tolFromCmdLine = -1.0; // -1 means "read from XML file"
     std::string solverName = "GMRES";
-    ST materialTensorOffDiagonalValue = 0.0;
+    ST materialTensorOffDiagonalValue = Teuchos::ScalarTraits<ST>::nan();
+    std::vector<double> diff_rotation_angle {0.0, 0.0, 0.0};
+    std::vector<double> diff_strength {1.0, 1.0, 1.0};
     Teuchos::ParameterList problemStatistics;
 
     // Set default values of command-line arguments.
@@ -148,11 +147,26 @@ main (int argc, char *argv[])
                                solverName, tolFromCmdLine,
                                maxNumItersFromCmdLine,
                                verbose, debug);
+
+    // Diffusion tensor information (if we're using it)
     cmdp.setOption ("materialTensorOffDiagonalValue",
                     &materialTensorOffDiagonalValue, "Off-diagonal value in "
                     "the material tensor.  This controls the iteration count.  "
                     "Be careful with this if you use CG, since you can easily "
                     "make the matrix indefinite.");
+    for(int i=0; i<3; i++) {
+      char letter[4] = "xyz";
+      char str1[80], str2[80];
+      // Rotation
+      sprintf(str1,"rot_%c_angle",letter[i]);
+      sprintf(str2,"Rotation around %c axis, in degrees",letter[i]);
+      cmdp.setOption(str1,&diff_rotation_angle[i],str2);
+      
+      // Strength
+      sprintf(str1,"strength_%c",letter[i]);
+      sprintf(str2,"Strength of pre-rotation %c-diffusion",letter[i]);
+      cmdp.setOption(str1,&diff_strength[i],str2);
+    }
 
     // Additional command-line arguments for GPU experimentation.
     bool gpu = false;
@@ -180,6 +194,12 @@ main (int argc, char *argv[])
     cmdp.setOption ("matrixFilename", &matrixFilename, "If nonempty, dump the "
                     "generated matrix to that file in MatrixMarket format.");
 
+    // If coordsFilename is nonempty, dump the coords to that file
+    // in MatrixMarket format.
+    std::string coordsFilename;
+    cmdp.setOption ("coordsFilename", &coordsFilename, "If nonempty, dump the "
+                    "generated coordinates to that file in MatrixMarket format.");
+
     // If rowMapFilename is nonempty, dump the matrix's row Map to
     // that file in MatrixMarket format.
     std::string rowMapFilename;
@@ -191,8 +211,8 @@ main (int argc, char *argv[])
     bool exitAfterAssembly = false;
     cmdp.setOption ("exitAfterAssembly", "dontExitAfterAssembly",
                     &exitAfterAssembly, "If true, exit after building the "
-                    "sparse matrix and dense right-hand side vector.  If either"
-                    " --matrixFilename or --rowMapFilename are nonempty strings"
+                    "sparse matrix and dense right-hand side vector.  If "
+                    " --matrixFilename --coordsFilename or --rowMapFilename are nonempty strings"
                     ", dump the matrix resp. row Map to their respective files "
                     "before exiting.");
 
@@ -202,11 +222,13 @@ main (int argc, char *argv[])
                     &exitAfterPrecond, "If true, exit after building the "
                     "preconditioner.");
 
-
-     // If matrixFilename is nonempty, dump the matrix to that file
-    // in MatrixMarket format.
+    // Number of rebuilds of the MueLu hierarchy
     int numMueluRebuilds=0;
     cmdp.setOption ("rebuild", &numMueluRebuilds, "Number of times to rebuild the MueLu hierarchy.");
+
+    // Random number seed
+    int randomSeed=24601;
+    cmdp.setOption ("seed", &randomSeed, "Random Seed.");
 
     parseCommandLineArguments (cmdp, printedHelp, argc, argv, nx, ny, nz,
                                xmlInputParamsFile, solverName, verbose, debug);
@@ -217,7 +239,15 @@ main (int argc, char *argv[])
       return EXIT_SUCCESS;
     }
 
-    setMaterialTensorOffDiagonalValue (materialTensorOffDiagonalValue);
+    // Initialize RNG
+    srand(randomSeed);
+
+
+    // Set material information
+    if(Teuchos::ScalarTraits<ST>::isnaninf(materialTensorOffDiagonalValue))
+      setDiffusionRotationAndStrength(diff_rotation_angle, diff_strength);
+    else
+      setMaterialTensorOffDiagonalValue (materialTensorOffDiagonalValue);
 
     // Both streams only print on MPI Rank 0.  "out" only prints if the
     // user specified --verbose.
@@ -231,6 +261,16 @@ main (int argc, char *argv[])
 #else
     *out << "SERIAL executable" << endl;
 #endif
+
+    if(useDiffusionMatrix()) {
+      const std::vector<double> & A = getDiffusionMatrix();
+      *out<<"[ "<<A[0]<<" "<<A[1]<<" "<<A[2]<<" ]\n"
+          <<"[ "<<A[3]<<" "<<A[4]<<" "<<A[5]<<" ]\n"
+          <<"[ "<<A[6]<<" "<<A[7]<<" "<<A[8]<<" ]"<<std::endl;
+    }
+    else {
+      *out<<"off diagonal value = "<<materialTensorOffDiagonalValue<<std::endl;
+    }
 
     /**********************************************************************************/
     /********************************** GET XML INPUTS ********************************/
@@ -279,6 +319,9 @@ main (int argc, char *argv[])
         typedef Tpetra::MatrixMarket::Writer<sparse_matrix_type> writer_type;
         if (matrixFilename != "") {
           writer_type::writeSparseFile (matrixFilename, A);
+        }
+        if (coordsFilename != "") {
+          writer_type::writeDenseFile (coordsFilename, coords);
         }
         if (rowMapFilename != "") {
           writer_type::writeMapFile (rowMapFilename, * (A->getRowMap ()));

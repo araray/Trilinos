@@ -34,8 +34,6 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Michael A. Heroux (maherou@sandia.gov)
-//
 // ************************************************************************
 // @HEADER
 
@@ -73,66 +71,80 @@ namespace DefaultTypes {
 
   /// \typedef global_ordinal_type
   /// \brief Default value of GlobalOrdinal template parameter.
-#if defined(TPETRA_ENABLE_DEPRECATED_CODE)
-    #if defined(HAVE_TPETRA_INST_INT_INT)
-      using global_ordinal_type = int;
-    #elif defined(HAVE_TPETRA_INST_INT_LONG_LONG)
-      using global_ordinal_type = long long;
-    #elif defined(HAVE_TPETRA_INST_INT_LONG)
-      using global_ordinal_type = long;
-    #elif defined(HAVE_TPETRA_INST_INT_UNSIGNED_LONG)
-      using global_ordinal_type = unsigned long;
-    #elif defined(HAVE_TPETRA_INST_INT_UNSIGNED)
-      using global_ordinal_type = unsigned;
-    #else
-        #error "Tpetra: No global ordinal types in the set {int, long long, long, unsigned long, unsigned} have been enabled."
-    #endif
-#else  // TPETRA_ENABLE_DEPRECATED_CODE IS NOT DEFINED
-    #if defined(HAVE_TPETRA_INST_INT_LONG_LONG)
-        using global_ordinal_type = long long;
-    #elif defined(HAVE_TPETRA_INST_INT_INT)
-        using global_ordinal_type = int;
-    #elif defined(HAVE_TPETRA_INST_INT_LONG)
-        using global_ordinal_type = long;
-    #elif defined(HAVE_TPETRA_INST_INT_UNSIGNED_LONG)
-        using global_ordinal_type = unsigned long;
-    #elif defined(HAVE_TPETRA_INST_INT_UNSIGNED)
-        using global_ordinal_type = unsigned;
-    #else
-        #error "Tpetra: No global ordinal types in the set {int, long long, long, unsigned long, unsigned} have been enabled."
-    #endif
+#if defined(HAVE_TPETRA_INST_INT_LONG_LONG)
+    using global_ordinal_type = long long;
+#elif defined(HAVE_TPETRA_INST_INT_INT)
+    using global_ordinal_type = int;
+#elif defined(HAVE_TPETRA_INST_INT_LONG)
+    using global_ordinal_type = long;
+#elif defined(HAVE_TPETRA_INST_INT_UNSIGNED_LONG)
+    using global_ordinal_type = unsigned long;
+#elif defined(HAVE_TPETRA_INST_INT_UNSIGNED)
+    using global_ordinal_type = unsigned;
+#else
+    #error "Tpetra: No global ordinal types in the set {int, long long, long, unsigned long, unsigned} have been enabled."
 #endif
 
   /// \typedef execution_space
-  /// \brief Default Tpetra execution space.
-#if defined(HAVE_TPETRA_DEFAULTNODE_CUDAWRAPPERNODE)
+  /// \brief Default Tpetra execution space and Node type.
+#if defined(HAVE_TPETRA_DEFAULTNODE_SYCLWRAPPERNODE)
+  using execution_space = ::Kokkos::Experimental::SYCL;
+  using node_type = ::Kokkos::Compat::KokkosSYCLWrapperNode;
+#elif defined(HAVE_TPETRA_DEFAULTNODE_HIPWRAPPERNODE)
+  using execution_space = ::Kokkos::Experimental::HIP;
+  using node_type = ::Kokkos::Compat::KokkosHIPWrapperNode;
+#elif defined(HAVE_TPETRA_DEFAULTNODE_CUDAWRAPPERNODE)
   using execution_space = ::Kokkos::Cuda;
+  using node_type = ::Kokkos::Compat::KokkosCudaWrapperNode;
 #elif defined(HAVE_TPETRA_DEFAULTNODE_OPENMPWRAPPERNODE)
   using execution_space = ::Kokkos::OpenMP;
+  using node_type = ::Kokkos::Compat::KokkosOpenMPWrapperNode;
 #elif defined(HAVE_TPETRA_DEFAULTNODE_THREADSWRAPPERNODE)
   using execution_space = ::Kokkos::Threads;
+  using node_type = ::Kokkos::Compat::KokkosThreadsWrapperNode;
 #elif defined(HAVE_TPETRA_DEFAULTNODE_SERIALWRAPPERNODE)
   using execution_space = ::Kokkos::Serial;
+  using node_type = ::Kokkos::Compat::KokkosSerialWrapperNode;
 #else
 #    error "No default Tpetra Node type specified.  Please set the CMake option Tpetra_DefaultNode to a valid Node type."
 #endif
 
-  //! Default value of Node template parameter.
-  using node_type = ::Kokkos::Compat::KokkosDeviceWrapperNode<execution_space>;
-
   /// \brief Memory space used for MPI communication buffers.
   ///
-  /// See #1088 for why this is not just ExecutionSpace::memory_space.
-  template<class ExecutionSpace>
-  using comm_buffer_memory_space =
+  /// See #1088 for why this is not just ExecutionSpace::memory_space
+
+  template<typename ExecutionSpace>
+  struct CommBufferMemorySpace
+  {
+    using type = typename ExecutionSpace::memory_space;
+  };
+
 #ifdef KOKKOS_ENABLE_CUDA
-    typename std::conditional<
-      std::is_same<typename ExecutionSpace::execution_space, Kokkos::Cuda>::value,
-      Kokkos::CudaSpace,
-      typename ExecutionSpace::memory_space>::type;
-#else
-    typename ExecutionSpace::memory_space;
-#endif // KOKKOS_ENABLE_CUDA
+  template<>
+  struct CommBufferMemorySpace<Kokkos::Cuda>
+  {
+    using type = Kokkos::CudaSpace;
+  };
+#endif
+
+#ifdef KOKKOS_ENABLE_HIP
+  template<>
+  struct CommBufferMemorySpace<Kokkos::Experimental::HIP>
+  {
+    using type = Kokkos::Experimental::HIPSpace;
+  };
+#endif
+
+#ifdef KOKKOS_ENABLE_SYCL
+  template<>
+  struct CommBufferMemorySpace<Kokkos::Experimental::SYCL>
+  {
+    using type = Kokkos::Experimental::SYCLDeviceUSMSpace;
+  };
+#endif
+
+  template<typename Device>
+  using comm_buffer_memory_space = typename CommBufferMemorySpace<typename Device::execution_space>::type;
 
 } // namespace DefaultTypes
 

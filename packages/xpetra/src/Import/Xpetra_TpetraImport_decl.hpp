@@ -53,7 +53,7 @@
 #include "Xpetra_Import.hpp"
 #include "Xpetra_Exceptions.hpp"
 
-#include "Xpetra_TpetraMap.hpp"
+#include "Xpetra_TpetraMap_decl.hpp"
 #include "Tpetra_Import.hpp"
 
 namespace Xpetra {
@@ -84,6 +84,10 @@ namespace Xpetra {
 
     //! Destructor.
     ~TpetraImport();
+
+    //! Special "constructor"
+    Teuchos::RCP<const Import<LocalOrdinal, GlobalOrdinal, Node> >
+    createRemoteOnlyImport (const Teuchos::RCP<const map_type>& remoteTarget) const;
 
     //@}
 
@@ -159,6 +163,16 @@ namespace Xpetra {
     // TODO: throw exception
     const TpetraImport<LocalOrdinal,GlobalOrdinal,Node> & tpetraImport = dynamic_cast<const TpetraImport<LocalOrdinal,GlobalOrdinal,Node> &>(import);
     return *tpetraImport.getTpetra_Import();
+  }
+
+  template <class LocalOrdinal, class GlobalOrdinal, class Node>
+  const RCP< const Tpetra::Import< LocalOrdinal, GlobalOrdinal, Node > > toTpetra(const RCP< const Import< LocalOrdinal, GlobalOrdinal, Node > > &importObj) {
+    typedef TpetraImport<LocalOrdinal, GlobalOrdinal, Node> TpetraImportClass;
+    if (importObj != Teuchos::null) {
+      XPETRA_RCP_DYNAMIC_CAST(const TpetraImportClass, rcpFromRef(*importObj), tpetraImport, "toTpetra");
+      return tpetraImport->getTpetra_Import();
+    }
+    return Teuchos::null;
   }
 
   template <class LocalOrdinal, class GlobalOrdinal, class Node>

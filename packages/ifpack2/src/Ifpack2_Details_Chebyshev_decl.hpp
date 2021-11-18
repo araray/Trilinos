@@ -61,7 +61,7 @@ namespace Details {
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 template<class TpetraOperatorType>
-class ScaledDampedResidual; // forward declaration
+class ChebyshevKernel; // forward declaration
 #endif // DOXYGEN_SHOULD_SKIP_THIS
 
 /// \class Chebyshev
@@ -262,6 +262,8 @@ public:
   /// from Ifpack.
   void setParameters (Teuchos::ParameterList& plist);
 
+  void setZeroStartingSolution (bool zeroStartingSolution) { zeroStartingSolution_ = zeroStartingSolution; }
+
   /// \brief (Re)compute the left scaling D_inv, and estimate min and
   ///   max eigenvalues of D_inv * A.
   ///
@@ -358,8 +360,8 @@ private:
   /// nonnull input.
   Teuchos::RCP<const row_matrix_type> A_;
 
-  //! "Operator" implementing W := alpha*D_inv*(B-A*X) + beta*W.
-  Teuchos::RCP<ScaledDampedResidual<op_type>> sdr_;
+  //! "Operator" implementing W := alpha*D_inv*(B-A*X) + beta*W and X := X+W.
+  Teuchos::RCP<ChebyshevKernel<op_type> > ck_;
 
   /// \brief The inverse of the diagonal entries of A.
   ///
@@ -473,6 +475,22 @@ private:
 
   //! Number of power method iterations for estimating the max eigenvalue.
   int eigMaxIters_;
+
+  //! Relative tolerance for power method iterations for estimating the max eigenvalue.
+  MT eigRelTolerance_;
+
+  //! Whether the iteration vectors of the power method should be saved.
+  bool eigKeepVectors_;
+
+  //! Type of eigen-analysis, i.e. power method or cg.
+  std::string eigenAnalysisType_;
+
+  //! Iteration vectors of the power method. Can be saved for the purpose of multiple setups.
+  Teuchos::RCP<V> eigVector_;
+  Teuchos::RCP<V> eigVector2_;
+
+  //! Frequency of normalization in the power method.
+  int eigNormalizationFreq_;
 
   //! Whether to assume that the X input to apply() is always zero.
   bool zeroStartingSolution_;
@@ -677,6 +695,33 @@ private:
   /// \return Estimate of the maximum eigenvalue of A*D_inv.
   ST
   powerMethod (const op_type& A, const V& D_inv, const int numIters);
+
+  /// \brief Use the cg method to estimate the maximum eigenvalue
+  ///   of A*D_inv, given an initial guess vector x.
+  ///
+  /// \param A [in] The Operator to use.
+  /// \param D_inv [in] Vector to use as implicit right scaling of A.
+  /// \param numIters [in] Maximum number of iterations of the power
+  ///   method.
+  /// \param x [in/out] On input: Initial guess Vector for the cg
+  ///   method.  Its Map must be the same as that of the domain Map of
+  ///   A.  This method may use this Vector as scratch space.
+  ///
+  /// \return Estimate of the maximum eigenvalue of A*D_inv.
+  ST
+  cgMethodWithInitGuess (const op_type& A, const V& D_inv, const int numIters, V& x);
+
+  /// \brief Use the cg method to estimate the maximum eigenvalue
+  ///   of A*D_inv.
+  ///
+  /// \param A [in] The Operator to use.
+  /// \param D_inv [in] Vector to use as implicit right scaling of A.
+  /// \param numIters [in] Maximum number of iterations of the power
+  ///   method.
+  ///
+  /// \return Estimate of the maximum eigenvalue of A*D_inv.
+  ST
+  cgMethod (const op_type& A, const V& D_inv, const int numIters);
 
   //! The maximum infinity norm of all the columns of X.
   static MT maxNormInf (const MV& X);

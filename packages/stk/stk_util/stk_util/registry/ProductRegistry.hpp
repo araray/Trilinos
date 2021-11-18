@@ -35,9 +35,8 @@
 #ifndef STK_UTIL_REGISTRY_PRODUCTREGISTRY_HPP
 #define STK_UTIL_REGISTRY_PRODUCTREGISTRY_HPP
 
-#include <stddef.h>                     // for size_t
-#include <map>                          // for map, map<>::const_iterator, etc
-#include <string>                       // for string, operator<
+#include <map>     // for map, map<>::const_iterator, map<>::value_compare
+#include <string>  // for string
 
 namespace stk {
 
@@ -136,6 +135,9 @@ public:
   void setProductName(const std::string &product_name) {
     m_productName = product_name;
   }
+
+  const ProductMap& productMap() const { return m_productMap; }
+        ProductMap& productMap()       { return m_productMap; }
 
   ProductMap::const_iterator productMap_begin() const {
       return m_productMap.begin();
@@ -244,6 +246,8 @@ private:
   std::string                   m_productName;                  ///< Name of main product
   bool				m_registryOK;			///< Registry is OK
 };
+
+std::string get_version(const std::string& executableName);
 
 } // namespace stk
 

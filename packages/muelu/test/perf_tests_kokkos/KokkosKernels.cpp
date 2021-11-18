@@ -64,7 +64,7 @@ kernel_construct(local_ordinal_type numRows) {
 
   typedef KokkosSparse::CrsMatrix<scalar_type, local_ordinal_type, device_type> local_matrix_type;
 
-  return local_matrix_type("A", numRows, numCols, nnz, values, rowPtr, colInd, false/*pad*/);
+  return local_matrix_type("A", numRows, numCols, nnz, values, rowPtr, colInd);
 }
 
 template<class scalar_type, class local_ordinal_type, class device_type>
@@ -350,6 +350,12 @@ int main(int argc, char* argv[]) {
     return main_<double,int,Kokkos::Cuda>(argc, argv);
 #else
     std::cout << "Error: CUDA node type is disabled" << std::endl;
+#endif
+  } else if (node == "hip") {
+#ifdef KOKKOS_ENABLE_HIP
+    return main_<double,int,Kokkos::Experimental::HIP>(argc, argv);
+#else
+    std::cout << "Error: HIP node type is disabled" << std::endl;
 #endif
   }
 

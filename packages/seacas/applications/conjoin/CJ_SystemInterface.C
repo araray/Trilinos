@@ -1,3 +1,8 @@
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
+// of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+// NTESS, the U.S. Government retains certain rights in this software.
+//
+// See packages/seacas/LICENSE for details
 
 #include "CJ_SystemInterface.h"
 #include "CJ_Version.h"  // for qainfo
@@ -29,7 +34,7 @@ void Excn::SystemInterface::enroll_options()
   options_.enroll("version", GetLongOption::NoValue, "Print version and exit", nullptr);
 
   options_.enroll("output", GetLongOption::MandatoryValue, "Name of output file to create",
-                  "conjoin-out.e");
+                  "conjoin-out.e", nullptr, true);
 
   options_.enroll("alive_value", GetLongOption::MandatoryValue,
                   "Value (1 or 0) to indicate that an element is alive, default = 0", "0");
@@ -51,7 +56,7 @@ void Excn::SystemInterface::enroll_options()
   options_.enroll("nodal_status_variable", GetLongOption::MandatoryValue,
                   "Name to use as nodal status variable;\n\t\tmust not exist on input files.\n"
                   "\t\tIf NONE, then not created. Default = node_status",
-                  "node_status");
+                  "node_status", nullptr, true);
 
   options_.enroll("netcdf4", GetLongOption::NoValue,
                   "Create output database using the HDF5-based "
@@ -63,13 +68,26 @@ void Excn::SystemInterface::enroll_options()
                   "True if forcing the use of 64-bit integers for the output file", nullptr);
 
   options_.enroll(
-      "compress", GetLongOption::MandatoryValue,
-      "Specify the hdf5 (netcdf4) compression level [0..9] to be used on the output file.",
+      "zlib", GetLongOption::NoValue,
+      "Use the Zlib / libz compression method if compression is enabled (default) [exodus only].",
       nullptr);
 
+  options_.enroll("szip", GetLongOption::NoValue,
+                  "Use SZip compression. [exodus only, enables netcdf-4]", nullptr);
+
+  options_.enroll(
+      "compress", GetLongOption::MandatoryValue,
+      "Specify the hdf5 (netcdf4) compression level [0..9] to be used on the output file.", nullptr,
+      nullptr, true);
+
+  options_.enroll("sort_times", GetLongOption::NoValue,
+                  "Sort the input files on the minimum timestep time in the file.\n"
+                  "\t\tDefault is to process files in the order they appear on the command line.",
+                  nullptr);
+
   options_.enroll("ignore_coordinate_check", GetLongOption::NoValue,
-                  "Do not use nodal coordinates to determine if node in part 1 same as node in "
-                  "other parts; use ids only.\n"
+                  "Do not use nodal coordinates to determine if node in part 1 same as node in\n"
+                  "\t\tother parts; use ids only.\n"
                   "\t\tUse only if you know that the ids are consistent for all parts",
                   nullptr);
 
@@ -77,7 +95,7 @@ void Excn::SystemInterface::enroll_options()
                   "Don't transfer nodesets to output file.", nullptr);
 
   options_.enroll("omit_sidesets", GetLongOption::NoValue,
-                  "Don't transfer sidesets to output file.", nullptr);
+                  "Don't transfer sidesets to output file.", nullptr, nullptr, true);
 
   options_.enroll("gvar", GetLongOption::MandatoryValue,
                   "Comma-separated list of global variables to be joined or ALL or NONE.", nullptr);
@@ -96,8 +114,8 @@ void Excn::SystemInterface::enroll_options()
                   nullptr);
 
   options_.enroll("ssetvar", GetLongOption::MandatoryValue,
-                  "Comma-separated list of sideset variables to be joined or ALL or NONE.",
-                  nullptr);
+                  "Comma-separated list of sideset variables to be joined or ALL or NONE.", nullptr,
+                  nullptr, true);
 
   options_.enroll(
       "interpart_minimum_time_delta", GetLongOption::MandatoryValue,
@@ -134,7 +152,6 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
   char *options = getenv("CONJOIN_OPTIONS");
   if (options != nullptr) {
     fmt::print(
-        stderr,
         "\nThe following options were specified via the CONJOIN_OPTIONS environment variable:\n"
         "\t{}\n\n",
         options);
@@ -143,8 +160,8 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
 
   if (options_.retrieve("help") != nullptr) {
     options_.usage();
-    fmt::print(stderr, "\n\tCan also set options via CONJOIN_OPTIONS environment variable.\n"
-                       "\n\t->->-> Send email to gdsjaar@sandia.gov for conjoin support.<-<-<-\n");
+    fmt::print("\n\tCan also set options via CONJOIN_OPTIONS environment variable.\n"
+               "\n\t->->-> Send email to gdsjaar@sandia.gov for conjoin support.<-<-<-\n");
     exit(EXIT_SUCCESS);
   }
 
@@ -153,12 +170,7 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
     exit(0);
   }
 
-  {
-    const char *temp = options_.retrieve("debug");
-    if (temp != nullptr) {
-      debugLevel_ = strtol(temp, nullptr, 10);
-    }
-  }
+  debugLevel_ = options_.get_option_value("debug", debugLevel_);
 
   {
     const char *temp = options_.retrieve("alive_value");
@@ -169,7 +181,7 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
       }
       else {
         fmt::print(stderr,
-                   "\nInvalid value specified for node and element status."
+                   "\nERROR: Invalid value specified for node and element status."
                    "\nValid values are '1' or '0'.  Found '{}'\n",
                    value);
         exit(EXIT_FAILURE);
@@ -177,50 +189,16 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
     }
   }
 
-  {
-    const char *temp = options_.retrieve("interpart_minimum_time_delta");
-    if (temp != nullptr) {
-      interpartMinimumTimeDelta_ = strtod(temp, nullptr);
-    }
-  }
+  interpartMinimumTimeDelta_ =
+      options_.get_option_value("interpart_minimum_time_delta", interpartMinimumTimeDelta_);
+  elementStatusVariable_ =
+      options_.get_option_value("element_status_variable", elementStatusVariable_);
+  nodalStatusVariable_ = options_.get_option_value("nodal_status_variable", nodalStatusVariable_);
+  meshCombineStatusVariable_ =
+      options_.get_option_value("combine_status_variables", meshCombineStatusVariable_);
 
-  {
-    const char *temp = options_.retrieve("element_status_variable");
-    if (temp != nullptr) {
-      elementStatusVariable_ = temp;
-    }
-  }
-
-  {
-    const char *temp = options_.retrieve("nodal_status_variable");
-    if (temp != nullptr) {
-      nodalStatusVariable_ = temp;
-    }
-  }
-
-  {
-    const char *temp = options_.retrieve("combine_status_variables");
-    if (temp != nullptr) {
-      meshCombineStatusVariable_ = temp;
-    }
-  }
-
-  {
-    const char *temp = options_.retrieve("width");
-    if (temp != nullptr) {
-      screenWidth_ = strtol(temp, nullptr, 10);
-    }
-    else {
-      screenWidth_ = term_width();
-    }
-  }
-
-  {
-    const char *temp = options_.retrieve("output");
-    if (temp != nullptr) {
-      outputName_ = temp;
-    }
-  }
+  screenWidth_ = options_.get_option_value("width", term_width());
+  outputName_  = options_.get_option_value("output", outputName_);
 
   {
     const char *temp = options_.retrieve("gvar");
@@ -257,41 +235,27 @@ bool Excn::SystemInterface::parse_options(int argc, char **argv)
     }
   }
 
-  if (options_.retrieve("netcdf4") != nullptr) {
-    useNetcdf4_ = true;
+  useNetcdf4_        = options_.retrieve("netcdf4") != nullptr;
+  sortTimes_         = options_.retrieve("sort_times") != nullptr;
+  ints64Bit_         = options_.retrieve("64-bit") != nullptr;
+  ignoreCoordinates_ = options_.retrieve("ignore_coordinate_check") != nullptr;
+  omitNodesets_      = options_.retrieve("omit_nodesets") != nullptr;
+  omitSidesets_      = options_.retrieve("omit_sidesets") != nullptr;
+
+  if (options_.retrieve("szip") != nullptr) {
+    szip_ = true;
+    zlib_ = false;
+  }
+  zlib_ = (options_.retrieve("zlib") != nullptr);
+
+  if (szip_ && zlib_) {
+    fmt::print(stderr, "ERROR: Only one of 'szip' or 'zlib' can be specified.\n");
   }
 
-  if (options_.retrieve("64-bit") != nullptr) {
-    ints64Bit_ = true;
-  }
-
-  {
-    const char *temp = options_.retrieve("compress");
-    if (temp != nullptr) {
-      compressionLevel_ = std::strtol(temp, nullptr, 10);
-    }
-  }
-
-  if (options_.retrieve("ignore_coordinate_check") != nullptr) {
-    ignoreCoordinates_ = true;
-  }
-
-  if (options_.retrieve("omit_nodesets") != nullptr) {
-    omitNodesets_ = true;
-  }
-  else {
-    omitNodesets_ = false;
-  }
-
-  if (options_.retrieve("omit_sidesets") != nullptr) {
-    omitSidesets_ = true;
-  }
-  else {
-    omitSidesets_ = false;
-  }
+  compressionLevel_ = options_.get_option_value("compress", compressionLevel_);
 
   if (options_.retrieve("copyright") != nullptr) {
-    fmt::print("{}", copyright("2009-2019"));
+    fmt::print("{}", copyright("2009-2021"));
     exit(EXIT_SUCCESS);
   }
 

@@ -33,21 +33,21 @@ SET(HEADERS ${HEADERS}
   new_design/Sacado_Fad_Exp_DynamicStorage.hpp
   new_design/Sacado_Fad_Exp_StaticStorage.hpp
   new_design/Sacado_Fad_Exp_StaticFixedStorage.hpp
-  new_design/Sacado_Fad_Exp_MemPoolStorage.hpp
   new_design/Sacado_Fad_Exp_VectorDynamicStorage.hpp
   new_design/Sacado_Fad_Exp_ViewStorage.hpp
   new_design/Sacado_Fad_Exp_DFad.hpp
   new_design/Sacado_Fad_Exp_SLFad.hpp
   new_design/Sacado_Fad_Exp_SFad.hpp
   new_design/Sacado_Fad_Exp_ViewFad.hpp
-  new_design/Sacado_Fad_Exp_DMFad.hpp
   new_design/Sacado_Fad_Exp_DVFad.hpp
+  new_design/Sacado_Fad_Exp_Atomic.hpp
   )
 
 # FAD
 SET(HEADERS ${HEADERS}
   Sacado_Fad_GeneralFad.hpp
   Sacado_Fad_GeneralFadExpr.hpp
+  Sacado_Fad_GeneralFadTestingHelpers.hpp
   Sacado_Fad_ExpressionTraits.hpp
   Sacado_Fad_ExpressionFwd.hpp
   Sacado_Fad_Expression.hpp
@@ -61,13 +61,6 @@ SET(HEADERS ${HEADERS}
   Sacado_Fad_SLFadTraits.hpp
   Sacado_Fad_SFad.hpp
   Sacado_Fad_SFadTraits.hpp
-  Sacado_Fad_MemPool.hpp
-  Sacado_Fad_MemPoolImp.hpp
-  Sacado_Fad_MemPoolManager.hpp
-  Sacado_Fad_MemPoolManagerImp.hpp
-  Sacado_Fad_MemPoolStorage.hpp
-  Sacado_Fad_DMFad.hpp
-  Sacado_Fad_DMFadTraits.hpp
   Sacado_Fad_DVFad.hpp
   Sacado_Fad_DVFadTraits.hpp
   Sacado_Fad_Vector.hpp

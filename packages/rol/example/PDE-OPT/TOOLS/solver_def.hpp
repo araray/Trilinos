@@ -73,12 +73,12 @@
 template<class Real>
 void Solver<Real>::setA(ROL::Ptr<Tpetra::CrsMatrix<>> &A) {
   if (useDirectSolver_) { // using Amesos2 direct solver
-firstSolve_ = true;
+//firstSolve_ = true;
     if (firstSolve_) { // construct solver object
       try {
         solver_ = Amesos2::create< Tpetra::CrsMatrix<>,Tpetra::MultiVector<>>(directSolver_, A);
       }
-      catch (std::invalid_argument e) {
+      catch (const std::invalid_argument& e) {
         std::cout << e.what() << std::endl;
       }
       solver_->symbolicFactorization();
@@ -132,6 +132,14 @@ firstSolve_ = true;
   }
 }
 
+template<class Real>
+void Solver<Real>::setParameters(Teuchos::ParameterList & parlist) {
+  parlist_ = parlist;
+  if (!useDirectSolver_) {
+    solverBelos_trans_->setParameters(ROL::makePtrFromRef(parlist.sublist("Belos")));
+    solverBelos_->setParameters(ROL::makePtrFromRef(parlist.sublist("Belos")));
+  }
+}
 
 template<class Real>
 void Solver<Real>::solve(const ROL::Ptr<Tpetra::MultiVector<>> &x,

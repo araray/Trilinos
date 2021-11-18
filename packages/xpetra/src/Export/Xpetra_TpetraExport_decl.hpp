@@ -53,7 +53,7 @@
 #include "Xpetra_Export.hpp"
 #include "Xpetra_Exceptions.hpp"
 
-#include "Xpetra_TpetraMap.hpp"
+#include "Xpetra_TpetraMap_decl.hpp"
 #include "Tpetra_Export.hpp"
 
 // Note: 'export' is a reserved keyword in C++. Do not use 'export' as a variable name.
@@ -207,6 +207,16 @@ toTpetra(const Export<LocalOrdinal, GlobalOrdinal, Node>& exp)
       dynamic_cast<const TpetraExport<LocalOrdinal, GlobalOrdinal, Node>&>(exp);
     return *tpetraExport.getTpetra_Export();
 }
+
+  template <class LocalOrdinal, class GlobalOrdinal, class Node>
+  const RCP< const Tpetra::Export< LocalOrdinal, GlobalOrdinal, Node > > toTpetra(const RCP< const Export< LocalOrdinal, GlobalOrdinal, Node > > &exportObj) {
+    typedef TpetraExport<LocalOrdinal, GlobalOrdinal, Node> TpetraExportClass;
+    if (exportObj != Teuchos::null) {
+      XPETRA_RCP_DYNAMIC_CAST(const TpetraExportClass, rcpFromRef(*exportObj), tpetraExport, "toTpetra");
+      return tpetraExport->getTpetra_Export();
+    }
+    return Teuchos::null;
+  }
 
 
 template<class LocalOrdinal, class GlobalOrdinal, class Node>

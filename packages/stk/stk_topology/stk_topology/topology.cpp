@@ -32,10 +32,11 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <stk_topology/topology.hpp>
-#include <ostream>
-#include <sstream>
-#include <iomanip>
+#include "stk_topology/topology.hpp"
+#include "stk_util/stk_kokkos_macros.h"  // for STK_FUNCTION
+#include <iomanip>                       // for operator<<, setw
+#include <sstream>                       // for operator<<, ostream, basic_ostream, endl, basic_...
+#include <string>                        // for operator<<, string
 
 
 
@@ -74,6 +75,7 @@ const char * topology::char_name() const
   case TRI_4:            return "TRIANGLE_4";
   case TRI_6:            return "TRIANGLE_6";
   case QUAD_4:           return "QUADRILATERAL_4";
+  case QUAD_6:           return "QUADRILATERAL_6";
   case QUAD_8:           return "QUADRILATERAL_8";
   case QUAD_9:           return "QUADRILATERAL_9";
   case PARTICLE:         return "PARTICLE";
@@ -105,6 +107,7 @@ const char * topology::char_name() const
   case PYRAMID_13:       return "PYRAMID_13";
   case PYRAMID_14:       return "PYRAMID_14";
   case WEDGE_6:          return "WEDGE_6";
+  case WEDGE_12:         return "WEDGE_12";
   case WEDGE_15:         return "WEDGE_15";
   case WEDGE_18:         return "WEDGE_18";
   case HEX_8:            return "HEXAHEDRON_8";
@@ -166,6 +169,16 @@ bool isHexahedronElement (topology topo)
     return ((topo == topology::HEX_8) || (topo == topology::HEX_20) || (topo == topology::HEX_27));
 }
 
+bool is_quad_side(topology topo)
+{
+    return ((topo == topology::QUAD_4) || (topo == topology::QUAD_6) || (topo == topology::QUAD_8) || (topo == topology::QUAD_9));
+}
+
+bool is_tri_side(topology topo)
+{
+    return ((topo == topology::TRI_3) || (topo == topology::TRI_4) || (topo == topology::TRI_6));
+}
+
 void verbose_print_topology(std::ostream &out, topology t)
 {
   unsigned shiftwidth = 34;
@@ -189,11 +202,12 @@ void verbose_print_topology(std::ostream &out, topology t)
     out << t.defined_on_spatial_dimension(i) << ", ";
   out << "\b\b  " << std::endl;
 
-  out << std::setw(shiftwidth) << "num edges: " << t.num_edges() << std::endl;
-  if (t.num_edges() > 0) {
-    const unsigned num_edge_nodes = t.edge_topology().num_nodes();
-    out << std::setw(shiftwidth) << t.edge_topology() << std::endl;
-    for (unsigned i=0, e=t.num_edges(); i<e; ++i) {
+  unsigned numEdges = t.num_edges();
+  out << std::setw(shiftwidth) << "num edges: " << numEdges << std::endl;
+  if (numEdges > 0) {
+    for (unsigned i=0; i<numEdges; ++i) {
+      const unsigned num_edge_nodes = t.edge_topology(i).num_nodes();
+      out << std::setw(shiftwidth) << " " << t.edge_topology(i);
       out << std::setw(shiftwidth) << " " << i << ": (";
       t.edge_node_ordinals(i,node_ordinals);
       for (unsigned j=0, ne = num_edge_nodes; j < ne; ++j) {
@@ -203,9 +217,10 @@ void verbose_print_topology(std::ostream &out, topology t)
     }
   }
 
-  out << std::setw(shiftwidth) << "num faces: " << t.num_faces() << std::endl;
-  if (t.num_faces() > 0) {
-    for (unsigned i=0, e=t.num_faces(); i<e; ++i) {
+  unsigned numFaces = t.num_faces();
+  out << std::setw(shiftwidth) << "num faces: " << numFaces << std::endl;
+  if (numFaces > 0) {
+    for (unsigned i=0; i<numFaces; ++i) {
       out << std::setw(shiftwidth) << t.face_topology(i) << " " << i << ": (";
       t.face_node_ordinals(i,node_ordinals);
       for (unsigned j=0, ne = t.face_topology(i).num_nodes(); j < ne; ++j) {
@@ -216,10 +231,12 @@ void verbose_print_topology(std::ostream &out, topology t)
   }
 
   // jvo: is positive permutation according to right-hand-rule?
-  out << std::setw(shiftwidth) << "num permutations: " << t.num_permutations() << std::endl;
-  out << std::setw(shiftwidth) << "num positive permutations: " << t.num_positive_permutations() << std::endl;
-  if (t.num_permutations() > 0) {
-    for (unsigned i=0, e=t.num_positive_permutations(); i<e; ++i) {
+  unsigned numPermutations = t.num_permutations();
+  unsigned numPositivePermutations = t.num_positive_permutations();
+  out << std::setw(shiftwidth) << "num permutations: " << numPermutations << std::endl;
+  out << std::setw(shiftwidth) << "num positive permutations: " << numPositivePermutations << std::endl;
+  if (numPermutations > 0) {
+    for (unsigned i=0; i<numPositivePermutations; ++i) {
       out << std::setw(shiftwidth) << i << ": (";
       t.permutation_node_ordinals(i,node_ordinals);
       for (unsigned j=0, ne = t.num_nodes(); j < ne; ++j) {
@@ -227,9 +244,9 @@ void verbose_print_topology(std::ostream &out, topology t)
       }
       out << "\b\b)  " << std::endl;
     }
-    out << std::setw(shiftwidth) << "num negative permutations: " << t.num_permutations() - t.num_positive_permutations() << std::endl;
-    if (t.num_positive_permutations() < t.num_permutations()) {
-      for (unsigned i=t.num_positive_permutations(), e=t.num_permutations(); i<e; ++i) {
+    out << std::setw(shiftwidth) << "num negative permutations: " << numPermutations - numPositivePermutations << std::endl;
+    if (numPositivePermutations < numPermutations) {
+      for (unsigned i=numPositivePermutations; i<numPermutations; ++i) {
         out << std::setw(shiftwidth) << i << ": (";
         t.permutation_node_ordinals(i,node_ordinals);
         for (unsigned j=0, ne = t.num_nodes(); j < ne; ++j) {

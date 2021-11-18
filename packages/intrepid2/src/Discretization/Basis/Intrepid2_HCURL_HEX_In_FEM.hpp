@@ -50,7 +50,7 @@
 #define __INTREPID2_HCURL_HEX_IN_FEM_HPP__
 
 #include "Intrepid2_Basis.hpp"
-#include "Intrepid2_HGRAD_LINE_Cn_FEM.hpp"
+#include "Intrepid2_HCURL_QUAD_In_FEM.hpp"
 
 namespace Intrepid2 {
 
@@ -97,7 +97,7 @@ namespace Intrepid2 {
         }
       };
 
-      template<typename ExecSpaceType, ordinal_type numPtsPerEval,
+      template<typename DeviceType, ordinal_type numPtsPerEval,
                typename outputValueValueType, class ...outputValueProperties,
                typename inputPointValueType,  class ...inputPointProperties,
                typename vinvValueType,        class ...vinvProperties>
@@ -169,46 +169,38 @@ namespace Intrepid2 {
   }
 
   /** \class  Intrepid2::Basis_HCURL_HEX_In_FEM
-      \brief  Implementation of the default H(curl)-compatible FEM basis on Hexahedral cell
+      \brief  Implementation of the default H(curl)-compatible FEM basis on Hexahedron cell
 
-              Implements Nedelec basis of degree n on the reference Hexahedral cell. The basis has
+              Implements Nedelec basis of degree n on the reference Hexahedron cell. The basis has
               cardinality 3n (n+1)^2 and spans a INCOMPLETE polynomial space.
 
   */
-  template<typename ExecSpaceType = void,
+  template<typename DeviceType = void,
            typename outputValueType = double,
            typename pointValueType = double>
   class Basis_HCURL_HEX_In_FEM
-    : public Basis<ExecSpaceType,outputValueType,pointValueType> {
+    : public Basis<DeviceType,outputValueType,pointValueType> {
   public:
-    using OrdinalTypeArray1DHost = typename Basis<ExecSpaceType,outputValueType,pointValueType>::OrdinalTypeArray1DHost;
-    using OrdinalTypeArray2DHost = typename Basis<ExecSpaceType,outputValueType,pointValueType>::OrdinalTypeArray2DHost;
-    using OrdinalTypeArray3DHost = typename Basis<ExecSpaceType,outputValueType,pointValueType>::OrdinalTypeArray3DHost;
-
-    using ordinal_type_array_1d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray1DHost instead","OrdinalTypeArray1DHost") = OrdinalTypeArray1DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray1DHost instead");
-    using ordinal_type_array_2d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray2DHost instead","OrdinalTypeArray2DHost") = OrdinalTypeArray2DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray2DHost instead");
-    using ordinal_type_array_3d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray3DHost instead","OrdinalTypeArray3DHost") = OrdinalTypeArray3DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray3DHost instead");
+    using OrdinalTypeArray1DHost = typename Basis<DeviceType,outputValueType,pointValueType>::OrdinalTypeArray1DHost;
+    using OrdinalTypeArray2DHost = typename Basis<DeviceType,outputValueType,pointValueType>::OrdinalTypeArray2DHost;
+    using OrdinalTypeArray3DHost = typename Basis<DeviceType,outputValueType,pointValueType>::OrdinalTypeArray3DHost;
 
     /** \brief  Constructor.
      */
     Basis_HCURL_HEX_In_FEM(const ordinal_type order,
                             const EPointType   pointType = POINTTYPE_EQUISPACED);
 
-    using OutputViewType = typename Basis<ExecSpaceType,outputValueType,pointValueType>::OutputViewType;
-    using PointViewType  = typename Basis<ExecSpaceType,outputValueType,pointValueType>::PointViewType;
-    using ScalarViewType = typename Basis<ExecSpaceType,outputValueType,pointValueType>::ScalarViewType;
-    
-    using outputViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OutputViewType instead","OutputViewType") = OutputViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OutputViewType instead");
-    using pointViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use PointViewType instead","PointViewType") = PointViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use PointViewType instead");
-    using scalarViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use ScalarViewType instead","ScalarViewType") = ScalarViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use ScalarViewType instead");
+    using OutputViewType = typename Basis<DeviceType,outputValueType,pointValueType>::OutputViewType;
+    using PointViewType  = typename Basis<DeviceType,outputValueType,pointValueType>::PointViewType;
+    using ScalarViewType = typename Basis<DeviceType,outputValueType,pointValueType>::ScalarViewType;
 
-    using Basis<ExecSpaceType,outputValueType,pointValueType>::getValues;
+    using Basis<DeviceType,outputValueType,pointValueType>::getValues;
 
     virtual
     void
     getValues(       OutputViewType outputValues,
                const PointViewType  inputPoints,
-               const EOperator operatorType = OPERATOR_VALUE ) const {
+               const EOperator operatorType = OPERATOR_VALUE ) const override {
 #ifdef HAVE_INTREPID2_DEBUG
       Intrepid2::getValues_HCURL_Args(outputValues,
                                       inputPoints,
@@ -218,7 +210,7 @@ namespace Intrepid2 {
 #endif
       constexpr ordinal_type numPtsPerEval = 1;
       Impl::Basis_HCURL_HEX_In_FEM::
-        getValues<ExecSpaceType,numPtsPerEval>( outputValues,
+        getValues<DeviceType,numPtsPerEval>( outputValues,
                                                 inputPoints,
                                                 this->vinvLine_,
                                                 this->vinvBubble_,
@@ -227,7 +219,7 @@ namespace Intrepid2 {
 
     virtual
     void
-    getDofCoords( ScalarViewType dofCoords ) const {
+    getDofCoords( ScalarViewType dofCoords ) const override {
 #ifdef HAVE_INTREPID2_DEBUG
       // Verify rank of output array.
       INTREPID2_TEST_FOR_EXCEPTION( dofCoords.rank() != 2, std::invalid_argument,
@@ -244,7 +236,7 @@ namespace Intrepid2 {
       
   virtual
   void
-  getDofCoeffs( ScalarViewType dofCoeffs ) const {
+  getDofCoeffs( ScalarViewType dofCoeffs ) const override {
 #ifdef HAVE_INTREPID2_DEBUG
     // Verify rank of output array.
     INTREPID2_TEST_FOR_EXCEPTION( dofCoeffs.rank() != 2, std::invalid_argument,
@@ -261,20 +253,51 @@ namespace Intrepid2 {
 
     virtual
     const char*
-    getName() const {
+    getName() const override {
       return "Intrepid2_HCURL_HEX_In_FEM";
     }
 
     virtual
     bool
-    requireOrientation() const {
+    requireOrientation() const override {
       return true;
+    }
+
+    /** \brief returns the basis associated to a subCell.
+
+        The bases of the subCell are the restriction to the subCell of the bases of the parent cell,
+        projected to the subCell plane.
+
+        \param [in] subCellDim - dimension of subCell
+        \param [in] subCellOrd - position of the subCell among of the subCells having the same dimension
+        \return pointer to the subCell basis of dimension subCellDim and position subCellOrd
+     */
+    BasisPtr<DeviceType,outputValueType,pointValueType>
+      getSubCellRefBasis(const ordinal_type subCellDim, const ordinal_type subCellOrd) const override{
+      if(subCellDim == 1) {
+        return Teuchos::rcp(new
+            Basis_HGRAD_LINE_Cn_FEM<DeviceType,outputValueType,pointValueType>
+            (this->basisDegree_-1, POINTTYPE_GAUSS));
+      } else if(subCellDim == 2) {
+        return Teuchos::rcp(new
+            Basis_HCURL_QUAD_In_FEM<DeviceType,outputValueType,pointValueType>
+            (this->basisDegree_, pointType_));
+      }
+      INTREPID2_TEST_FOR_EXCEPTION(true,std::invalid_argument,"Input parameters out of bounds");
+    }
+
+    BasisPtr<typename Kokkos::HostSpace::device_type,outputValueType,pointValueType>
+    getHostBasis() const override{
+      return Teuchos::rcp(new Basis_HCURL_HEX_In_FEM<typename Kokkos::HostSpace::device_type,outputValueType,pointValueType>(this->basisDegree_, pointType_));
     }
 
   private:
 
     /** \brief inverse of Generalized Vandermonde matrix (isotropic order) */
-    Kokkos::DynRankView<typename ScalarViewType::value_type,ExecSpaceType> vinvLine_, vinvBubble_;
+    Kokkos::DynRankView<typename ScalarViewType::value_type,DeviceType> vinvLine_, vinvBubble_;
+
+    /** \brief type of lattice used for creating the DoF coordinates  */
+    EPointType pointType_;
   };
 
 }// namespace Intrepid2

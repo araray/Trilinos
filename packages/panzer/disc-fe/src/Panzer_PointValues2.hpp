@@ -74,7 +74,7 @@ namespace panzer {
     //! Sizes/allocates memory for arrays
     void setupArrays(const Teuchos::RCP<const panzer::PointRule>& pr);
 
-    /** Evaluate teh jacobian and derivative information at the requested reference
+    /** Evaluate the jacobian and derivative information at the requested reference
       * points.
       *
       * \param[in] node_coords Cell vertices
@@ -88,7 +88,7 @@ namespace panzer {
       copyPointCoords(in_point_coords);
       evaluateValues(in_num_cells); }
 
-    /** Evaluate teh jacobian and derivative information at the requested reference
+    /** Evaluate the jacobian and derivative information at the requested reference
       * points. This version allows a shallow copy of the vertex coordinates. 
       *
       * \param[in] node_coords Cell vertices
@@ -108,11 +108,11 @@ namespace panzer {
       evaluateValues(in_num_cells); }
 
     //! Return reference cell coordinates this class uses (IP,Dim) sized
-    PHX::MDField<Scalar,IP,Dim> & getRefCoordinates() const 
+    const PHX::MDField<Scalar,IP,Dim> & getRefCoordinates() const
     { return coords_ref; }
 
     //! Return the vertex coordinates this class uses (Cell,NODE,Dim) sized
-    PHX::MDField<Scalar,Cell,NODE,Dim> & getVertexCoordinates() const
+    const PHX::MDField<Scalar,Cell,NODE,Dim> & getVertexCoordinates() const
     { return node_coordinates; }
 
     // input fields: both mutable because of getRefCoordinates/getVertexCoordinates

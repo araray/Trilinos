@@ -9,6 +9,7 @@
 #ifndef Tempus_IntegratorObserver_hpp
 #define Tempus_IntegratorObserver_hpp
 
+#include "Tempus_config.hpp"
 #include "Tempus_TimeStepControl.hpp"
 
 // Forward declarations
@@ -68,6 +69,9 @@ public:
 
     /// Observe the end of the time integrator.
     virtual void observeEndIntegrator(const Integrator<Scalar>& integrator) = 0;
+
+    /// default destructor
+    virtual ~IntegratorObserver() = default;
   //@}
 
 };

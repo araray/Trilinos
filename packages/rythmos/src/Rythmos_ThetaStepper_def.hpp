@@ -148,8 +148,8 @@ ThetaStepper<Scalar>::unSetInterpolator()
 {
   RCP<InterpolatorBase<Scalar> > temp_interpolator = interpolator_;
   interpolator_ = Teuchos::null;
-  return(temp_interpolator);
-  isInitialized_ = false;
+  //isInitialized_ = false;
+  return temp_interpolator;
 }
 
 
@@ -566,8 +566,7 @@ Scalar ThetaStepper<Scalar>::takeStep(Scalar dt, StepSizeType stepSizeType)
 
   {
 
-    typedef typename ST::magnitudeType ScalarMag;
-    typedef ScalarTraits<ScalarMag> SMT;
+    using SMT = ScalarTraits<ScalarMag>;
 
     Teuchos::OSTab tab(out);
 

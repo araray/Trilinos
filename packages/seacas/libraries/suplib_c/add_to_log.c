@@ -1,43 +1,20 @@
 /*
- * Copyright(C) 2009-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * See packages/seacas/LICENSE for details
  */
 
-#include <stdio.h>
+#if !defined(WIN32) && !defined(__WIN32__) && !defined(_WIN32) && !defined(_MSC_VER) &&            \
+    !defined(__MINGW32__) && !defined(_WIN64) && !defined(__MINGW64__)
+/* Currently we just disable this functionality for windows-based systems... */
 #include <stdlib.h>
 #include <string.h>
-#ifndef _MSC_VER
-#include <sys/utsname.h>
+
 #include <sys/times.h>
-#endif
+#include <sys/utsname.h>
+
 #include <time.h>
 #include <unistd.h>
 
@@ -45,22 +22,13 @@
 #define __USE_XOPEN
 #endif
 #include <stdio.h>
+#endif
 
 void add_to_log(const char *my_name, double elapsed)
 {
-#ifndef _MSC_VER
+#if !defined(WIN32) && !defined(__WIN32__) && !defined(_WIN32) && !defined(_MSC_VER) &&            \
+    !defined(__MINGW32__) && !defined(_WIN64) && !defined(__MINGW64__)
 #define LEN 512
-  char time_string[LEN];
-  char log_string[LEN];
-
-  double         u_time, s_time;
-  struct utsname sys_info;
-
-  int    minutes;
-  double seconds;
-
-  char *access_dir = NULL;
-
   /* Don't log information if this environment variable is set */
   if (getenv("SEACAS_NO_LOGGING") != NULL) {
     fprintf(stderr, "SEACAS Audit logging disabled via SEACAS_NO_LOGGING setting.\n");
@@ -69,7 +37,7 @@ void add_to_log(const char *my_name, double elapsed)
 
   /* Now try to find the $ACCESS/etc/audit.log file */
   /* Don't need to try too hard since information is not critical; just useful */
-  access_dir = getenv("ACCESS");
+  char *access_dir = getenv("ACCESS");
   if (access_dir != NULL) {
     char filename[LEN];
     snprintf(filename, LEN, "%s/etc/audit.log", access_dir);
@@ -93,26 +61,25 @@ void add_to_log(const char *my_name, double elapsed)
           codename++;
         }
 
-        {
-          time_t     calendar_time = time(NULL);
-          struct tm *local_time    = localtime(&calendar_time);
-          strftime(time_string, LEN, "%a %b %d %H:%M:%S %Z %Y", local_time);
-        }
+        char       time_string[LEN];
+        time_t     calendar_time = time(NULL);
+        struct tm *local_time    = localtime(&calendar_time);
+        strftime(time_string, LEN, "%a %b %d %H:%M:%S %Z %Y", local_time);
 
-        {
-          int        ticks_per_second;
-          struct tms time_buf;
-          times(&time_buf);
-          ticks_per_second = sysconf(_SC_CLK_TCK);
-          u_time           = (double)(time_buf.tms_utime + time_buf.tms_cutime) / ticks_per_second;
-          s_time           = (double)(time_buf.tms_stime + time_buf.tms_cstime) / ticks_per_second;
-        }
+        int        ticks_per_second;
+        struct tms time_buf;
+        times(&time_buf);
+        ticks_per_second = sysconf(_SC_CLK_TCK);
+        double u_time    = (double)(time_buf.tms_utime + time_buf.tms_cutime) / ticks_per_second;
+        double s_time    = (double)(time_buf.tms_stime + time_buf.tms_cstime) / ticks_per_second;
 
+        struct utsname sys_info;
         uname(&sys_info);
 
-        minutes = (int)(elapsed / 60.0);
-        seconds = elapsed - minutes * 60.0;
+        int    minutes = (int)(elapsed / 60.0);
+        double seconds = elapsed - minutes * 60.0;
 
+        char log_string[LEN];
         snprintf(log_string, LEN, "%s %s %s %.3fu %.3fs %d:%5.2f 0.0%% 0+0k 0+0io 0pf+0w %s\n",
                  codename, username, time_string, u_time, s_time, minutes, seconds,
                  sys_info.nodename) < 0
@@ -124,5 +91,9 @@ void add_to_log(const char *my_name, double elapsed)
       }
     }
   }
-  #endif
+#else
+  /* Try to avoid unused variable warning/error on windows-based system */
+  (void)my_name;
+  (void)elapsed;
+#endif
 }

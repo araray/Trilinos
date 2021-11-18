@@ -9,9 +9,10 @@
 #ifndef Tempus_StepperExplicitRK_impl_hpp
 #define Tempus_StepperExplicitRK_impl_hpp
 
-#include "Tempus_RKButcherTableau.hpp"
-#include "Teuchos_VerboseObjectParameterListHelpers.hpp"
 #include "Thyra_VectorStdOps.hpp"
+
+
+#include "Tempus_RKButcherTableau.hpp"
 
 
 namespace Tempus {
@@ -20,33 +21,29 @@ namespace Tempus {
 template<class Scalar>
 void StepperExplicitRK<Scalar>::setupDefault()
 {
-  this->setUseFSAL(            this->getUseFSALDefault());
-  this->setICConsistency(      this->getICConsistencyDefault());
-  this->setICConsistencyCheck( this->getICConsistencyCheckDefault());
-  this->setUseEmbedded(        this->getUseEmbeddedDefault());
-
-  this->stepperObserver_ =
-    Teuchos::rcp(new StepperRKObserverComposite<Scalar>());
+  this->setUseEmbedded(false);
+  this->setStageNumber(-1);
+  this->setAppAction(Teuchos::null);
 }
 
 
 template<class Scalar>
 void StepperExplicitRK<Scalar>::setup(
   const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-  const Teuchos::RCP<StepperRKObserverComposite<Scalar> >& obs,
   bool useFSAL,
   std::string ICConsistency,
   bool ICConsistencyCheck,
-  bool useEmbedded)
+  bool useEmbedded,
+  const Teuchos::RCP<StepperRKAppAction<Scalar> >& stepperRKAppAction)
 {
   this->setUseFSAL(            useFSAL);
   this->setICConsistency(      ICConsistency);
   this->setICConsistencyCheck( ICConsistencyCheck);
   this->setUseEmbedded(        useEmbedded);
+  this->setStageNumber(-1);
+  this->setErrorNorm();
 
-  this->stepperObserver_ =
-    Teuchos::rcp(new StepperRKObserverComposite<Scalar>());
-  this->setObserver(obs);
+  this->setAppAction(stepperRKAppAction);
 
   if (appModel != Teuchos::null) {
     this->setModel(appModel);
@@ -64,11 +61,10 @@ Scalar StepperExplicitRK<Scalar>::getInitTimeStep(
    if (!this->getUseEmbedded()) return dt;
 
    Teuchos::RCP<SolutionState<Scalar> > currentState=sh->getCurrentState();
-   Teuchos::RCP<SolutionStateMetaData<Scalar> > metaData = currentState->getMetaData();
-   const int order = metaData->getOrder();
-   const Scalar time = metaData->getTime();
-   const Scalar errorAbs = metaData->getTolRel();
-   const Scalar errorRel = metaData->getTolAbs();
+   const int order = currentState->getOrder();
+   const Scalar time = currentState->getTime();
+   const Scalar errorRel = currentState->getTolRel();
+   const Scalar errorAbs = currentState->getTolAbs();
 
    Teuchos::RCP<Thyra::VectorBase<Scalar> > stageX, scratchX;
    stageX = Thyra::createMember(this->appModel_->get_f_space());
@@ -91,22 +87,11 @@ Scalar StepperExplicitRK<Scalar>::getInitTimeStep(
    outArgs.set_f(stageXDot[0]); // K1
    this->appModel_->evalModel(inArgs, outArgs);
 
-   auto err_func = [] (Teuchos::RCP<Thyra::VectorBase<Scalar> > U,
-         const Scalar rtol, const Scalar atol,
-         Teuchos::RCP<Thyra::VectorBase<Scalar> > absU)
-   {
-      // compute err = Norm_{WRMS} with w = Atol + Rtol * | U |
-      Thyra::assign(absU.ptr(), *U);
-      Thyra::abs(*U, absU.ptr()); // absU = | X0 |
-      Thyra::Vt_S(absU.ptr(), rtol); // absU *= Rtol
-      Thyra::Vp_S(absU.ptr(), atol); // absU += Atol
-      Thyra::ele_wise_divide(Teuchos::as<Scalar>(1.0), *U, *absU, absU.ptr());
-      Scalar err = Thyra::norm_inf(*absU);
-      return err;
-   };
+   this->stepperErrorNormCalculator_->setRelativeTolerance(errorRel);
+   this->stepperErrorNormCalculator_->setAbsoluteTolerance(errorAbs);
 
-   Scalar d0 = err_func(stageX, errorRel, errorAbs, scratchX);
-   Scalar d1 = err_func(stageXDot[0], errorRel, errorAbs, scratchX);
+   Scalar d0 = this->stepperErrorNormCalculator_->errorNorm(stageX);
+   Scalar d1 = this->stepperErrorNormCalculator_->errorNorm(stageXDot[0]);
 
    // b) first guess for the step size
    dt = Teuchos::as<Scalar>(0.01)*(d0/d1);
@@ -127,7 +112,7 @@ Scalar StepperExplicitRK<Scalar>::getInitTimeStep(
    errX = Thyra::createMember(this->appModel_->get_f_space());
    assign(errX.ptr(), Teuchos::ScalarTraits<Scalar>::zero());
    Thyra::V_VmV(errX.ptr(), *(stageXDot[1]), *(stageXDot[0]));
-   Scalar d2 = err_func(errX, errorRel, errorAbs, scratchX) / dt;
+   Scalar d2 = this->stepperErrorNormCalculator_->errorNorm(errX) / dt;
 
    // e) compute step size h_1 (from m = 0 order Taylor series)
    Scalar max_d1_d2 = std::max(d1, d2);
@@ -140,52 +125,32 @@ Scalar StepperExplicitRK<Scalar>::getInitTimeStep(
 
 
 template<class Scalar>
-void StepperExplicitRK<Scalar>::getValidParametersBasicERK(
-  Teuchos::RCP<Teuchos::ParameterList> pl) const
+Teuchos::RCP<const Teuchos::ParameterList>
+StepperExplicitRK<Scalar>::getValidParameters() const
 {
-  getValidParametersBasic(pl, this->getStepperType());
-  pl->set<bool>("Use Embedded", false,
-    "'Whether to use Embedded Stepper (if available) or not\n"
-    "  'true' - Stepper will compute embedded solution and is adaptive.\n"
-    "  'false' - Stepper is not embedded(adaptive).\n");
-  pl->set<std::string>("Description", this->getDescription());
+  return this->getValidParametersBasicERK();
 }
 
 
 template<class Scalar>
-void StepperExplicitRK<Scalar>::setObserver(
-  Teuchos::RCP<StepperObserver<Scalar> > obs)
+Teuchos::RCP<Teuchos::ParameterList>
+StepperExplicitRK<Scalar>::getValidParametersBasicERK() const
 {
+  auto pl = this->getValidParametersBasic();
+  pl->template set<bool>("Use Embedded", this->getUseEmbedded(),
+    "'Whether to use Embedded Stepper (if available) or not\n"
+    "  'true' - Stepper will compute embedded solution and is adaptive.\n"
+    "  'false' - Stepper is not embedded(adaptive).\n");
+  pl->template set<std::string>("Description", this->getDescription());
 
-  if (this->stepperObserver_ == Teuchos::null)
-     this->stepperObserver_  =
-        Teuchos::rcp(new StepperRKObserverComposite<Scalar>());
-
-  if (( obs == Teuchos::null ) and (this->stepperObserver_->getSize() >0 ) )
-    return;
-
-  if (( obs == Teuchos::null ) and (this->stepperObserver_->getSize() == 0) )
-     obs = Teuchos::rcp(new StepperRKObserver<Scalar>());
-
-  // Check that this casts to prevent a runtime error if it doesn't
-  if (Teuchos::rcp_dynamic_cast<StepperRKObserver<Scalar> > (obs) != Teuchos::null) {
-    this->stepperObserver_->addObserver(
-         Teuchos::rcp_dynamic_cast<StepperRKObserver<Scalar> > (obs, true) );
-  } else {
-    Teuchos::RCP<Teuchos::FancyOStream> out = this->getOStream();
-    Teuchos::OSTab ostab(out,0,"setObserver");
-    *out << "Tempus::StepperExplicit_RK::setObserver: Warning: An observer has been provided that";
-    *out << " does not support Tempus::StepperRKObserver. This observer WILL NOT be added.";
-    *out << " In the future, this will result in a runtime error!" << std::endl;
-  }
-
+  return pl;
 }
 
 
 template<class Scalar>
 void StepperExplicitRK<Scalar>::initialize()
 {
-  TEUCHOS_TEST_FOR_EXCEPTION( tableau_ == Teuchos::null, std::logic_error,
+  TEUCHOS_TEST_FOR_EXCEPTION( this->tableau_ == Teuchos::null, std::logic_error,
     "Error - Need to set the tableau, before calling "
     "StepperExplicitRK::initialize()\n");
 
@@ -193,26 +158,47 @@ void StepperExplicitRK<Scalar>::initialize()
     "Error - Need to set the model, setModel(), before calling "
     "StepperExplicitRK::initialize()\n");
 
-  this->setObserver();
+  Stepper<Scalar>::initialize();
+}
 
-  TEUCHOS_TEST_FOR_EXCEPTION( this->stepperObserver_->getSize() < 1 
-    , std::logic_error,
-    "Error - Composite Observer is empty!\n");
 
-  // Initialize the stage vectors
-  int numStages = tableau_->numStages();
-  stageX_ = Thyra::createMember(this->appModel_->get_f_space());
+template<class Scalar>
+void StepperExplicitRK<Scalar>::setModel(
+  const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel)
+{
+  StepperExplicit<Scalar>::setModel(appModel);
+
+  // Set the stage vectors
+  int numStages = this->tableau_->numStages();
   stageXDot_.resize(numStages);
   for (int i=0; i<numStages; ++i) {
     stageXDot_[i] = Thyra::createMember(this->appModel_->get_f_space());
     assign(stageXDot_[i].ptr(), Teuchos::ScalarTraits<Scalar>::zero());
   }
 
-  if ( tableau_->isEmbedded() and this->getUseEmbedded() ){
-     ee_ = Thyra::createMember(this->appModel_->get_f_space());
-     abs_u0 = Thyra::createMember(this->appModel_->get_f_space());
-     abs_u = Thyra::createMember(this->appModel_->get_f_space());
-     sc = Thyra::createMember(this->appModel_->get_f_space());
+  this->setEmbeddedMemory();
+  this->setErrorNorm();
+
+  this->isInitialized_ = false;
+}
+
+
+template<class Scalar>
+void StepperExplicitRK<Scalar>::setEmbeddedMemory()
+{
+  if (this->getModel() == Teuchos::null)
+    return;  // Embedded memory will be set when setModel() is called.
+
+  if ( this->tableau_->isEmbedded() && this->getUseEmbedded() ){
+    this->ee_    = Thyra::createMember(this->appModel_->get_f_space());
+    this->abs_u0 = Thyra::createMember(this->appModel_->get_f_space());
+    this->abs_u  = Thyra::createMember(this->appModel_->get_f_space());
+    this->sc     = Thyra::createMember(this->appModel_->get_f_space());
+  } else {
+    this->ee_    = Teuchos::null;
+    this->abs_u0 = Teuchos::null;
+    this->abs_u  = Teuchos::null;
+    this->sc     = Teuchos::null;
   }
 }
 
@@ -221,15 +207,16 @@ template<class Scalar>
 void StepperExplicitRK<Scalar>::setInitialConditions(
   const Teuchos::RCP<SolutionHistory<Scalar> >& solutionHistory)
 {
-  using Teuchos::RCP;
-
-  RCP<SolutionState<Scalar> > initialState = solutionHistory->getCurrentState();
-
-  // Check if we need Stepper storage for xDot
-  if (initialState->getXDot() == Teuchos::null)
+  if (this->getUseFSAL())
     this->setStepperXDot(stageXDot_.back());
+  else
+    this->setStepperXDot(stageXDot_[0]);
 
   StepperExplicit<Scalar>::setInitialConditions(solutionHistory);
+
+  auto xDot = solutionHistory->getCurrentState()->getXDot();
+  if (xDot != Teuchos::null && this->getUseFSAL())
+    Thyra::assign(this->getStepperXDot().ptr(), *(xDot));
 }
 
 
@@ -237,6 +224,8 @@ template<class Scalar>
 void StepperExplicitRK<Scalar>::takeStep(
   const Teuchos::RCP<SolutionHistory<Scalar> >& solutionHistory)
 {
+  this->checkInitialized();
+
   using Teuchos::RCP;
 
   TEMPUS_FUNC_TIME_MONITOR("Tempus::StepperExplicitRK::takeStep()");
@@ -249,57 +238,62 @@ void StepperExplicitRK<Scalar>::takeStep(
       "Try setting in \"Solution History\" \"Storage Type\" = \"Undo\"\n"
       "  or \"Storage Type\" = \"Static\" and \"Storage Limit\" = \"2\"\n");
 
-    this->stepperObserver_->observeBeginTakeStep(solutionHistory, *this);
     RCP<SolutionState<Scalar> > currentState=solutionHistory->getCurrentState();
     RCP<SolutionState<Scalar> > workingState=solutionHistory->getWorkingState();
     const Scalar dt = workingState->getTimeStep();
     const Scalar time = currentState->getTime();
 
-    const int numStages = tableau_->numStages();
-    Teuchos::SerialDenseMatrix<int,Scalar> A = tableau_->A();
-    Teuchos::SerialDenseVector<int,Scalar> b = tableau_->b();
-    Teuchos::SerialDenseVector<int,Scalar> c = tableau_->c();
+    const int numStages = this->tableau_->numStages();
+    Teuchos::SerialDenseMatrix<int,Scalar> A = this->tableau_->A();
+    Teuchos::SerialDenseVector<int,Scalar> b = this->tableau_->b();
+    Teuchos::SerialDenseVector<int,Scalar> c = this->tableau_->c();
+
+    Thyra::assign(workingState->getX().ptr(), *(currentState->getX()));
+
+    RCP<StepperExplicitRK<Scalar> > thisStepper = Teuchos::rcpFromRef(*this);
+    this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+      StepperRKAppAction<Scalar>::ACTION_LOCATION::BEGIN_STEP);
 
     // Compute stage solutions
     for (int i=0; i < numStages; ++i) {
-        this->stepperObserver_->observeBeginStage(solutionHistory, *this);
+      this->setStageNumber(i);
+      Thyra::assign(workingState->getX().ptr(), *(currentState->getX()));
+      for (int j=0; j < i; ++j) {
+        if (A(i,j) != Teuchos::ScalarTraits<Scalar>::zero()) {
+          Thyra::Vp_StV(workingState->getX().ptr(), dt*A(i,j), *stageXDot_[j]);
+        }
+      }
+      this->setStepperXDot(stageXDot_[i]);
 
-        // ???: is it a good idea to leave this (no-op) here?
-        this->stepperObserver_
-            ->observeBeforeImplicitExplicitly(solutionHistory, *this);
-
-        // ???: is it a good idea to leave this (no-op) here?
-        this->stepperObserver_->observeBeforeSolve(solutionHistory, *this);
+      this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+        StepperRKAppAction<Scalar>::ACTION_LOCATION::BEGIN_STAGE);
+      this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+        StepperRKAppAction<Scalar>::ACTION_LOCATION::BEFORE_SOLVE);
+      this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+        StepperRKAppAction<Scalar>::ACTION_LOCATION::AFTER_SOLVE);
+      this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+        StepperRKAppAction<Scalar>::ACTION_LOCATION::BEFORE_EXPLICIT_EVAL);
 
       if ( i == 0 && this->getUseFSAL() &&
            workingState->getNConsecutiveFailures() == 0 ) {
-
         RCP<Thyra::VectorBase<Scalar> > tmp = stageXDot_[0];
         stageXDot_[0] = stageXDot_.back();
         stageXDot_.back() = tmp;
+        this->setStepperXDot(stageXDot_[0]);
 
       } else {
-
-        Thyra::assign(stageX_.ptr(), *(currentState->getX()));
-        for (int j=0; j < i; ++j) {
-          if (A(i,j) != Teuchos::ScalarTraits<Scalar>::zero()) {
-            Thyra::Vp_StV(stageX_.ptr(), dt*A(i,j), *stageXDot_[j]);
-          }
-        }
         const Scalar ts = time + c(i)*dt;
-
-        // ???: is it a good idea to leave this (no-op) here?
-        this->stepperObserver_->observeAfterSolve(solutionHistory, *this);
-
-        this->stepperObserver_->observeBeforeExplicit(solutionHistory, *this);
         auto p = Teuchos::rcp(new ExplicitODEParameters<Scalar>(dt));
 
         // Evaluate xDot = f(x,t).
-        this->evaluateExplicitODE(stageXDot_[i], stageX_, ts, p);
+        this->evaluateExplicitODE(stageXDot_[i], workingState->getX(), ts, p);
       }
 
-      this->stepperObserver_->observeEndStage(solutionHistory, *this);
+      this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+        StepperRKAppAction<Scalar>::ACTION_LOCATION::END_STAGE);
     }
+    // reset the stage number
+    this->setStageNumber(-1);
 
     // Sum for solution: x_n = x_n-1 + Sum{ b(i) * dt*f(i) }
     Thyra::assign((workingState->getX()).ptr(), *(currentState->getX()));
@@ -309,51 +303,59 @@ void StepperExplicitRK<Scalar>::takeStep(
       }
     }
 
+    if (this->getUseFSAL()) {
+      if (numStages == 1) {
+        const Scalar ts = time + dt;
+        auto p = Teuchos::rcp(new ExplicitODEParameters<Scalar>(dt));
+        // Evaluate xDot = f(x,t).
+        this->evaluateExplicitODE(stageXDot_[0], workingState->getX(), ts, p);
+      }
+      if (workingState->getXDot() != Teuchos::null)
+        Thyra::assign((workingState->getXDot()).ptr(), *(stageXDot_.back()));
+    }
+
 
     // At this point, the stepper has passed.
     // But when using adaptive time stepping, the embedded method
     // can change the step status
     workingState->setSolutionStatus(Status::PASSED);
 
-    if (tableau_->isEmbedded() and this->getUseEmbedded()) {
+    if (this->tableau_->isEmbedded() && this->getUseEmbedded()) {
 
-      RCP<SolutionStateMetaData<Scalar> > metaData=workingState->getMetaData();
-      const Scalar tolAbs = metaData->getTolRel();
-      const Scalar tolRel = metaData->getTolAbs();
+      const Scalar tolRel = workingState->getTolRel();
+      const Scalar tolAbs = workingState->getTolAbs();
+
+      // update the tolerance
+      this->stepperErrorNormCalculator_->setRelativeTolerance(tolRel);
+      this->stepperErrorNormCalculator_->setAbsoluteTolerance(tolAbs);
 
       // just compute the error weight vector
       // (all that is needed is the error, and not the embedded solution)
       Teuchos::SerialDenseVector<int,Scalar> errWght = b ;
-      errWght -= tableau_->bstar();
+      errWght -= this->tableau_->bstar();
 
-      //compute local truncation error estimate: | u^{n+1} - \hat{u}^{n+1} |
+      // Compute local truncation error estimate: | u^{n+1} - \hat{u}^{n+1} |
       // Sum for solution: ee_n = Sum{ (b(i) - bstar(i)) * dt*f(i) }
-      assign(ee_.ptr(), Teuchos::ScalarTraits<Scalar>::zero());
+      assign(this->ee_.ptr(), Teuchos::ScalarTraits<Scalar>::zero());
       for (int i=0; i < numStages; ++i) {
          if (errWght(i) != Teuchos::ScalarTraits<Scalar>::zero()) {
-            Thyra::Vp_StV(ee_.ptr(), dt*errWght(i), *(stageXDot_[i]));
+            Thyra::Vp_StV(this->ee_.ptr(), dt*errWght(i), *(stageXDot_[i]));
          }
       }
 
-      // compute: Atol + max(|u^n|, |u^{n+1}| ) * Rtol
-      Thyra::abs( *(currentState->getX()), abs_u0.ptr());
-      Thyra::abs( *(workingState->getX()), abs_u.ptr());
-      Thyra::pair_wise_max_update(tolRel, *abs_u0, abs_u.ptr());
-      Thyra::add_scalar(tolAbs, abs_u.ptr());
 
-      //compute: || ee / sc ||
-      assign(sc.ptr(), Teuchos::ScalarTraits<Scalar>::zero());
-      Thyra::ele_wise_divide(Teuchos::as<Scalar>(1.0), *ee_, *abs_u, sc.ptr());
-      Scalar err = std::abs(Thyra::norm_inf(*sc));
-      metaData->setErrorRel(err);
+      Scalar err = this->stepperErrorNormCalculator_->computeWRMSNorm(currentState->getX(), workingState->getX(), this->ee_);
+      workingState->setErrorRel(err);
 
-      // test if step should be rejected
+      // Test if step should be rejected
       if (std::isinf(err) || std::isnan(err) || err > Teuchos::as<Scalar>(1.0))
         workingState->setSolutionStatus(Status::FAILED);
     }
 
     workingState->setOrder(this->getOrder());
-    this->stepperObserver_->observeEndTakeStep(solutionHistory, *this);
+    workingState->computeNorms(currentState);
+    this->stepperRKAppAction_->execute(solutionHistory, thisStepper,
+      StepperRKAppAction<Scalar>::ACTION_LOCATION::END_STEP);
   }
   return;
 }
@@ -377,21 +379,52 @@ getDefaultStepperState()
 
 template<class Scalar>
 void StepperExplicitRK<Scalar>::describe(
-   Teuchos::FancyOStream               &out,
-   const Teuchos::EVerbosityLevel      /* verbLevel */) const
+  Teuchos::FancyOStream               &out,
+  const Teuchos::EVerbosityLevel      verbLevel) const
 {
-  out << this->getStepperType() << "::describe:" << std::endl
-      << "appModel_ = " << this->appModel_->description() << std::endl;
+  out.setOutputToRootOnly(0);
+  out << std::endl;
+  Stepper<Scalar>::describe(out, verbLevel);
+  StepperExplicit<Scalar>::describe(out, verbLevel);
+
+  out << "--- StepperExplicitRK ---\n";
+  if (this->tableau_ != Teuchos::null) this->tableau_->describe(out, verbLevel);
+  out << "  tableau_           = " << this->tableau_ << std::endl;
+  out << "  stepperRKAppAction_= " << this->stepperRKAppAction_ << std::endl;
+  out << "  stageXDot_.size()  = " << stageXDot_.size() << std::endl;
+  const int numStages = stageXDot_.size();
+  for (int i=0; i<numStages; ++i)
+    out << "    stageXDot_["<<i<<"] = " << stageXDot_[i] << std::endl;
+  out << "  useEmbedded_       = "
+      << Teuchos::toString(this->useEmbedded_) << std::endl;
+  out << "  ee_                = " << this->ee_ << std::endl;
+  out << "  abs_u0             = " << this->abs_u0 << std::endl;
+  out << "  abs_u              = " << this->abs_u << std::endl;
+  out << "  sc                 = " << this->sc << std::endl;
+  out << "-------------------------" << std::endl;
 }
 
 
 template<class Scalar>
-Teuchos::RCP<const Teuchos::ParameterList>
-StepperExplicitRK<Scalar>::getValidParameters() const
+bool StepperExplicitRK<Scalar>::isValidSetup(Teuchos::FancyOStream & out) const
 {
-  Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::parameterList();
-  this->getValidParametersBasicERK(pl);
-  return pl;
+  out.setOutputToRootOnly(0);
+  bool isValidSetup = true;
+
+  if ( !Stepper<Scalar>::isValidSetup(out) ) isValidSetup = false;
+  if ( !StepperExplicit<Scalar>::isValidSetup(out) ) isValidSetup = false;
+
+  if (this->tableau_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The tableau is not set!\n";
+  }
+
+  if (this->stepperRKAppAction_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The AppAction is not set!\n";
+  }
+
+  return isValidSetup;
 }
 
 

@@ -1,35 +1,8 @@
-// Copyright(C) 2008-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2020 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// See packages/seacas/LICENSE for details
 
 #include "ED_SystemInterface.h" // for SystemInterface, etc
 #include "exodusII.h"           // for ex_set, etc
@@ -40,23 +13,13 @@
 #include <cstdlib>        // for exit
 #include <vector>         // for vector
 
-template <typename INT>
-Node_Set<INT>::Node_Set()
-    : Exo_Entity(), num_dist_factors(0), nodes(nullptr), nodeIndex(nullptr), dist_factors(nullptr)
-{
-}
+template <typename INT> Node_Set<INT>::Node_Set() : Exo_Entity() {}
 
-template <typename INT>
-Node_Set<INT>::Node_Set(int file_id, size_t id)
-    : Exo_Entity(file_id, id), num_dist_factors(0), nodes(nullptr), nodeIndex(nullptr),
-      dist_factors(nullptr)
-{
-}
+template <typename INT> Node_Set<INT>::Node_Set(int file_id, size_t id) : Exo_Entity(file_id, id) {}
 
 template <typename INT>
 Node_Set<INT>::Node_Set(int file_id, size_t id, size_t nnodes, size_t ndfs)
-    : Exo_Entity(file_id, id, nnodes), num_dist_factors(ndfs), nodes(nullptr), nodeIndex(nullptr),
-      dist_factors(nullptr)
+    : Exo_Entity(file_id, id, nnodes), num_dist_factors(ndfs)
 {
 }
 
@@ -73,7 +36,8 @@ template <typename INT> const INT *Node_Set<INT>::Nodes() const
 {
   // See if already loaded...
   if (!nodes) {
-    load_nodes();
+    std::vector<INT> tmp;
+    load_nodes(tmp);
   }
   return nodes;
 }
@@ -86,7 +50,8 @@ template <typename INT> size_t Node_Set<INT>::Node_Id(size_t position) const
 
   // See if already loaded...
   if (!nodes) {
-    load_nodes();
+    std::vector<INT> tmp;
+    load_nodes(tmp);
   }
   SMART_ASSERT(position < numEntity);
   return nodes[nodeIndex[position]];
@@ -100,16 +65,17 @@ template <typename INT> size_t Node_Set<INT>::Node_Index(size_t position) const
 
   // See if already loaded...
   if (!nodes) {
-    load_nodes();
+    std::vector<INT> tmp;
+    load_nodes(tmp);
   }
   SMART_ASSERT(position < numEntity);
   SMART_ASSERT(nodeIndex != nullptr);
   return nodeIndex[position];
 }
 
-template <typename INT> void Node_Set<INT>::apply_map(const INT *node_map)
+template <typename INT> void Node_Set<INT>::apply_map(const std::vector<INT> &node_map)
 {
-  SMART_ASSERT(node_map != nullptr);
+  SMART_ASSERT(!node_map.empty());
   if (nodes != nullptr) {
     delete[] nodes;
     nodes = nullptr;
@@ -119,7 +85,7 @@ template <typename INT> void Node_Set<INT>::apply_map(const INT *node_map)
   load_nodes(node_map);
 }
 
-template <typename INT> void Node_Set<INT>::load_nodes(const INT *node_map) const
+template <typename INT> void Node_Set<INT>::load_nodes(const std::vector<INT> &node_map) const
 {
   if (numEntity > 0) {
     nodes = new INT[numEntity];
@@ -128,7 +94,7 @@ template <typename INT> void Node_Set<INT>::load_nodes(const INT *node_map) cons
     SMART_ASSERT(nodeIndex != nullptr);
     ex_get_set(fileId, EX_NODE_SET, id_, nodes, nullptr);
 
-    if (node_map != nullptr) {
+    if (!node_map.empty()) {
       for (size_t i = 0; i < numEntity; i++) {
         nodes[i] = 1 + node_map[nodes[i] - 1];
       }
@@ -185,7 +151,6 @@ template <typename INT> void Node_Set<INT>::entity_load_params()
 
   if (err < 0) {
     Error(fmt::format("Failed to get nodeset parameters for nodeset {}. !  Aborting...\n", id_));
-    exit(1);
   }
 
   numEntity        = sets[0].num_entry;

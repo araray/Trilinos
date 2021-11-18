@@ -116,6 +116,7 @@ values:
 <li> "RILUK": returns an instance of RILUK (ILU(k) preconditioner) </li>
 <li> "SPARSE BLOCK RELAXATION": returns an instance of BlockRelaxation with sparse blocks </li>
 <li> "TRIDIAGONAL RELAXATION": returns an instance of BlockRelaxation with tridiagonal matrix blocks </li>
+<li> "HIPTMAIR": returns an instance of Hiptmair</li>
 </ul>
 
 */
@@ -152,6 +153,9 @@ public:
   Teuchos::RCP<prec_type>
   create (const std::string& precType,
           const Teuchos::RCP<const row_matrix_type>& matrix) const;
+
+  bool
+  isSupported (const std::string& precType) const;
 };
 
 } // namespace Details

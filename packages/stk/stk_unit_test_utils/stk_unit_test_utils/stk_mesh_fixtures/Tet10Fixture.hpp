@@ -50,11 +50,9 @@
 #include <vector>
 
 #include "stk_unit_test_utils/stk_mesh_fixtures/CoordinateMapping.hpp"
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"
 #include "stk_topology/topology.hpp"
 #include "stk_util/util/ReportHandler.hpp"
-namespace stk { namespace mesh { struct ConnectivityMap; } }
 // clang-format on
 // #######################   End Clang Header Tool Managed Headers  ########################
 
@@ -94,7 +92,6 @@ class Tet10Fixture
               , size_t ny
               , size_t nz
               , stk::mesh::BulkData::AutomaticAuraOption = stk::mesh::BulkData::AUTO_AURA
-              , ConnectivityMap const* connectivity_map = NULL
             );
 
   Tet10Fixture(   stk::ParallelMachine pm
@@ -103,7 +100,6 @@ class Tet10Fixture
               , size_t nz
               , const std::string& coordsName
               , stk::mesh::BulkData::AutomaticAuraOption = stk::mesh::BulkData::AUTO_AURA
-              , ConnectivityMap const* connectivity_map = NULL
             );
 
   ~Tet10Fixture();

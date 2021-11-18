@@ -1,39 +1,16 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
+#include <Ioss_Assembly.h>
 #include <Ioss_ElementTopology.h>
 #include <Ioss_Region.h>
+#include <Ioss_SmartAssert.h>
 #include <Ioss_Utils.h>
 #include <Ioss_VariableType.h>
+#include <Ioss_Version.h>
 #include <algorithm>
 #include <cstring>
 #include <exodus/Ioex_Utils.h>
@@ -79,7 +56,7 @@ namespace {
         }
       }
       int ierr =
-          ex_put_coordinate_frames(exoid, nframes, TOPTR(ids), TOPTR(coordinates), TOPTR(tags));
+          ex_put_coordinate_frames(exoid, nframes, ids.data(), coordinates.data(), tags.data());
       if (ierr < 0) {
         Ioex::exodus_error(exoid, __LINE__, __func__, __FILE__);
       }
@@ -100,7 +77,7 @@ namespace {
       std::vector<char>   tags(nframes);
       std::vector<double> coord(nframes * 9);
       std::vector<INT>    ids(nframes);
-      ierr = ex_get_coordinate_frames(exoid, &nframes, TOPTR(ids), TOPTR(coord), TOPTR(tags));
+      ierr = ex_get_coordinate_frames(exoid, &nframes, ids.data(), coord.data(), tags.data());
       if (ierr < 0) {
         Ioex::exodus_error(exoid, __LINE__, __func__, __FILE__);
       }
@@ -115,12 +92,10 @@ namespace {
 } // namespace
 
 namespace Ioex {
-  const char *Version() { return "2016/05/25"; }
+  const char *Version() { return Ioss::Version(); }
 
   void update_last_time_attribute(int exodusFilePtr, double value)
   {
-    char errmsg[MAX_ERR_LENGTH];
-
     double tmp    = 0.0;
     int    rootid = static_cast<unsigned>(exodusFilePtr) & EX_FILE_ID_MASK;
     int    status = nc_get_att_double(rootid, NC_GLOBAL, "last_written_time", &tmp);
@@ -129,10 +104,49 @@ namespace Ioex {
       status = nc_put_att_double(rootid, NC_GLOBAL, "last_written_time", NC_DOUBLE, 1, &value);
       if (status != NC_NOERR) {
         ex_opts(EX_VERBOSE);
+        char errmsg[MAX_ERR_LENGTH];
         fmt::print(errmsg, "Error: failed to define 'last_written_time' attribute to file id {}",
                    exodusFilePtr);
         ex_err_fn(exodusFilePtr, __func__, errmsg, status);
       }
+    }
+  }
+
+  Ioss::EntityType map_exodus_type(ex_entity_type type)
+  {
+    switch (type) {
+    case EX_ASSEMBLY: return Ioss::ASSEMBLY;
+    case EX_BLOB: return Ioss::BLOB;
+    case EX_EDGE_BLOCK: return Ioss::EDGEBLOCK;
+    case EX_EDGE_SET: return Ioss::EDGESET;
+    case EX_ELEM_BLOCK: return Ioss::ELEMENTBLOCK;
+    case EX_ELEM_SET: return Ioss::ELEMENTSET;
+    case EX_FACE_BLOCK: return Ioss::FACEBLOCK;
+    case EX_FACE_SET: return Ioss::FACESET;
+    case EX_NODAL: return Ioss::NODEBLOCK;
+    case EX_NODE_SET: return Ioss::NODESET;
+    case EX_SIDE_SET: return Ioss::SIDESET;
+    case EX_GLOBAL: return Ioss::REGION;
+    default: return Ioss::INVALID_TYPE;
+    }
+  }
+
+  ex_entity_type map_exodus_type(Ioss::EntityType type)
+  {
+    switch (type) {
+    case Ioss::REGION: return EX_GLOBAL;
+    case Ioss::ASSEMBLY: return EX_ASSEMBLY;
+    case Ioss::BLOB: return EX_BLOB;
+    case Ioss::EDGEBLOCK: return EX_EDGE_BLOCK;
+    case Ioss::EDGESET: return EX_EDGE_SET;
+    case Ioss::ELEMENTBLOCK: return EX_ELEM_BLOCK;
+    case Ioss::ELEMENTSET: return EX_ELEM_SET;
+    case Ioss::FACEBLOCK: return EX_FACE_BLOCK;
+    case Ioss::FACESET: return EX_FACE_SET;
+    case Ioss::NODEBLOCK: return EX_NODAL;
+    case Ioss::NODESET: return EX_NODE_SET;
+    case Ioss::SIDESET: return EX_SIDE_SET;
+    default: return EX_INVALID;
     }
   }
 
@@ -185,13 +199,13 @@ namespace Ioex {
     int     status   = nc_inq_att(exodusFilePtr, NC_GLOBAL, "processor_info", &att_type, &att_len);
     if (status == NC_NOERR && att_type == NC_INT) {
       // Attribute exists on this database, read it and check that the information
-      // matches the current processor count and procesor id.
+      // matches the current processor count and processor id.
       int proc_info[2];
       status = nc_get_att_int(exodusFilePtr, NC_GLOBAL, "processor_info", proc_info);
       if (status == NC_NOERR) {
         if (proc_info[0] != processor_count && proc_info[0] > 1) {
-          fmt::print(IOSS_WARNING,
-                     "WARNING: Processor decomposition count in file ({}) does not match current "
+          fmt::print(Ioss::WARNING(),
+                     "Processor decomposition count in file ({}) does not match current "
                      "processor "
                      "count ({}).\n",
                      proc_info[0], processor_count);
@@ -199,8 +213,8 @@ namespace Ioex {
         }
         if (proc_info[1] != processor_id) {
           fmt::print(
-              IOSS_WARNING,
-              "WARNING: This file was originally written on processor {}, but is now being read on "
+              Ioss::WARNING(),
+              "This file was originally written on processor {}, but is now being read on "
               "processor {}.\n"
               "This may cause problems if there is any processor-dependent data on the file.\n",
               proc_info[1], processor_id);
@@ -227,7 +241,7 @@ namespace Ioex {
     const char *s = substring;
     const char *t = type.c_str();
 
-    assert(s != nullptr && t != nullptr);
+    SMART_ASSERT(s != nullptr && t != nullptr);
     while (*s != '\0' && *t != '\0') {
       if (*s++ != tolower(*t++)) {
         return false;
@@ -292,9 +306,9 @@ namespace Ioex {
       if (!succeed) {
         // Need to remove the property so it doesn't cause problems
         // later...
-        Ioss::GroupingEntity *new_entity = const_cast<Ioss::GroupingEntity *>(entity);
+        auto *new_entity = const_cast<Ioss::GroupingEntity *>(entity);
         new_entity->property_erase(id_prop);
-        assert(!entity->property_exists(id_prop));
+        SMART_ASSERT(!entity->property_exists(id_prop))(id_prop);
       }
     }
     return succeed;
@@ -378,7 +392,7 @@ namespace Ioex {
 
     // 'id' is a unique id for this entity type...
     idset->insert(std::make_pair(static_cast<int>(type), id));
-    Ioss::GroupingEntity *new_entity = const_cast<Ioss::GroupingEntity *>(entity);
+    auto *new_entity = const_cast<Ioss::GroupingEntity *>(entity);
     new_entity->property_add(Ioss::Property(id_prop, id));
     new_entity->property_update("guid", entity->get_database()->util().generate_guid(id));
     return id;
@@ -419,7 +433,7 @@ namespace Ioex {
 
   void fix_bad_name(char *name)
   {
-    assert(name != nullptr);
+    SMART_ASSERT(name != nullptr);
 
     size_t len = std::strlen(name);
     for (size_t i = 0; i < len; i++) {
@@ -438,38 +452,44 @@ namespace Ioex {
   {
     std::vector<char> buffer(length + 1);
     buffer[0] = '\0';
-    int error = ex_get_name(exoid, type, id, TOPTR(buffer));
+    int error = ex_get_name(exoid, type, id, buffer.data());
     if (error < 0) {
       exodus_error(exoid, __LINE__, __func__, __FILE__);
     }
     if (buffer[0] != '\0') {
-      Ioss::Utils::fixup_name(TOPTR(buffer));
+      Ioss::Utils::fixup_name(buffer.data());
       // Filter out names of the form "basename_id" if the name
       // id doesn't match the id in the name...
       size_t base_size = basename.size();
       if (std::strncmp(basename.c_str(), &buffer[0], base_size) == 0) {
-        int64_t name_id = extract_id(TOPTR(buffer));
+        int64_t name_id = extract_id(buffer.data());
         if (name_id > 0 && name_id != id) {
           // See if name is truly of form "basename_name_id"
           std::string tmp_name = Ioss::Utils::encode_entity_name(basename, name_id);
-          if (tmp_name == TOPTR(buffer)) {
+          if (tmp_name == buffer.data()) {
             std::string new_name = Ioss::Utils::encode_entity_name(basename, id);
-            fmt::print(IOSS_WARNING,
-                       "WARNING: The entity named '{}' has the id {} which does not match the "
+            fmt::print(Ioss::WARNING(),
+                       "The entity named '{}' has the id {} which does not match the "
                        "embedded id {}.\n"
                        "         This can cause issues later; the entity will be renamed to '{}' "
                        "(IOSS)\n\n",
-                       TOPTR(buffer), id, name_id, new_name);
+                       buffer.data(), id, name_id, new_name);
             db_has_name = false;
             return new_name;
           }
         }
       }
       db_has_name = true;
-      return (std::string(TOPTR(buffer)));
+      return (std::string(buffer.data()));
     }
     db_has_name = false;
     return Ioss::Utils::encode_entity_name(basename, id);
+  }
+
+  void exodus_error(int exoid, int lineno, const char *function, const char *filename)
+  {
+    std::string empty{};
+    exodus_error(exoid, lineno, function, filename, empty);
   }
 
   void exodus_error(int exoid, int lineno, const char *function, const char *filename,
@@ -634,8 +654,8 @@ namespace Ioex {
         }
         if (block == nullptr || !block->contains(elem_id)) {
           block = region->get_element_block(elem_id);
-          assert(block != nullptr);
-          assert(!Ioss::Utils::block_is_omitted(block)); // Filtered out above.
+          SMART_ASSERT(block != nullptr);
+          SMART_ASSERT(!Ioss::Utils::block_is_omitted(block)); // Filtered out above.
 
           // nullptr if hetero sides on element
           common_ftopo = block->topology()->boundary_type(0);
@@ -647,9 +667,19 @@ namespace Ioex {
 
         if (common_ftopo == nullptr && sides[iel] != current_side) {
           current_side = sides[iel];
-          assert(current_side > 0 && current_side <= block->topology()->number_boundaries());
+          if (current_side <= 0 || current_side > block->topology()->number_boundaries()) {
+            std::ostringstream errmsg;
+            fmt::print(
+                errmsg,
+                "ERROR: In sideset/surface '{}' for the element with id {:L} of topology '{}';\n\t"
+                "an invalid face index '{}' is specified.\n\tFace indices "
+                "must be between 1 and {}. ({})",
+                surface_name, elem_id, block->topology()->name(), current_side,
+                block->topology()->number_boundaries(), __func__);
+            IOSS_ERROR(errmsg);
+          }
           topo = block->topology()->boundary_type(sides[iel]);
-          assert(topo != nullptr);
+          SMART_ASSERT(topo != nullptr);
         }
         std::pair<std::string, const Ioss::ElementTopology *> name_topo;
         if (split_type == Ioss::SPLIT_BY_TOPOLOGIES) {
@@ -676,4 +706,41 @@ namespace Ioex {
     }
   }
 
+  void write_reduction_attributes(int exoid, const Ioss::GroupingEntity *ge)
+  {
+    Ioss::NameList properties;
+    ge->property_describe(Ioss::Property::Origin::ATTRIBUTE, &properties);
+
+    auto type = Ioex::map_exodus_type(ge->type());
+    auto id   = ge->get_optional_property("id", 0);
+
+    double  rval = 0.0;
+    int64_t ival = 0;
+    for (const auto &property_name : properties) {
+      auto prop = ge->get_property(property_name);
+
+      switch (prop.get_type()) {
+      case Ioss::Property::BasicType::REAL:
+        rval = prop.get_real();
+        ex_put_double_attribute(exoid, type, id, property_name.c_str(), 1, &rval);
+        break;
+      case Ioss::Property::BasicType::INTEGER:
+        ival = prop.get_int();
+        ex_put_integer_attribute(exoid, type, id, property_name.c_str(), 1, &ival);
+        break;
+      case Ioss::Property::BasicType::STRING:
+        ex_put_text_attribute(exoid, type, id, property_name.c_str(), prop.get_string().c_str());
+        break;
+      case Ioss::Property::BasicType::VEC_INTEGER:
+        ex_put_integer_attribute(exoid, type, id, property_name.c_str(), prop.get_vec_int().size(),
+                                 prop.get_vec_int().data());
+        break;
+      case Ioss::Property::BasicType::VEC_DOUBLE:
+        ex_put_double_attribute(exoid, type, id, property_name.c_str(),
+                                prop.get_vec_double().size(), prop.get_vec_double().data());
+        break;
+      default:; // Do nothing
+      }
+    }
+  }
 } // namespace Ioex

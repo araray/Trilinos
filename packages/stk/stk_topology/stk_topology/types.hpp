@@ -34,9 +34,7 @@
 #ifndef STKTOPOLOGY_TYPES_TCC
 #define STKTOPOLOGY_TYPES_TCC
 
-// IWYU pragma: private, include "stk_topology/topology.hpp"
-
-#include <stk_topology/topology_type.hpp>
+#include "stk_topology/topology_type.hpp"
 
 namespace stk {
 
@@ -48,6 +46,7 @@ struct topology::types {
   typedef topology_type<TRI_4>         tri_4;
   typedef topology_type<TRI_6>         tri_6;
   typedef topology_type<QUAD_4>        quad_4;
+  typedef topology_type<QUAD_6>        quad_6;
   typedef topology_type<QUAD_8>        quad_8;
   typedef topology_type<QUAD_9>        quad_9;
   typedef topology_type<PARTICLE>      particle;

@@ -54,11 +54,31 @@
 #include "Intrepid2_Types.hpp"
 #include "Intrepid2_Utils.hpp"
 
+#include "Intrepid2_BasisValues.hpp"
 #include "Intrepid2_CellTopologyTags.hpp"
+#include "Intrepid2_TensorPoints.hpp"
 #include "Kokkos_Vector.hpp"
 #include "Shards_CellTopology.hpp"
+#include <Teuchos_RCPDecl.hpp>
+
+#include <vector>
 
 namespace Intrepid2 {
+
+template<typename DeviceType = void,
+         typename OutputType = double,
+         typename PointType = double>
+class Basis;
+
+  /**  \brief Basis Pointer
+    */
+template <typename DeviceType = void, typename OutputType = double, typename PointType = double>
+using BasisPtr = Teuchos::RCP<Basis<DeviceType,OutputType,PointType> >;
+
+/** \brief Pointer to a Basis whose device type is on the host (Kokkos::HostSpace::device_type), allowing host access to input and output views, and ensuring host execution of basis evaluation.
+ */
+template <typename OutputType = double, typename PointType = double>
+using HostBasisPtr = BasisPtr<typename Kokkos::HostSpace::device_type, OutputType, PointType>;
 
   /** \class  Intrepid2::Basis
       \brief  An abstract base class that defines interface for concrete basis implementations for
@@ -79,24 +99,36 @@ namespace Intrepid2 {
               subcell of particular dimension, and the last field gives the total number of basis
               functions associated with that subcell; see Section \ref basis_dof_tag_ord_sec for details.
 
+              Note the use of Kokkos::LayoutStride as the layout for various View definitions (including the
+              argument for \ref getValues() ).  A method expecting a LayoutStride view can accept, thanks to
+              some conversion mechanisms defined elsewhere, a LayoutLeft view (the default for Cuda views in
+              Kokkos) or a LayoutRight view (the default on most other platforms).  This does introduce some
+              additional complexity when Views need to be allocated for temporary storage; see the method
+              \ref getMatchingViewWithLabel() provided in \ref Intrepid_Utils.hpp.
+   
       \remark To limit memory use by factory-type objects (basis factories will be included in future
               releases of Intrepid2), tag data is not initialized by basis ctors,
               instead, whenever a function that requires tag data is invoked for a first time, it calls
               initializeTags() to fill <var>ordinalToTag_</var> and <var>tagToOrdinal_</var>. Because
-              tag data is basis specific, every concrete basis class requires its own implementation
+              tag data is basis-specific, every concrete basis class requires its own implementation
               of initializeTags().
 
       \todo  restore test for inclusion of reference points in their resective reference cells in
              getValues_HGRAD_Args, getValues_CURL_Args, getValues_DIV_Args
   */
-  template<typename ExecSpaceType = void,
-           typename outputValueType = double,
-           typename pointValueType = double>
+  template<typename Device,
+           typename outputValueType,
+           typename pointValueType>
   class Basis {
   public:
+    /**  \brief (Kokkos) Device type on which Basis is templated.  Does not necessarily return true for Kokkos::is_device (may be Kokkos::Serial, for example).
+     */
+    using DeviceType = Device;
+    
     /**  \brief (Kokkos) Execution space for basis.
      */
-    using ExecutionSpace  = ExecSpaceType;
+    using ExecutionSpace  = typename DeviceType::execution_space;
+    
     
     /**  \brief Output value type for basis; default is double.
      */
@@ -108,61 +140,50 @@ namespace Intrepid2 {
     
     /**  \brief View type for ordinal
     */
-    using OrdinalViewType = Kokkos::View<ordinal_type,ExecSpaceType>;
-    using ordinal_view_type INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalViewType instead","OrdinalViewType") = OrdinalViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalViewType instead");
+    using OrdinalViewType = Kokkos::View<ordinal_type,DeviceType>;
 
     /**  \brief View for basis type
     */
-    using EBasisViewType = Kokkos::View<EBasis,ExecSpaceType>;
-    using ebasis_view_type INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use EBasisViewType instead","EBasisViewType") = EBasisViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use EBasisViewType instead");
+    using EBasisViewType = Kokkos::View<EBasis,DeviceType>;
 
     /**  \brief View for coordinate system type
     */
-    using ECoordinatesViewType = Kokkos::View<ECoordinates,ExecSpaceType>;
-    using ecoordinates_view_type INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use ECoordinatesViewType instead","ECoordinatesViewType") = ECoordinatesViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use ECoordinatesViewType instead");
+    using ECoordinatesViewType = Kokkos::View<ECoordinates,DeviceType>;
 
     // ** tag interface
     //  - tag interface is not decorated with Kokkos inline so it should be allocated on hostspace
 
     /**  \brief View type for 1d host array
     */
-    using OrdinalTypeArray1DHost = Kokkos::View<ordinal_type*,typename ExecSpaceType::array_layout,Kokkos::HostSpace>;
-    using ordinal_type_array_1d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray1DHost instead","OrdinalTypeArray1DHost") = OrdinalTypeArray1DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray1DHost instead");
+    using OrdinalTypeArray1DHost = Kokkos::View<ordinal_type*,typename ExecutionSpace::array_layout,Kokkos::HostSpace>;
 
     /**  \brief View type for 2d host array
     */
-    using OrdinalTypeArray2DHost = Kokkos::View<ordinal_type**,typename ExecSpaceType::array_layout,Kokkos::HostSpace>;
-    using ordinal_type_array_2d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray2DHost instead","OrdinalTypeArray2DHost") = OrdinalTypeArray2DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray2DHost instead");
+    using OrdinalTypeArray2DHost = Kokkos::View<ordinal_type**,typename ExecutionSpace::array_layout,Kokkos::HostSpace>;
 
     /**  \brief View type for 3d host array
     */
-    using OrdinalTypeArray3DHost = Kokkos::View<ordinal_type***,typename ExecSpaceType::array_layout,Kokkos::HostSpace>;
-    using ordinal_type_array_3d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray3DHost instead","OrdinalTypeArray3DHost") = OrdinalTypeArray3DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray3DHost instead");
+    using OrdinalTypeArray3DHost = Kokkos::View<ordinal_type***,typename ExecutionSpace::array_layout,Kokkos::HostSpace>;
 
     /**  \brief View type for 1d host array
     */
     using OrdinalTypeArrayStride1DHost = Kokkos::View<ordinal_type*, Kokkos::LayoutStride, Kokkos::HostSpace>;
-    using ordinal_type_array_stride_1d_host INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArrayStride1DHost instead","OrdinalTypeArrayStride1DHost") = OrdinalTypeArrayStride1DHost INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArrayStride1DHost instead");
 
     /**  \brief View type for 1d device array
     */
-    using OrdinalTypeArray1D = Kokkos::View<ordinal_type*,ExecSpaceType>;
-    using ordinal_type_array_1d INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray1D instead","OrdinalTypeArray1D") = OrdinalTypeArray1D INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray1D instead");
+    using OrdinalTypeArray1D = Kokkos::View<ordinal_type*,DeviceType>;
 
     /**  \brief View type for 2d device array
     */
-    using OrdinalTypeArray2D = Kokkos::View<ordinal_type**,ExecSpaceType>;
-    using ordinal_type_array_2d INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray2D instead","OrdinalTypeArray2D") = OrdinalTypeArray2D INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray2D instead");
+    using OrdinalTypeArray2D = Kokkos::View<ordinal_type**,DeviceType>;
 
     /**  \brief View type for 3d device array
     */
-    using OrdinalTypeArray3D = Kokkos::View<ordinal_type***,ExecSpaceType>;
-    using ordinal_type_array_3d INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArray3D instead","OrdinalTypeArray3D") = OrdinalTypeArray3D INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArray3D instead");
+    using OrdinalTypeArray3D = Kokkos::View<ordinal_type***,DeviceType>;
 
     /**  \brief View type for 1d device array 
     */
-    using OrdinalTypeArrayStride1D = Kokkos::View<ordinal_type*, Kokkos::LayoutStride, ExecSpaceType>;
-    using ordinal_type_array_stride_1d INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OrdinalTypeArrayStride1D instead","OrdinalTypeArrayStride1D") = OrdinalTypeArrayStride1D INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OrdinalTypeArrayStride1D instead");
+    using OrdinalTypeArrayStride1D = Kokkos::View<ordinal_type*, Kokkos::LayoutStride, DeviceType>;
 
     /**  \brief Scalar type for point values
     */
@@ -197,7 +218,7 @@ namespace Intrepid2 {
     
     /** \brief  "true" if <var>tagToOrdinal_</var> and <var>ordinalToTag_</var> have been initialized
      */
-    //Kokkos::View<bool,ExecSpaceType> basisTagsAreSet_;
+    //Kokkos::View<bool,DeviceType> basisTagsAreSet_;
 
     /** \brief  DoF ordinal to tag lookup table.
 
@@ -291,7 +312,7 @@ namespace Intrepid2 {
     // dof coords
     /** \brief Coordinates of degrees-of-freedom for basis functions defined in physical space.
      */
-    Kokkos::DynRankView<scalarType,ExecSpaceType> dofCoords_;
+    Kokkos::DynRankView<scalarType,DeviceType> dofCoords_;
 
     // dof coeffs
     /** \brief Coefficients for computing degrees of freedom for Lagrangian basis
@@ -301,7 +322,7 @@ namespace Intrepid2 {
         Rank-1 array for scalar basis with dimension (cardinality)
         Rank-2 array for vector basis with dimensions (cardinality, cell dimension)
      */
-    Kokkos::DynRankView<scalarType,ExecSpaceType> dofCoeffs_;
+    Kokkos::DynRankView<scalarType,DeviceType> dofCoeffs_;
     
     /** \brief Polynomial degree for each degree of freedom.  Only defined for hierarchical bases right now.
      The number of entries per degree of freedom in this table depends on the basis type.  For hypercubes,
@@ -327,19 +348,57 @@ namespace Intrepid2 {
 
     /** \brief View type for basis value output
     */
-    using OutputViewType = Kokkos::DynRankView<OutputValueType,Kokkos::LayoutStride,ExecSpaceType>;
-    using outputViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use OutputViewType instead","OutputViewType") = OutputViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use OutputViewType instead");
+    using OutputViewType = Kokkos::DynRankView<OutputValueType,Kokkos::LayoutStride,DeviceType>;
 
     /** \brief View type for input points
     */
-    using PointViewType = Kokkos::DynRankView<PointValueType,Kokkos::LayoutStride,ExecSpaceType>;
-    using pointViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use PointViewType instead","PointViewType") = PointViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use PointViewType instead");
+    using PointViewType = Kokkos::DynRankView<PointValueType,Kokkos::LayoutStride,DeviceType>;
 
     /** \brief View type for scalars 
     */
-    using ScalarViewType = Kokkos::DynRankView<scalarType,Kokkos::LayoutStride,ExecSpaceType>;
-    using scalarViewType INTREPID2_DEPRECATED_TYPENAME_REPLACEMENT("use ScalarViewType instead","ScalarViewType") = ScalarViewType INTREPID2_DEPRECATED_TYPENAME_TRAILING_ATTRIBUTE("use ScalarViewType instead");
+    using ScalarViewType = Kokkos::DynRankView<scalarType,Kokkos::LayoutStride,DeviceType>;
+
+    /** \brief Allocate a View container suitable for passing to the getValues() variant that accepts Kokkos DynRankViews as arguments (as opposed to the Intrepid2 BasisValues and PointValues containers).
+     
+        Note that only the basic exact-sequence operators are supported at the moment: VALUE, GRAD, DIV, CURL.
+     */
+    Kokkos::DynRankView<OutputValueType,DeviceType> allocateOutputView( const int numPoints, const EOperator operatorType = OPERATOR_VALUE) const;
     
+    /** \brief Allocate BasisValues container suitable for passing to the getValues() variant that takes a TensorPoints container as argument.
+     
+        The default implementation employs a trivial tensor-product structure, for compatibility across all bases.  Subclasses that have tensor-product structure
+        should override.  Note that only the basic exact-sequence operators are supported at the moment: VALUE, GRAD, DIV, CURL.
+     */
+    virtual BasisValues<OutputValueType,DeviceType> allocateBasisValues( TensorPoints<PointValueType,DeviceType> points, const EOperator operatorType = OPERATOR_VALUE) const
+    {
+      const bool operatorIsDk = (operatorType >= OPERATOR_D1) && (operatorType <= OPERATOR_D10);
+      const bool operatorSupported = (operatorType == OPERATOR_VALUE) || (operatorType == OPERATOR_GRAD) || (operatorType == OPERATOR_CURL) || (operatorType == OPERATOR_DIV) || operatorIsDk;
+      INTREPID2_TEST_FOR_EXCEPTION(!operatorSupported, std::invalid_argument, "operator is not supported by allocateBasisValues");
+      
+//      // this default implementation employs a trivial tensor-product structure; make sure that points also have a trivial tensor product structure:
+//      INTREPID2_TEST_FOR_EXCEPTION(points.numTensorComponents() != 1, std::invalid_argument, "default implementation of allocateBasisValues() only supports a trivial tensor product structure (one tensor component)");
+      
+      const int numPoints = points.extent_int(0);
+      
+      using Scalar = OutputValueType;
+      
+      auto dataView = allocateOutputView(numPoints, operatorType);
+      Data<Scalar,DeviceType> data(dataView);
+      
+      bool useVectorData = (dataView.rank() == 3);
+      
+      if (useVectorData)
+      {
+        VectorData<Scalar,DeviceType> vectorData(data);
+        return BasisValues<Scalar,DeviceType>(vectorData);
+      }
+      else
+      {
+        TensorData<Scalar,DeviceType> tensorData(data);
+        return BasisValues<Scalar,DeviceType>(tensorData);
+      }
+    }
+
     /** \brief  Evaluation of a FEM basis on a <strong>reference cell</strong>.
 
         Returns values of <var>operatorType</var> acting on FEM basis functions for a set of
@@ -364,7 +423,43 @@ namespace Intrepid2 {
                const PointViewType  /* inputPoints */,
                const EOperator /* operatorType */ = OPERATOR_VALUE ) const {
       INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
-                                    ">>> ERROR (Basis::getValues): this method (FEM) is not supported or should be over-riden accordingly by derived classes.");
+                                    ">>> ERROR (Basis::getValues): this method (FEM) is not supported or should be overridden accordingly by derived classes.");
+    }
+
+    /** \brief  Evaluation of a FEM basis on a <strong>reference cell</strong>, using point and output value containers that allow preservation of tensor-product structure.
+
+        Returns values of <var>operatorType</var> acting on FEM basis functions for a set of
+        points in the <strong>reference cell</strong> for which the basis is defined.
+
+        \param  outputValues      [out] - variable rank array with the basis values.  Should be allocated using Basis::allocateBasisValues().
+        \param  inputPoints       [in]  - rank-2 array (P,D) with the evaluation points.  This should be allocated using Cubature::allocateCubaturePoints() and filled using Cubature::getCubature().
+        \param  operatorType      [in]  - the operator acting on the basis function
+     
+        The default implementation does not take advantage of any tensor-product structure; subclasses with tensor-product support must override allocateBasisValues() and this getValues() method.
+    */
+    virtual
+    void
+    getValues(       BasisValues<OutputValueType,DeviceType> outputValues,
+               const TensorPoints<PointValueType,DeviceType>  inputPoints,
+               const EOperator operatorType = OPERATOR_VALUE ) const {
+      // note the extra allocation/copy here (this is one reason, among several, to override this method):
+      auto rawExpandedPoints = inputPoints.allocateAndFillExpandedRawPointView();
+      
+      OutputViewType rawOutputView;
+      Data<OutputValueType,DeviceType> outputData;
+      if (outputValues.numTensorDataFamilies() > 0)
+      {
+        INTREPID2_TEST_FOR_EXCEPTION(outputValues.tensorData(0).numTensorComponents() != 1, std::invalid_argument, "default implementation of getValues() only supports outputValues with trivial tensor-product structure");
+        outputData = outputValues.tensorData().getTensorComponent(0);
+      }
+      else if (outputValues.vectorData().isValid())
+      {
+        INTREPID2_TEST_FOR_EXCEPTION(outputValues.vectorData().numComponents() != 1, std::invalid_argument, "default implementation of getValues() only supports outputValues with trivial tensor-product structure");
+        INTREPID2_TEST_FOR_EXCEPTION(outputValues.vectorData().getComponent(0).numTensorComponents() != 1, std::invalid_argument, "default implementation of getValues() only supports outputValues with trivial tensor-product structure");
+        outputData = outputValues.vectorData().getComponent(0).getTensorComponent(0);
+      }
+      
+      this->getValues(outputData.getUnderlyingView(), rawExpandedPoints, operatorType);
     }
 
     /** \brief  Evaluation of an FVD basis evaluation on a <strong>physical cell</strong>.
@@ -393,7 +488,7 @@ namespace Intrepid2 {
                 const PointViewType  /* cellVertices */,
                 const EOperator /* operatorType */ = OPERATOR_VALUE ) const {
       INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
-                                    ">>> ERROR (Basis::getValues): this method (FVM) is not supported or should be over-riden accordingly by derived classes.");
+                                    ">>> ERROR (Basis::getValues): this method (FVM) is not supported or should be overridden accordingly by derived classes.");
     }
 
 
@@ -404,7 +499,7 @@ namespace Intrepid2 {
     void
     getDofCoords( ScalarViewType /* dofCoords */ ) const {
       INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
-                                    ">>> ERROR (Basis::getDofCoords): this method is not supported or should be over-riden accordingly by derived classes.");
+                                    ">>> ERROR (Basis::getDofCoords): this method is not supported or should be overridden accordingly by derived classes.");
     }
 
     /** \brief Coefficients for computing degrees of freedom for Lagrangian basis
@@ -419,7 +514,7 @@ namespace Intrepid2 {
     void
     getDofCoeffs( ScalarViewType /* dofCoeffs */ ) const {
       INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
-                                    ">>> ERROR (Basis::getDofCoeffs): this method is not supported or should be over-riden accordingly by derived classes.");
+                                    ">>> ERROR (Basis::getDofCoeffs): this method is not supported or should be overridden accordingly by derived classes.");
     }
 
     /** \brief For hierarchical bases, returns the field ordinals that have at most the specified degree in each dimension.
@@ -436,7 +531,7 @@ namespace Intrepid2 {
       int degreeEntryLength     = fieldOrdinalPolynomialDegree_.extent_int(1);
       int requestedDegreeLength = degrees.extent_int(0);
       INTREPID2_TEST_FOR_EXCEPTION(degreeEntryLength != requestedDegreeLength, std::invalid_argument, "length of degrees does not match the entries in fieldOrdinalPolynomialDegree_");
-      Kokkos::vector<int> fieldOrdinalsVector;
+      std::vector<int> fieldOrdinalsVector;
       for (int basisOrdinal=0; basisOrdinal<fieldOrdinalPolynomialDegree_.extent_int(0); basisOrdinal++)
       {
         bool matches = true;
@@ -447,7 +542,7 @@ namespace Intrepid2 {
         if (matches) fieldOrdinalsVector.push_back(basisOrdinal);
       }
       OrdinalTypeArray1DHost fieldOrdinals("fieldOrdinalsForDegree",fieldOrdinalsVector.size());
-      for (int i=0; i<fieldOrdinalsVector.size(); i++)
+      for (unsigned i=0; i<fieldOrdinalsVector.size(); i++)
       {
         fieldOrdinals(i) = fieldOrdinalsVector[i];
       }
@@ -457,24 +552,25 @@ namespace Intrepid2 {
     /** \brief For hierarchical bases, returns the field ordinals that have at most the specified degree in each dimension.
      Assuming that these are less than or equal to the polynomial orders provided at Basis construction, the corresponding polynomials will form a superset of the Basis of the same type constructed with polynomial orders corresponding to the specified degrees.
      
-     This variant takes a Kokkos::vector of polynomial degrees and returns a Kokkos::vector of field ordinals.  It calls the other variant, which uses Kokkos Views on the host.
+
+     This variant takes a std::vector of polynomial degrees and returns a std::vector of field ordinals.  It calls the other variant, which uses Kokkos Views on the host.
      
-     \param  degrees      [in] - Kokkos::vector<int> of length specified by getPolynomialDegreeLength(), indicating what the maximum degree in each dimension should be
+     \param  degrees      [in] - std::vector<int> of length specified by getPolynomialDegreeLength(), indicating what the maximum degree in each dimension should be
      
-     \return a Kokkos::vector<int> containing the ordinals of matching basis functions
+     \return a std::vector<int> containing the ordinals of matching basis functions
      
      */
-    Kokkos::vector<int> getFieldOrdinalsForDegree(Kokkos::vector<int> &degrees) const
+    std::vector<int> getFieldOrdinalsForDegree(std::vector<int> &degrees) const
     {
       INTREPID2_TEST_FOR_EXCEPTION( basisType_ != BASIS_FEM_HIERARCHICAL, std::logic_error,
                                    ">>> ERROR (Basis::getFieldOrdinalsForDegree): this method is not supported for non-hierarchical bases.");
       OrdinalTypeArray1DHost degreesView("degrees",degrees.size());
-      for (int d=0; d<degrees.size(); d++)
+      for (unsigned d=0; d<degrees.size(); d++)
       {
         degreesView(d) = degrees[d];
       }
       auto fieldOrdinalsView = getFieldOrdinalsForDegree(degreesView);
-      Kokkos::vector<int> fieldOrdinalsVector(fieldOrdinalsView.extent_int(0));
+      std::vector<int> fieldOrdinalsVector(fieldOrdinalsView.extent_int(0));
       for (int i=0; i<fieldOrdinalsView.extent_int(0); i++)
       {
         fieldOrdinalsVector[i] = fieldOrdinalsView(i);
@@ -495,7 +591,13 @@ namespace Intrepid2 {
       INTREPID2_TEST_FOR_EXCEPTION(fieldOrdinal < 0, std::invalid_argument, "field ordinal must be non-negative");
       INTREPID2_TEST_FOR_EXCEPTION(fieldOrdinal >= fieldOrdinalPolynomialDegree_.extent_int(0), std::invalid_argument, "field ordinal out of bounds");
       
-      return Kokkos::subview(fieldOrdinalPolynomialDegree_,fieldOrdinal,Kokkos::ALL);
+      int polyDegreeLength = getPolynomialDegreeLength(); 
+      OrdinalTypeArray1DHost polyDegree("polynomial degree", polyDegreeLength);
+      for (int d=0; d<polyDegreeLength; d++)
+      {
+        polyDegree(d) = fieldOrdinalPolynomialDegree_(fieldOrdinal,d);
+      }
+      return polyDegree;
     }
     
     /**
@@ -503,16 +605,16 @@ namespace Intrepid2 {
      
      \param fieldOrdinal     [in] - ordinal of the basis function whose polynomial degree is requested.
      
-     \return a Kokkos::vector<int> of length matching getPolynomialDegreeLength(), with the polynomial degree of the basis function in each dimension.
+     \return a std::vector<int> of length matching getPolynomialDegreeLength(), with the polynomial degree of the basis function in each dimension.
      */
-    Kokkos::vector<int> getPolynomialDegreeOfFieldAsVector(int fieldOrdinal) const
+    std::vector<int> getPolynomialDegreeOfFieldAsVector(int fieldOrdinal) const
     {
       INTREPID2_TEST_FOR_EXCEPTION( basisType_ != BASIS_FEM_HIERARCHICAL, std::logic_error,
                                    ">>> ERROR (Basis::getPolynomialDegreeOfFieldAsVector): this method is not supported for non-hierarchical bases.");
       auto polynomialDegreeView = getPolynomialDegreeOfField(fieldOrdinal);
-      Kokkos::vector<int> polynomialDegree(polynomialDegreeView.extent_int(0));
+      std::vector<int> polynomialDegree(polynomialDegreeView.extent_int(0));
       
-      for (int d=0; d<polynomialDegree.size(); d++)
+      for (unsigned d=0; d<polynomialDegree.size(); d++)
       {
         polynomialDegree[d] = polynomialDegreeView(d);
       }
@@ -702,8 +804,37 @@ namespace Intrepid2 {
       return ordinalToTag_;
     }
 
-  }; // class Basis
+    /** \brief returns the basis associated to a subCell.
 
+        HGRAD case: The bases of the subCell are the restriction to the subCell
+        of the bases of the parent cell.
+        HCURL case: The bases of the subCell are the restriction to the subCell
+        of the bases of the parent cell, projected onto the manifold tangent to the subCell
+        HDIV case: The bases of the subCell are the restriction to the subCell
+        of the bases of the parent cell, projected along the normal of the subCell
+
+        This method is not supported by all bases (e.g. bases defined on a line and HVOL bases).
+        \param [in] subCellDim - dimension of subCell
+        \param [in] subCellOrd - position of the subCell among of the subCells having the same dimension
+        \return pointer to the subCell basis of dimension subCellDim and position subCellOrd
+     */
+    virtual BasisPtr<DeviceType, OutputValueType, PointValueType>
+      getSubCellRefBasis(const ordinal_type subCellDim, const ordinal_type subCellOrd) const {
+      INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
+                                    ">>> ERROR (Basis::getSubCellRefBasis): this method is not supported or should be overridden accordingly by derived classes.");
+    }
+
+    /** \brief Creates and returns a Basis object whose DeviceType template argument is Kokkos::HostSpace::device_type, but is otherwise identical to this.
+    
+       \return Pointer to the new Basis object.
+    */
+    virtual HostBasisPtr<OutputValueType, PointValueType>
+    getHostBasis() const {
+      INTREPID2_TEST_FOR_EXCEPTION( true, std::logic_error,
+                                    ">>> ERROR (Basis::getHostBasis): this method is not supported or should be overridden accordingly by derived classes.");
+    }
+
+  }; // class Basis
 
   //--------------------------------------------------------------------------------------------//
   //                                                                                            //

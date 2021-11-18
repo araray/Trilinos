@@ -1,36 +1,9 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions of
- * Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 #include "fmt/ostream.h"
@@ -63,9 +36,6 @@ void gen_disk_map(struct Parallel_IO *pio_info, int proc_info[], int /*proc*/, i
  * processor has an identical list.
  */
 {
-  int iproc, proc_id, ctrl_id;
-  /*------------------------ EXECUTION BEGINS ------------------------------*/
-
   /* Allocate memory for the list */
   pio_info->RDsk_List =
       reinterpret_cast<int **>(array_alloc(__FILE__, __LINE__, 2, proc_info[0], 2, sizeof(int)));
@@ -76,27 +46,26 @@ void gen_disk_map(struct Parallel_IO *pio_info, int proc_info[], int /*proc*/, i
 
   /* Generate the list of disks to which data will be written */
   if (pio_info->Dsk_List_Cnt <= 0) {
-    for (iproc = 0; iproc < proc_info[0]; iproc++) {
-      ctrl_id                       = (iproc % pio_info->Num_Dsk_Ctrlrs);
+    for (int iproc = 0; iproc < proc_info[0]; iproc++) {
+      int ctrl_id                   = (iproc % pio_info->Num_Dsk_Ctrlrs);
       pio_info->RDsk_List[iproc][0] = ctrl_id + pio_info->PDsk_Add_Fact;
     }
   }
   else {
-    for (iproc = 0; iproc < proc_info[0]; iproc++) {
+    for (int iproc = 0; iproc < proc_info[0]; iproc++) {
       pio_info->RDsk_List[iproc][0] = pio_info->Dsk_List[iproc % pio_info->Dsk_List_Cnt];
     }
   }
 
   /* Generate the list of processors on which info is stored */
-  for (iproc = 0; iproc < proc_info[0]; iproc++) {
-    proc_id = iproc;
+  for (int iproc = 0; iproc < proc_info[0]; iproc++) {
+    int proc_id = iproc;
     while (proc_id >= nproc) {
       proc_id -= nproc;
     }
 
     pio_info->RDsk_List[iproc][1] = proc_id;
   }
-  return;
 }
 
 /*****************************************************************************/
@@ -133,22 +102,15 @@ std::string gen_par_filename(const std::string &scalar_fname, int proc_for, int 
  *---------------------------------------------------------------------------
  */
 {
-
-  /*      Local variables      */
-
-  int         i1, iTemp1, ctrlID;
-  int         iMaxDigit = 0, iMyDigit = 0;
-  std::string par_filename;
-
-  /************************* EXECUTION BEGINS *******************************/
-
   /*
    * Find out the number of digits needed to specify the processor ID.
    * This allows numbers like 01-99, i.e., prepending zeros to the
    * name to preserve proper alphabetic sorting of the files.
    */
 
-  iTemp1 = nprocs;
+  int iMaxDigit = 0;
+  int iMyDigit  = 0;
+  int iTemp1    = nprocs;
   do {
     iTemp1 /= 10;
     iMaxDigit++;
@@ -164,12 +126,13 @@ std::string gen_par_filename(const std::string &scalar_fname, int proc_for, int 
    * Append the number of processors in this run to the scalar file name
    * along with a '.' (period).
    */
-  par_filename = scalar_fname + std::string(".") + std::to_string(nprocs) + std::string(".");
+  std::string par_filename =
+      scalar_fname + std::string(".") + std::to_string(nprocs) + std::string(".");
 
   /*
    * Append the proper number of zeros to the filename.
    */
-  for (i1 = 0; i1 < iMaxDigit - iMyDigit; i1++) {
+  for (int i1 = 0; i1 < iMaxDigit - iMyDigit; i1++) {
     par_filename += std::string("0");
   }
 
@@ -189,7 +152,7 @@ std::string gen_par_filename(const std::string &scalar_fname, int proc_for, int 
   }
   else {
     if (PIO_Info.Zeros != 0) {
-      ctrlID = PIO_Info.RDsk_List[proc_for][0];
+      int ctrlID = PIO_Info.RDsk_List[proc_for][0];
       if (ctrlID <= 9) {
         par_filename = PIO_Info.Par_Dsk_Root + "0" + std::to_string(ctrlID) + "/" +
                        PIO_Info.Par_Dsk_SubDirec + par_filename;
@@ -200,13 +163,13 @@ std::string gen_par_filename(const std::string &scalar_fname, int proc_for, int 
       }
     }
     else {
-      ctrlID       = PIO_Info.RDsk_List[proc_for][0];
+      int ctrlID   = PIO_Info.RDsk_List[proc_for][0];
       par_filename = PIO_Info.Par_Dsk_Root + std::to_string(ctrlID) + "/" +
                      PIO_Info.Par_Dsk_SubDirec + par_filename;
     }
   }
   if (Debug_Flag >= 4) {
-    fmt::print("Parallel file name: {}\n", par_filename.c_str());
+    fmt::print("Parallel file name: {}\n", par_filename);
   }
 
   return par_filename;

@@ -55,6 +55,7 @@
 #include <Tpetra_RowMatrix.hpp>
 
 #include <Ifpack2_Chebyshev.hpp>
+#include <Ifpack2_RILUK.hpp>
 #include <Ifpack2_Relaxation.hpp>
 #include <Ifpack2_ILUT.hpp>
 #include <Ifpack2_BlockRelaxation.hpp>
@@ -64,15 +65,20 @@
 #include <Xpetra_BlockedCrsMatrix.hpp>
 #include <Xpetra_CrsMatrix.hpp>
 #include <Xpetra_CrsMatrixWrap.hpp>
+#include <Xpetra_TpetraBlockCrsMatrix.hpp>
 #include <Xpetra_Matrix.hpp>
 #include <Xpetra_MultiVectorFactory.hpp>
 #include <Xpetra_TpetraMultiVector.hpp>
+
+#include <Tpetra_BlockCrsMatrix_Helpers.hpp>
 
 #include "MueLu_Ifpack2Smoother_decl.hpp"
 #include "MueLu_Level.hpp"
 #include "MueLu_FactoryManagerBase.hpp"
 #include "MueLu_Utilities.hpp"
 #include "MueLu_Monitor.hpp"
+#include "MueLu_Aggregates.hpp"
+
 
 #ifdef HAVE_MUELU_INTREPID2
 #include "MueLu_IntrepidPCoarsenFactory_decl.hpp"
@@ -81,7 +87,6 @@
 #include "Kokkos_DynRankView.hpp"
 #endif
 
-// #define IFPACK2_HAS_PROPER_REUSE
 
 namespace MueLu {
 
@@ -89,7 +94,24 @@ namespace MueLu {
   Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::Ifpack2Smoother(const std::string& type, const Teuchos::ParameterList& paramList, const LO& overlap)
     : type_(type), overlap_(overlap)
   {
-    SetParameterList(paramList);
+    typedef Tpetra::RowMatrix<SC,LO,GO,NO> tRowMatrix;
+    bool isSupported = Ifpack2::Factory::isSupported<tRowMatrix>(type_) || (type_ == "LINESMOOTHING_TRIDI_RELAXATION"        ||
+                                                                            type_ == "LINESMOOTHING_TRIDI RELAXATION"        ||
+                                                                            type_ == "LINESMOOTHING_TRIDIRELAXATION"         ||
+                                                                            type_ == "LINESMOOTHING_TRIDIAGONAL_RELAXATION"  ||
+                                                                            type_ == "LINESMOOTHING_TRIDIAGONAL RELAXATION"  ||
+                                                                            type_ == "LINESMOOTHING_TRIDIAGONALRELAXATION"   ||
+                                                                            type_ == "LINESMOOTHING_BANDED_RELAXATION"       ||
+                                                                            type_ == "LINESMOOTHING_BANDED RELAXATION"       ||
+                                                                            type_ == "LINESMOOTHING_BANDEDRELAXATION"        ||
+                                                                            type_ == "LINESMOOTHING_BLOCK_RELAXATION"        ||
+                                                                            type_ == "LINESMOOTHING_BLOCK RELAXATION"        ||
+                                                                            type_ == "LINESMOOTHING_BLOCKRELAXATION"         ||
+                                                                            type_ == "TOPOLOGICAL"                           ||
+                                                                            type_ == "AGGREGATE");
+    this->declareConstructionOutcome(!isSupported, "Ifpack2 does not provide the smoother '" + type_ + "'.");
+    if (isSupported)
+      SetParameterList(paramList);
   }
 
   template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
@@ -105,10 +127,18 @@ namespace MueLu {
 
   template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
   void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetPrecParameters(const Teuchos::ParameterList& list) const {
+    std::string prefix = this->ShortClassName() + ": SetPrecParameters";
+    RCP<TimeMonitor> tM = rcp(new TimeMonitor(*this, prefix, Timings0));
     ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
+
     paramList.setParameters(list);
 
     RCP<ParameterList> precList = this->RemoveFactoriesFromList(this->GetParameterList());
+
+    if(!precList.is_null() && precList->isParameter("partitioner: type") && precList->get<std::string>("partitioner: type") == "linear" &&
+       !precList->isParameter("partitioner: local parts")) {
+      precList->set("partitioner: local parts", (int)A_->getNodeNumRows() / A_->GetFixedBlockSize());
+    }
 
     prec_->setParameters(*precList);
 
@@ -161,13 +191,48 @@ namespace MueLu {
       // for the topological smoother, we require an element to node map:
       this->Input(currentLevel, "pcoarsen: element to node map");
     }
+    else if (type_ == "AGGREGATE")
+    {
+      // Aggregate smoothing needs aggregates
+      this->Input(currentLevel,"Aggregates");
+    }
+    else if (type_ == "HIPTMAIR") {
+      // Hiptmair needs D0 and NodeMatrix
+      this->Input(currentLevel,"NodeMatrix");
+      this->Input(currentLevel,"D0");
+    }
+
   }
 
   template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
   void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::Setup(Level& currentLevel) {
     FactoryMonitor m(*this, "Setup Smoother", currentLevel);
-
     A_ = Factory::Get< RCP<Matrix> >(currentLevel, "A");
+    ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
+
+    // If the user asked us to convert the matrix into BlockCrsMatrix form, we do that now
+    if(paramList.isParameter("smoother: use blockcrsmatrix storage") && paramList.get<bool>("smoother: use blockcrsmatrix storage") && A_->GetFixedBlockSize()) {
+      // NOTE: Don't think you can move this out of the if block.  You can't. The test MueLu_MeshTyingBlocked_SimpleSmoother_2dof_medium_MPI_1 will fail
+      int blocksize = A_->GetFixedBlockSize();
+      using TpetraBlockCrsMatrix = Xpetra::TpetraBlockCrsMatrix<SC,LO,GO,NO>;
+      RCP<CrsMatrixWrap> AcrsWrap = rcp_dynamic_cast<CrsMatrixWrap>(A_);
+      if(AcrsWrap.is_null()) 
+        throw std::runtime_error("Ifpack2Smoother: Cannot convert matrix A to CrsMatrixWrap object.");
+      RCP<CrsMatrix> Acrs =  AcrsWrap->getCrsMatrix();
+      if(Acrs.is_null()) 
+        throw std::runtime_error("Ifpack2Smoother: Cannot extract CrsMatrix from matrix A.");
+      RCP<TpetraCrsMatrix> At = rcp_dynamic_cast<TpetraCrsMatrix>(Acrs);
+      if(At.is_null()) 
+        throw std::runtime_error("Ifpack2Smoother: Cannot extract TpetraCrsMatrix from matrix A.");
+
+      RCP<Tpetra::BlockCrsMatrix<Scalar, LO, GO, Node> > blockCrs = Tpetra::convertToBlockCrsMatrix(*At->getTpetra_CrsMatrix(),blocksize);
+      RCP<CrsMatrix> blockCrs_as_crs  = rcp(new TpetraBlockCrsMatrix(blockCrs));
+      RCP<CrsMatrixWrap> blockWrap = rcp(new CrsMatrixWrap(blockCrs_as_crs));
+      A_ = blockWrap;
+      this->GetOStream(Statistics0) << "Ifpack2Smoother: Using BlockCrsMatrix storage with blocksize "<<blocksize<<std::endl;
+
+      paramList.remove("smoother: use blockcrsmatrix storage");
+    }
 
     if      (type_ == "SCHWARZ")
       SetupSchwarz(currentLevel);
@@ -213,6 +278,12 @@ namespace MueLu {
       TEUCHOS_TEST_FOR_EXCEPTION(true, std::invalid_argument, "'TOPOLOGICAL' smoother choice requires Intrepid2");
 #endif
     }
+    else if (type_ == "AGGREGATE") 
+      SetupAggregate(currentLevel);
+
+    else if (type_ == "HIPTMAIR") 
+      SetupHiptmair(currentLevel);
+
     else
     {
       SetupGeneric(currentLevel);
@@ -242,13 +313,8 @@ namespace MueLu {
 
       RCP<Ifpack2::Details::CanChangeMatrix<tRowMatrix> > prec = rcp_dynamic_cast<Ifpack2::Details::CanChangeMatrix<tRowMatrix> >(prec_);
       if (!prec.is_null() && isTRowMatrix) {
-#ifdef IFPACK2_HAS_PROPER_REUSE
-        prec->resetMatrix(tA);
+        prec->setMatrix(tA);
         reusePreconditioner = true;
-#else
-        this->GetOStream(Errors) << "Ifpack2 does not have proper reuse yet." << std::endl;
-#endif
-
       } else {
         this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupSchwarz(): reuse of this type is not available "
             "(either failed cast to CanChangeMatrix, or to Tpetra Row Matrix), reverting to full construction" << std::endl;
@@ -333,6 +399,54 @@ namespace MueLu {
       prec_->initialize();
     }
 
+    prec_->compute();
+  }
+
+
+
+  template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
+  void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupAggregate(Level& currentLevel) {
+
+    ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
+
+    if (this->IsSetup() == true) {
+      this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupAggregate(): Setup() has already been called" << std::endl;
+      this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupAggregate(): reuse of this type is not available, reverting to full construction" << std::endl;    
+    }
+
+    this->GetOStream(Statistics0) << "Ifpack2Smoother: Using Aggregate Smoothing"<<std::endl;
+
+    RCP<Aggregates> aggregates = Factory::Get<RCP<Aggregates> >(currentLevel,"Aggregates");
+
+    RCP<const LOMultiVector> vertex2AggId = aggregates->GetVertex2AggId();
+    ArrayRCP<LO> aggregate_ids = rcp_const_cast<LOMultiVector>(vertex2AggId)->getDataNonConst(0);
+    ArrayRCP<LO> dof_ids;
+
+    // We need to unamalgamate, if the FixedBlockSize > 1
+    if(A_->GetFixedBlockSize() > 1) {
+      LO blocksize = (LO) A_->GetFixedBlockSize();
+      dof_ids.resize(aggregate_ids.size() * blocksize);
+      for(LO i=0; i<(LO)aggregate_ids.size(); i++) {
+        for(LO j=0; j<(LO)blocksize; j++)
+          dof_ids[i*blocksize+j] = aggregate_ids[i];    
+      }
+    }
+    else {
+      dof_ids = aggregate_ids;
+    }
+        
+    
+    paramList.set("partitioner: map", dof_ids);
+    paramList.set("partitioner: type", "user");
+    paramList.set("partitioner: overlap", 0);
+    paramList.set("partitioner: local parts", (int)aggregates->GetNumAggregates());
+
+    RCP<const Tpetra::RowMatrix<SC, LO, GO, NO> > tA = Utilities::Op2NonConstTpetraRow(A_);
+    
+    type_ = "BLOCKRELAXATION";
+    prec_ = Ifpack2::Factory::create(type_, tA, overlap_);
+    SetPrecParameters();
+    prec_->initialize();
     prec_->compute();
   }
 
@@ -519,13 +633,8 @@ namespace MueLu {
 
       RCP<Ifpack2::Details::CanChangeMatrix<tRowMatrix> > prec = rcp_dynamic_cast<Ifpack2::Details::CanChangeMatrix<tRowMatrix> >(prec_);
       if (!prec.is_null()) {
-#ifdef IFPACK2_HAS_PROPER_REUSE
-        prec->resetMatrix(tA);
+        prec->setMatrix(tA);
         reusePreconditioner = true;
-#else
-        this->GetOStream(Errors) << "Ifpack2 does not have proper reuse yet." << std::endl;
-#endif
-
       } else {
         this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupBlockRelaxation(): reuse of this type is not available (failed cast to CanChangeMatrix), "
             "reverting to full construction" << std::endl;
@@ -556,73 +665,46 @@ namespace MueLu {
 
   template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
   void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupChebyshev(Level& currentLevel) {
+    typedef Tpetra::RowMatrix<SC,LO,GO,NO> tRowMatrix;
+    using STS = Teuchos::ScalarTraits<SC>;
+    RCP<BlockedCrsMatrix> bA = rcp_dynamic_cast<BlockedCrsMatrix>(A_);
+    if (!bA.is_null())
+      A_ = bA->Merge();
+
+    RCP<const tRowMatrix> tA = Utilities::Op2NonConstTpetraRow(A_);
+
+    bool reusePreconditioner = false;
+
     if (this->IsSetup() == true) {
-      this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupChebyshev(): SetupChebyshev() has already been called" << std::endl;
-      this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupChebyshev(): reuse of this type is not available, reverting to full construction" << std::endl;
-    }
+      // Reuse the constructed preconditioner
+      this->GetOStream(Runtime1) << "MueLu::Ifpack2Smoother::SetupChebyshev(): Setup() has already been called, assuming reuse" << std::endl;
 
-    typedef Teuchos::ScalarTraits<SC> STS;
-    SC negone = -STS::one();
-
-    SC lambdaMax = negone;
-    {
-      std::string maxEigString   = "chebyshev: max eigenvalue";
-      std::string eigRatioString = "chebyshev: ratio eigenvalue";
-
-      ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
-
-      // Get/calculate the maximum eigenvalue
-      if (paramList.isParameter(maxEigString)) {
-        if (paramList.isType<double>(maxEigString))
-          lambdaMax = paramList.get<double>(maxEigString);
-        else
-          lambdaMax = paramList.get<SC>(maxEigString);
-        this->GetOStream(Statistics1) << maxEigString << " (cached with smoother parameter list) = " << lambdaMax << std::endl;
-
+      RCP<Ifpack2::Details::CanChangeMatrix<tRowMatrix> > prec = rcp_dynamic_cast<Ifpack2::Details::CanChangeMatrix<tRowMatrix> >(prec_);
+      if (!prec.is_null()) {
+        prec->setMatrix(tA);
+        reusePreconditioner = true;
       } else {
-        lambdaMax = A_->GetMaxEigenvalueEstimate();
-        if (lambdaMax != negone) {
-          this->GetOStream(Statistics1) << maxEigString << " (cached with matrix) = " << lambdaMax << std::endl;
-          paramList.set(maxEigString, lambdaMax);
-        }
+        this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupChebyshev(): reuse of this type is not available (failed cast to CanChangeMatrix), "
+            "reverting to full construction" << std::endl;
       }
-
-      // Calculate the eigenvalue ratio
-      const SC defaultEigRatio = 20;
-
-      SC ratio = defaultEigRatio;
-      if (paramList.isParameter(eigRatioString)) {
-        if (paramList.isType<double>(eigRatioString))
-          ratio = paramList.get<double>(eigRatioString);
-        else
-          ratio = paramList.get<SC>(eigRatioString);
-      }
-      if (currentLevel.GetLevelID()) {
-        // Update ratio to be
-        //   ratio = max(number of fine DOFs / number of coarse DOFs, defaultValue)
-        //
-        // NOTE: We don't need to request previous level matrix as we know for sure it was constructed
-        RCP<const Matrix> fineA = currentLevel.GetPreviousLevel()->Get<RCP<Matrix> >("A");
-        size_t nRowsFine   = fineA->getGlobalNumRows();
-        size_t nRowsCoarse = A_->getGlobalNumRows();
-
-        SC levelRatio = as<SC>(as<float>(nRowsFine)/nRowsCoarse);
-        if (STS::magnitude(levelRatio) > STS::magnitude(ratio))
-          ratio = levelRatio;
-      }
-
-      this->GetOStream(Statistics1) << eigRatioString << " (computed) = " << ratio << std::endl;
-      paramList.set(eigRatioString, ratio);
     }
 
-    RCP<const Tpetra::RowMatrix<SC, LO, GO, NO> > tA = Utilities::Op2NonConstTpetraRow(A_);
+    // Take care of the eigenvalues
+    ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
+    SC negone = -STS::one();
+    SC lambdaMax = SetupChebyshevEigenvalues(currentLevel,"A","",paramList);
 
-    prec_ = Ifpack2::Factory::create(type_, tA, overlap_);
-    SetPrecParameters();
-    {
-      SubFactoryMonitor(*this, "Preconditioner init", currentLevel);
-      prec_->initialize();
-    }
+
+    if (!reusePreconditioner) {
+      prec_ = Ifpack2::Factory::create(type_, tA, overlap_);
+      SetPrecParameters();
+      {
+        SubFactoryMonitor(*this, "Preconditioner init", currentLevel);
+        prec_->initialize();
+      }
+    } else
+      SetPrecParameters();
+
     {
       SubFactoryMonitor(*this, "Preconditioner compute", currentLevel);
       prec_->compute();
@@ -641,10 +723,158 @@ namespace MueLu {
     }
   }
 
+
+ template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
+  void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupHiptmair(Level&  currentLevel ) {
+    typedef Tpetra::RowMatrix<SC,LO,GO,NO> tRowMatrix;
+    RCP<BlockedCrsMatrix> bA = rcp_dynamic_cast<BlockedCrsMatrix>(A_);
+    if (!bA.is_null())
+      A_ = bA->Merge();
+
+    RCP<const tRowMatrix> tA = Utilities::Op2NonConstTpetraRow(A_);
+
+    bool reusePreconditioner = false;
+    if (this->IsSetup() == true) {
+      // Reuse the constructed preconditioner
+      this->GetOStream(Runtime1) << "MueLu::Ifpack2Smoother::SetupHiptmair(): Setup() has already been called, assuming reuse" << std::endl;
+
+      RCP<Ifpack2::Details::CanChangeMatrix<tRowMatrix> > prec = rcp_dynamic_cast<Ifpack2::Details::CanChangeMatrix<tRowMatrix> >(prec_);
+      if (!prec.is_null()) {
+        prec->setMatrix(tA);
+        reusePreconditioner = true;
+      } else {
+        this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupHiptmair(): reuse of this type is not available (failed cast to CanChangeMatrix), "
+            "reverting to full construction" << std::endl;
+      }
+    }
+
+    // If we're doing Chebyshev subsmoothing, we'll need to get the eigenvalues
+    ParameterList& paramList = const_cast<ParameterList&>(this->GetParameterList());
+    std::string smoother1  = paramList.get("hiptmair: smoother type 1","CHEBYSHEV");
+    std::string smoother2  = paramList.get("hiptmair: smoother type 2","CHEBYSHEV");
+    //    SC lambdaMax11,lambdaMax22;
+
+    if(smoother1 == "CHEBYSHEV") {
+      ParameterList & list1 = paramList.sublist("hiptmair: smoother list 1");
+      //lambdaMax11 = 
+      SetupChebyshevEigenvalues(currentLevel,"A","EdgeMatrix ",list1);
+    }
+    if(smoother2 == "CHEBYSHEV") {
+      ParameterList & list2 = paramList.sublist("hiptmair: smoother list 2");
+      //lambdaMax22 = 
+      SetupChebyshevEigenvalues(currentLevel,"A","EdgeMatrix ",list2);
+    }
+
+    // FIXME: Should really add some checks to make sure the eigenvalue calcs worked like in
+    // the regular SetupChebyshev
+
+    // Grab the auxillary matrices and stick them on the list
+    RCP<Matrix> NodeMatrix = currentLevel.Get<RCP<Matrix> >("NodeMatrix");
+    RCP<Matrix> D0         = currentLevel.Get<RCP<Matrix> >("D0");
+
+    RCP<tRowMatrix> tNodeMatrix = Utilities::Op2NonConstTpetraRow(NodeMatrix);
+    RCP<tRowMatrix> tD0         = Utilities::Op2NonConstTpetraRow(D0);
+
+
+    Teuchos::ParameterList newlist;
+    newlist.set("P",tD0);
+    newlist.set("PtAP",tNodeMatrix);
+    if (!reusePreconditioner) {
+      prec_ = Ifpack2::Factory::create(type_, tA, overlap_);
+      SetPrecParameters(newlist);
+      prec_->initialize();
+    }
+
+    prec_->compute();
+  }
+
+
+
+  template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
+  Scalar Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupChebyshevEigenvalues(Level & currentLevel, const std::string & matrixName, const std::string & label, ParameterList & paramList) const {
+    // Helper: This gets used for smoothers that want to set up Chebyhev
+    typedef Teuchos::ScalarTraits<SC> STS;
+    SC negone = -STS::one();
+    RCP<const Matrix> currentA = currentLevel.Get<RCP<Matrix> >(matrixName);
+    SC lambdaMax = negone;
+
+    std::string maxEigString   = "chebyshev: max eigenvalue";
+    std::string eigRatioString = "chebyshev: ratio eigenvalue";
+    
+    // Get/calculate the maximum eigenvalue      
+    if (paramList.isParameter(maxEigString)) {
+      if (paramList.isType<double>(maxEigString))
+        lambdaMax = paramList.get<double>(maxEigString);
+      else
+        lambdaMax = paramList.get<SC>(maxEigString);
+      this->GetOStream(Statistics1) << label << maxEigString << " (cached with smoother parameter list) = " << lambdaMax << std::endl;
+      
+    } else {
+      lambdaMax = currentA->GetMaxEigenvalueEstimate();
+      if (lambdaMax != negone) {
+        this->GetOStream(Statistics1) << label << maxEigString << " (cached with matrix) = " << lambdaMax << std::endl;
+        paramList.set(maxEigString, lambdaMax);
+      }
+    }
+    
+    // Calculate the eigenvalue ratio
+    const SC defaultEigRatio = 20;
+    
+    SC ratio = defaultEigRatio;
+    if (paramList.isParameter(eigRatioString)) {
+      if (paramList.isType<double>(eigRatioString))
+        ratio = paramList.get<double>(eigRatioString);
+      else
+          ratio = paramList.get<SC>(eigRatioString);
+    }
+    if (currentLevel.GetLevelID()) {
+      // Update ratio to be
+      //   ratio = max(number of fine DOFs / number of coarse DOFs, defaultValue)
+      //
+      // NOTE: We don't need to request previous level matrix as we know for sure it was constructed
+      RCP<const Matrix> fineA = currentLevel.GetPreviousLevel()->Get<RCP<Matrix> >(matrixName);
+      size_t nRowsFine   = fineA->getGlobalNumRows();
+      size_t nRowsCoarse = currentA->getGlobalNumRows();
+      
+      SC levelRatio = as<SC>(as<float>(nRowsFine)/nRowsCoarse);
+      if (STS::magnitude(levelRatio) > STS::magnitude(ratio))
+        ratio = levelRatio;
+    }
+    
+    this->GetOStream(Statistics1) << label << eigRatioString << " (computed) = " << ratio << std::endl;
+    paramList.set(eigRatioString, ratio);
+    
+    if (paramList.isParameter("chebyshev: use rowsumabs diagonal scaling")) {
+      this->GetOStream(Runtime1) << "chebyshev: using rowsumabs diagonal scaling" << std::endl;
+      bool doScale = false;
+      doScale = paramList.get<bool>("chebyshev: use rowsumabs diagonal scaling");
+      paramList.remove("chebyshev: use rowsumabs diagonal scaling");
+      double chebyReplaceTol = Teuchos::ScalarTraits<Scalar>::eps()*100;
+      if (paramList.isParameter("chebyshev: rowsumabs diagonal replacement tolerance")) {
+        paramList.get<double>("chebyshev: rowsumabs diagonal replacement tolerance",chebyReplaceTol);
+        paramList.remove("chebyshev: rowsumabs diagonal replacement tolerance");
+      }
+      double chebyReplaceVal = Teuchos::ScalarTraits<double>::zero();
+      if (paramList.isParameter("chebyshev: rowsumabs diagonal replacement value")) {
+        paramList.get<double>("chebyshev: rowsumabs diagonal replacement value",chebyReplaceVal);
+        paramList.remove("chebyshev: rowsumabs diagonal replacement value");
+      }
+      if (doScale) {
+        RCP<Vector> lumpedDiagonal = Utilities::GetLumpedMatrixDiagonal(*currentA,true, chebyReplaceTol, chebyReplaceVal);
+        const Xpetra::TpetraVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>& tmpVec = dynamic_cast<const Xpetra::TpetraVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>&>(*lumpedDiagonal);
+        paramList.set("chebyshev: operator inv diagonal",tmpVec.getTpetra_Vector());
+      }
+    }
+
+    return lambdaMax;
+  }
+
+
+
+
   template <class Scalar,class LocalOrdinal, class GlobalOrdinal, class Node>
   void Ifpack2Smoother<Scalar, LocalOrdinal, GlobalOrdinal, Node>::SetupGeneric(Level& /* currentLevel */) {
     typedef Tpetra::RowMatrix<SC,LO,GO,NO> tRowMatrix;
-
     RCP<BlockedCrsMatrix> bA = rcp_dynamic_cast<BlockedCrsMatrix>(A_);
     if (!bA.is_null())
       A_ = bA->Merge();
@@ -658,13 +888,8 @@ namespace MueLu {
 
       RCP<Ifpack2::Details::CanChangeMatrix<tRowMatrix> > prec = rcp_dynamic_cast<Ifpack2::Details::CanChangeMatrix<tRowMatrix> >(prec_);
       if (!prec.is_null()) {
-#ifdef IFPACK2_HAS_PROPER_REUSE
-        prec->resetMatrix(tA);
+        prec->setMatrix(tA);
         reusePreconditioner = true;
-#else
-        this->GetOStream(Errors) << "Ifpack2 does not have proper reuse yet." << std::endl;
-#endif
-
       } else {
         this->GetOStream(Warnings0) << "MueLu::Ifpack2Smoother::SetupGeneric(): reuse of this type is not available (failed cast to CanChangeMatrix), "
             "reverting to full construction" << std::endl;
@@ -690,26 +915,13 @@ namespace MueLu {
     //        initial value at the end but there is no way right now to get
     //        the current value of the "zero starting solution" in ifpack2.
     //        It's not really an issue, as prec_  can only be used by this method.
-    // TODO: When https://software.sandia.gov/bugzilla/show_bug.cgi?id=5283#c2 is done
-    // we should remove the if/else/elseif and just test if this
-    // option is supported by current ifpack2 preconditioner
     Teuchos::ParameterList paramList;
     bool supportInitialGuess = false;
-    if (type_ == "CHEBYSHEV") {
-      paramList.set("chebyshev: zero starting solution", InitialGuessIsZero);
-      SetPrecParameters(paramList);
-      supportInitialGuess = true;
+    const Teuchos::ParameterList params = this->GetParameterList();
 
-    } else if (type_ == "RELAXATION") {
-      paramList.set("relaxation: zero starting solution", InitialGuessIsZero);
-      SetPrecParameters(paramList);
+    if (prec_->supportsZeroStartingSolution()) {
+      prec_->setZeroStartingSolution(InitialGuessIsZero);
       supportInitialGuess = true;
-
-    } else if (type_ == "KRYLOV") {
-      paramList.set("krylov: zero starting solution", InitialGuessIsZero);
-      SetPrecParameters(paramList);
-      supportInitialGuess = true;
-
     } else if (type_ == "SCHWARZ") {
       paramList.set("schwarz: zero starting solution", InitialGuessIsZero);
       //Because additive Schwarz has "delta" semantics, it's sufficient to
@@ -733,7 +945,14 @@ namespace MueLu {
       prec_->apply(tpB, tpX);
     } else {
       typedef Teuchos::ScalarTraits<Scalar> TST;
-      RCP<MultiVector> Residual   = Utilities::Residual(*A_, X, B);
+
+      RCP<MultiVector> Residual;
+      {
+        std::string prefix = this->ShortClassName() + ": Apply: ";
+        RCP<TimeMonitor> tM = rcp(new TimeMonitor(*this, prefix + "residual calculation", Timings0));
+        Residual = Utilities::Residual(*A_, X, B);
+      }
+
       RCP<MultiVector> Correction = MultiVectorFactory::Build(A_->getDomainMap(), X.getNumVectors());
 
       Tpetra::MultiVector<SC,LO,GO,NO>&       tpX = Utilities::MV2NonConstTpetraMV(*Correction);

@@ -47,16 +47,7 @@ using Tempus::IntegratorBasic;
 using Tempus::SolutionHistory;
 using Tempus::SolutionState;
 
-// Comment out any of the following tests to exclude from build/run.
-#define TEST_PARAMETERLIST
-#define TEST_CONSTRUCTING_FROM_DEFAULTS
-#define TEST_SINCOS
-#define TEST_CDR
-#define TEST_VANDERPOL
-#define TEST_OPT_INTERFACE
 
-
-#ifdef TEST_PARAMETERLIST
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, ParameterList)
@@ -74,15 +65,13 @@ TEUCHOS_UNIT_TEST(BackwardEuler, ParameterList)
   // Test constructor IntegratorBasic(tempusPL, model)
   {
     RCP<Tempus::IntegratorBasic<double> > integrator =
-      Tempus::integratorBasic<double>(tempusPL, model);
+      Tempus::createIntegratorBasic<double>(tempusPL, model);
 
     RCP<ParameterList> stepperPL = sublist(tempusPL, "Default Stepper", true);
-    // Match Predictor for comparison
-    stepperPL->set("Predictor Stepper Type", "None");
     RCP<const ParameterList> defaultPL =
       integrator->getStepper()->getValidParameters();
 
-    bool pass = haveSameValues(*stepperPL, *defaultPL, true);
+    bool pass = haveSameValuesSorted(*stepperPL, *defaultPL, true);
     if (!pass) {
       std::cout << std::endl;
       std::cout << "stepperPL -------------- \n" << *stepperPL << std::endl;
@@ -94,13 +83,15 @@ TEUCHOS_UNIT_TEST(BackwardEuler, ParameterList)
   // Test constructor IntegratorBasic(model, stepperType)
   {
     RCP<Tempus::IntegratorBasic<double> > integrator =
-      Tempus::integratorBasic<double>(model, "Backward Euler");
+      Tempus::createIntegratorBasic<double>(model, std::string("Backward Euler"));
 
     RCP<ParameterList> stepperPL = sublist(tempusPL, "Default Stepper", true);
+    // Match Predictor for comparison
+    stepperPL->set("Predictor Stepper Type", "None");
     RCP<const ParameterList> defaultPL =
       integrator->getStepper()->getValidParameters();
 
-    bool pass = haveSameValues(*stepperPL, *defaultPL, true);
+    bool pass = haveSameValuesSorted(*stepperPL, *defaultPL, true);
     if (!pass) {
       std::cout << std::endl;
       std::cout << "stepperPL -------------- \n" << *stepperPL << std::endl;
@@ -109,109 +100,116 @@ TEUCHOS_UNIT_TEST(BackwardEuler, ParameterList)
     TEST_ASSERT(pass)
   }
 }
-#endif // TEST_PARAMETERLIST
 
 
-#ifdef TEST_CONSTRUCTING_FROM_DEFAULTS
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, ConstructingFromDefaults)
 {
   double dt = 0.1;
+  std::vector<std::string> options;
+  options.push_back("Default Parameters");
+  options.push_back("ICConsistency and Check");
 
-  // Read params from .xml file
-  RCP<ParameterList> pList =
-    getParametersFromXmlFile("Tempus_BackwardEuler_SinCos.xml");
-  RCP<ParameterList> pl = sublist(pList, "Tempus", true);
+  for(const auto& option: options) {
 
-  // Setup the SinCosModel
-  RCP<ParameterList> scm_pl = sublist(pList, "SinCosModel", true);
-  //RCP<SinCosModel<double> > model = sineCosineModel(scm_pl);
-  auto model = rcp(new SinCosModel<double>(scm_pl));
+    // Read params from .xml file
+    RCP<ParameterList> pList =
+      getParametersFromXmlFile("Tempus_BackwardEuler_SinCos.xml");
+    RCP<ParameterList> pl = sublist(pList, "Tempus", true);
 
-  // Setup Stepper for field solve ----------------------------
-  auto stepper = rcp(new Tempus::StepperBackwardEuler<double>());
-  stepper->setModel(model);
-  stepper->setSolver();
-  stepper->initialize();
+    // Setup the SinCosModel
+    RCP<ParameterList> scm_pl = sublist(pList, "SinCosModel", true);
+    //RCP<SinCosModel<double> > model = sineCosineModel(scm_pl);
+    auto model = rcp(new SinCosModel<double>(scm_pl));
 
-  // Setup TimeStepControl ------------------------------------
-  auto timeStepControl = rcp(new Tempus::TimeStepControl<double>());
-  ParameterList tscPL = pl->sublist("Default Integrator")
-                           .sublist("Time Step Control");
-  timeStepControl->setStepType (tscPL.get<std::string>("Integrator Step Type"));
-  timeStepControl->setInitIndex(tscPL.get<int>   ("Initial Time Index"));
-  timeStepControl->setInitTime (tscPL.get<double>("Initial Time"));
-  timeStepControl->setFinalTime(tscPL.get<double>("Final Time"));
-  timeStepControl->setInitTimeStep(dt);
-  timeStepControl->initialize();
+    // Setup Stepper for field solve ----------------------------
+    auto stepper = rcp(new Tempus::StepperBackwardEuler<double>());
+    stepper->setModel(model);
+    if ( option == "ICConsistency and Check") {
+      stepper->setICConsistency("Consistent");
+      stepper->setICConsistencyCheck(true);
+    }
+    stepper->initialize();
 
-  // Setup initial condition SolutionState --------------------
-  Thyra::ModelEvaluatorBase::InArgs<double> inArgsIC =
-    stepper->getModel()->getNominalValues();
-  auto icSolution =
-    rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x());
-  auto icState = rcp(new Tempus::SolutionState<double>(icSolution));
-  icState->setTime    (timeStepControl->getInitTime());
-  icState->setIndex   (timeStepControl->getInitIndex());
-  icState->setTimeStep(0.0);
-  icState->setOrder   (stepper->getOrder());
-  icState->setSolutionStatus(Tempus::Status::PASSED);  // ICs are passing.
+    // Setup TimeStepControl ------------------------------------
+    auto timeStepControl = rcp(new Tempus::TimeStepControl<double>());
+    ParameterList tscPL = pl->sublist("Default Integrator")
+                             .sublist("Time Step Control");
+    timeStepControl->setInitIndex(tscPL.get<int>   ("Initial Time Index"));
+    timeStepControl->setInitTime (tscPL.get<double>("Initial Time"));
+    timeStepControl->setFinalTime(tscPL.get<double>("Final Time"));
+    timeStepControl->setInitTimeStep(dt);
+    timeStepControl->initialize();
 
-  // Setup SolutionHistory ------------------------------------
-  auto solutionHistory = rcp(new Tempus::SolutionHistory<double>());
-  solutionHistory->setName("Forward States");
-  solutionHistory->setStorageType(Tempus::STORAGE_TYPE_STATIC);
-  solutionHistory->setStorageLimit(2);
-  solutionHistory->addState(icState);
+    // Setup initial condition SolutionState --------------------
+    auto inArgsIC = model->getNominalValues();
+    auto icSolution =
+      rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x());
+    auto icState = Tempus::createSolutionStateX(icSolution);
+    icState->setTime    (timeStepControl->getInitTime());
+    icState->setIndex   (timeStepControl->getInitIndex());
+    icState->setTimeStep(0.0);
+    icState->setOrder   (stepper->getOrder());
+    icState->setSolutionStatus(Tempus::Status::PASSED);  // ICs are passing.
 
-  // Setup Integrator -----------------------------------------
-  RCP<Tempus::IntegratorBasic<double> > integrator =
-    Tempus::integratorBasic<double>();
-  integrator->setStepperWStepper(stepper);
-  integrator->setTimeStepControl(timeStepControl);
-  integrator->setSolutionHistory(solutionHistory);
-  //integrator->setObserver(...);
-  integrator->initialize();
+    // Setup SolutionHistory ------------------------------------
+    auto solutionHistory = rcp(new Tempus::SolutionHistory<double>());
+    solutionHistory->setName("Forward States");
+    solutionHistory->setStorageType(Tempus::STORAGE_TYPE_STATIC);
+    solutionHistory->setStorageLimit(2);
+    solutionHistory->addState(icState);
+
+    // Ensure ICs are consistent and stepper memory is set (e.g., xDot is set).
+    stepper->setInitialConditions(solutionHistory);
+
+    // Setup Integrator -----------------------------------------
+    RCP<Tempus::IntegratorBasic<double> > integrator =
+      Tempus::createIntegratorBasic<double>();
+    integrator->setStepper(stepper);
+    integrator->setTimeStepControl(timeStepControl);
+    integrator->setSolutionHistory(solutionHistory);
+    //integrator->setObserver(...);
+    integrator->initialize();
 
 
-  // Integrate to timeMax
-  bool integratorStatus = integrator->advanceTime();
-  TEST_ASSERT(integratorStatus)
+    // Integrate to timeMax
+    bool integratorStatus = integrator->advanceTime();
+    TEST_ASSERT(integratorStatus)
 
 
-  // Test if at 'Final Time'
-  double time = integrator->getTime();
-  double timeFinal =pl->sublist("Default Integrator")
-     .sublist("Time Step Control").get<double>("Final Time");
-  TEST_FLOATING_EQUALITY(time, timeFinal, 1.0e-14);
+    // Test if at 'Final Time'
+    double time = integrator->getTime();
+    double timeFinal =pl->sublist("Default Integrator")
+       .sublist("Time Step Control").get<double>("Final Time");
+    TEST_FLOATING_EQUALITY(time, timeFinal, 1.0e-14);
 
-  // Time-integrated solution and the exact solution
-  RCP<Thyra::VectorBase<double> > x = integrator->getX();
-  RCP<const Thyra::VectorBase<double> > x_exact =
-    model->getExactSolution(time).get_x();
+    // Time-integrated solution and the exact solution
+    RCP<Thyra::VectorBase<double> > x = integrator->getX();
+    RCP<const Thyra::VectorBase<double> > x_exact =
+      model->getExactSolution(time).get_x();
 
-  // Calculate the error
-  RCP<Thyra::VectorBase<double> > xdiff = x->clone_v();
-  Thyra::V_StVpStV(xdiff.ptr(), 1.0, *x_exact, -1.0, *(x));
+    // Calculate the error
+    RCP<Thyra::VectorBase<double> > xdiff = x->clone_v();
+    Thyra::V_StVpStV(xdiff.ptr(), 1.0, *x_exact, -1.0, *(x));
 
-  // Check the order and intercept
-  std::cout << "  Stepper = BackwardEuler" << std::endl;
-  std::cout << "  =========================" << std::endl;
-  std::cout << "  Exact solution   : " << get_ele(*(x_exact), 0) << "   "
-                                       << get_ele(*(x_exact), 1) << std::endl;
-  std::cout << "  Computed solution: " << get_ele(*(x      ), 0) << "   "
-                                       << get_ele(*(x      ), 1) << std::endl;
-  std::cout << "  Difference       : " << get_ele(*(xdiff  ), 0) << "   "
-                                       << get_ele(*(xdiff  ), 1) << std::endl;
-  std::cout << "  =========================" << std::endl;
-  TEST_FLOATING_EQUALITY(get_ele(*(x), 0), 0.798923, 1.0e-4 );
-  TEST_FLOATING_EQUALITY(get_ele(*(x), 1), 0.516729, 1.0e-4 );
+    // Check the order and intercept
+    std::cout << "  Stepper = " << stepper->description()
+              << " with " << option << std::endl;
+    std::cout << "  =========================" << std::endl;
+    std::cout << "  Exact solution   : " << get_ele(*(x_exact), 0) << "   "
+                                         << get_ele(*(x_exact), 1) << std::endl;
+    std::cout << "  Computed solution: " << get_ele(*(x      ), 0) << "   "
+                                         << get_ele(*(x      ), 1) << std::endl;
+    std::cout << "  Difference       : " << get_ele(*(xdiff  ), 0) << "   "
+                                         << get_ele(*(xdiff  ), 1) << std::endl;
+    std::cout << "  =========================" << std::endl;
+    TEST_FLOATING_EQUALITY(get_ele(*(x), 0), 0.798923, 1.0e-4 );
+    TEST_FLOATING_EQUALITY(get_ele(*(x), 1), 0.516729, 1.0e-4 );
+  }
 }
-#endif // TEST_CONSTRUCTING_FROM_DEFAULTS
 
 
-#ifdef TEST_SINCOS
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, SinCos)
@@ -246,7 +244,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, SinCos)
     RCP<ParameterList> pl = sublist(pList, "Tempus", true);
     pl->sublist("Default Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Initial Conditions
     // During the Integrator construction, the initial SolutionState
@@ -275,8 +273,10 @@ TEUCHOS_UNIT_TEST(BackwardEuler, SinCos)
       auto solnHistExact = rcp(new Tempus::SolutionHistory<double>());
       for (int i=0; i<solutionHistory->getNumStates(); i++) {
         double time_i = (*solutionHistory)[i]->getTime();
-        auto state = rcp(new Tempus::SolutionState<double>(
-            model->getExactSolution(time_i).get_x(),
+        auto state = Tempus::createSolutionStateX(
+          rcp_const_cast<Thyra::VectorBase<double> > (
+            model->getExactSolution(time_i).get_x()),
+          rcp_const_cast<Thyra::VectorBase<double> > (
             model->getExactSolution(time_i).get_x_dot()));
         state->setTime((*solutionHistory)[i]->getTime());
         solnHistExact->addState(state);
@@ -290,7 +290,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, SinCos)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
     if (n == nTimeStepSizes-1) {  // Add exact solution last in vector.
       StepSize.push_back(0.0);
@@ -321,10 +321,8 @@ TEUCHOS_UNIT_TEST(BackwardEuler, SinCos)
 
   Teuchos::TimeMonitor::summarize();
 }
-#endif // TEST_SINCOS
 
 
-#ifdef TEST_CDR
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, CDR)
@@ -386,7 +384,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, CDR)
     RCP<ParameterList> pl = sublist(pList, "Tempus", true);
     pl->sublist("Demo Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Integrate to timeMax
     bool integratorStatus = integrator->advanceTime();
@@ -405,7 +403,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, CDR)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
 
     // Output finest temporal solution for plotting
@@ -479,10 +477,8 @@ TEUCHOS_UNIT_TEST(BackwardEuler, CDR)
 
   Teuchos::TimeMonitor::summarize();
 }
-#endif // TEST_CDR
 
 
-#ifdef TEST_VANDERPOL
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, VanDerPol)
@@ -513,7 +509,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, VanDerPol)
     RCP<ParameterList> pl = sublist(pList, "Tempus", true);
     pl->sublist("Demo Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Integrate to timeMax
     bool integratorStatus = integrator->advanceTime();
@@ -532,12 +528,12 @@ TEUCHOS_UNIT_TEST(BackwardEuler, VanDerPol)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
 
     // Output finest temporal solution for plotting
     // This only works for ONE MPI process
-    if ((n == 0) or (n == nTimeStepSizes-1)) {
+    if ((n == 0) || (n == nTimeStepSizes-1)) {
       std::string fname = "Tempus_BackwardEuler_VanDerPol-Ref.dat";
       if (n == 0) fname = "Tempus_BackwardEuler_VanDerPol.dat";
       RCP<const SolutionHistory<double> > solutionHistory =
@@ -565,9 +561,8 @@ TEUCHOS_UNIT_TEST(BackwardEuler, VanDerPol)
 
   Teuchos::TimeMonitor::summarize();
 }
-#endif // TEST_VANDERPOL
 
-#ifdef TEST_OPT_INTERFACE
+
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(BackwardEuler, OptInterface)
@@ -583,7 +578,7 @@ TEUCHOS_UNIT_TEST(BackwardEuler, OptInterface)
   // Setup the Integrator
   RCP<ParameterList> pl = sublist(pList, "Tempus", true);
   RCP<Tempus::IntegratorBasic<double> >integrator =
-    Tempus::integratorBasic<double>(pl, model);
+    Tempus::createIntegratorBasic<double>(pl, model);
 
   // Integrate to timeMax
   bool integratorStatus = integrator->advanceTime();
@@ -732,7 +727,6 @@ TEUCHOS_UNIT_TEST(BackwardEuler, OptInterface)
 
   Teuchos::TimeMonitor::summarize();
 }
-#endif // TEST_OPT_INTERFACE
 
 
 } // namespace Tempus_Test

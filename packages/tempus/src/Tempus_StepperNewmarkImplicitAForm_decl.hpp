@@ -9,8 +9,10 @@
 #ifndef Tempus_StepperNewmarkImplicitAForm_decl_hpp
 #define Tempus_StepperNewmarkImplicitAForm_decl_hpp
 
+#include "Tempus_config.hpp"
 #include "Tempus_StepperImplicit.hpp"
 #include "Tempus_WrapperModelEvaluatorSecondOrder.hpp"
+#include "Tempus_StepperNewmarkImplicitAFormAppAction.hpp"
 
 namespace Tempus {
 
@@ -54,20 +56,37 @@ namespace Tempus {
  *  <b> Algorithm </b>
  *  The algorithm for the Newmark implicit A-form with predictors and
  *  correctors is
- *   - \f$\mathbf{d}^{\ast} = \mathbf{d}^{n-1} + \Delta t \mathbf{v}^{n-1}
- *                            + \Delta t^2 (1-2 \beta) \mathbf{a}^{n-1} / 2\f$
- *   - \f$\mathbf{v}^{\ast} =
- *        \mathbf{v}^{n-1} + \Delta t (1-\gamma) \mathbf{a}^{n-1}\f$
- *   - Solve
- *        \f$\mathbf{f}(\mathbf{d}^n, \mathbf{v}^n, \mathbf{a}^n, t^n) = 0\f$
- *     for \f$\mathbf{a}^n\f$ where
- *     - \f$\mathbf{d}^n = \mathbf{d}^{\ast} + \beta \Delta t^2 \mathbf{a}^n\f$
- *     - \f$\mathbf{v}^n = \mathbf{v}^{\ast} + \gamma \Delta t \mathbf{a}^n\f$
  *
- *  The First-Step-As-Last (FSAL) principle is part of the Newmark
- *  implicit A-Form as the acceleration from the previous time step is
- *  used for the predictors.  The default is to set useFSAL=true,
- *  and useFSAL=false will be ignored.
+ *  \f{center}{
+ *    \parbox{5in}{
+ *    \rule{5in}{0.4pt} \\
+ *    {\bf Algorithm} Newmark Implicit A-form \\
+ *    \rule{5in}{0.4pt} \vspace{-15pt}
+ *    \begin{enumerate}
+ *      \setlength{\itemsep}{0pt} \setlength{\parskip}{0pt} \setlength{\parsep}{0pt}
+ *      \item {\it appAction.execute(solutionHistory, stepper, BEGIN\_STEP)}
+ *      \item $\mathbf{d}^{\ast} = \mathbf{d}^{n-1} + \Delta t \mathbf{v}^{n-1}
+ *                               + \Delta t^2 (1-2 \beta) \mathbf{a}^{n-1} / 2$
+ *      \item $\mathbf{v}^{\ast} = \mathbf{v}^{n-1} + \Delta t (1-\gamma) \mathbf{a}^{n-1}$
+ *      \item {\it appAction.execute(solutionHistory, stepper, BEFORE\_SOLVE)}
+ *      \item {\bf Solve
+ *            $\mathbf{f}(\mathbf{d}^n, \mathbf{v}^n, \mathbf{a}^n, t^n) = 0$
+ *            for $\mathbf{a}^n$ where} \\
+ *            $\mathbf{d}^n = \mathbf{d}^{\ast} + \beta \Delta t^2 \mathbf{a}^n$ \\
+ *            $\mathbf{v}^n = \mathbf{v}^{\ast} + \gamma \Delta t \mathbf{a}^n$
+ *      \item {\it appAction.execute(solutionHistory, stepper, AFTER\_SOLVE)}
+ *      \item $\mathbf{d}^n = \mathbf{d}^{\ast} + \beta \Delta t^2 \mathbf{a}^n$
+ *      \item $\mathbf{v}^n = \mathbf{v}^{\ast} + \gamma \Delta t \mathbf{a}^n$
+ *      \item {\it appAction.execute(solutionHistory, stepper, END\_STEP)}
+ *    \end{enumerate}
+ *    \vspace{-10pt} \rule{5in}{0.4pt}
+ *    }
+ *  \f}
+ *
+ *  The First-Same-As-Last (FSAL) principle is not needed with Newmark
+ *  Implicit A-Form.  The default is to set useFSAL=false, however
+ *  useFSAL=true will also work but have no affect (i.e., no-op).
+ *
  */
 template<class Scalar>
 class StepperNewmarkImplicitAForm
@@ -85,7 +104,6 @@ public:
   /// Constructor
   StepperNewmarkImplicitAForm(
     const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel,
-    const Teuchos::RCP<StepperObserver<Scalar> >& obs,
     const Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> >& solver,
     bool useFSAL,
     std::string ICConsistency,
@@ -93,21 +111,19 @@ public:
     bool zeroInitialGuess,
     std::string schemeName,
     Scalar beta,
-    Scalar gamma);
+    Scalar gamma,
+    const Teuchos::RCP<StepperNewmarkImplicitAFormAppAction<Scalar> >& stepperAppAction);
 
   /// \name Basic stepper methods
   //@{
     virtual void setModel(
       const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel);
 
-    virtual void setObserver(
-      Teuchos::RCP<StepperObserver<Scalar> > /* obs */ = Teuchos::null){}
+    virtual void setAppAction(
+      Teuchos::RCP<StepperNewmarkImplicitAFormAppAction<Scalar> > appAction);
 
-    virtual Teuchos::RCP<StepperObserver<Scalar> > getObserver() const
-    { return Teuchos::null; }
-
-    /// Initialize during construction and after changing input parameters.
-    virtual void initialize();
+    virtual Teuchos::RCP<StepperNewmarkImplicitAFormAppAction<Scalar> > getAppAction() const
+    { return stepperNewmarkImpAppAction_; }
 
     /// Set the initial conditions and make them consistent.
     virtual void setInitialConditions (
@@ -130,10 +146,10 @@ public:
     virtual bool isExplicit()         const {return false;}
     virtual bool isImplicit()         const {return true;}
     virtual bool isExplicitImplicit() const
-      {return isExplicit() and isImplicit();}
+      {return isExplicit() && isImplicit();}
     virtual bool isOneStepMethod()   const {return true;}
     virtual bool isMultiStepMethod() const {return !isOneStepMethod();}
-
+    virtual void setUseFSAL(bool a) { this->setUseFSALTrueOnly(a); }
     virtual OrderODE getOrderODE()   const {return SECOND_ORDER_ODE;}
   //@}
 
@@ -152,33 +168,32 @@ public:
                           const Teuchos::EVerbosityLevel verbLevel) const;
   //@}
 
-    void predictVelocity(Thyra::VectorBase<Scalar>& vPred,
+  virtual bool isValidSetup(Teuchos::FancyOStream & out) const;
+
+  void predictVelocity(Thyra::VectorBase<Scalar>& vPred,
+                           const Thyra::VectorBase<Scalar>& v,
+                           const Thyra::VectorBase<Scalar>& a,
+                           const Scalar dt) const;
+
+  void predictDisplacement(Thyra::VectorBase<Scalar>& dPred,
+                             const Thyra::VectorBase<Scalar>& d,
                              const Thyra::VectorBase<Scalar>& v,
                              const Thyra::VectorBase<Scalar>& a,
                              const Scalar dt) const;
 
-    void predictDisplacement(Thyra::VectorBase<Scalar>& dPred,
-                               const Thyra::VectorBase<Scalar>& d,
-                               const Thyra::VectorBase<Scalar>& v,
-                               const Thyra::VectorBase<Scalar>& a,
-                               const Scalar dt) const;
+  void correctVelocity(Thyra::VectorBase<Scalar>& v,
+                           const Thyra::VectorBase<Scalar>& vPred,
+                           const Thyra::VectorBase<Scalar>& a,
+                           const Scalar dt) const;
 
-    void correctVelocity(Thyra::VectorBase<Scalar>& v,
-                             const Thyra::VectorBase<Scalar>& vPred,
+  void correctDisplacement(Thyra::VectorBase<Scalar>& d,
+                             const Thyra::VectorBase<Scalar>& dPred,
                              const Thyra::VectorBase<Scalar>& a,
                              const Scalar dt) const;
 
-    void correctDisplacement(Thyra::VectorBase<Scalar>& d,
-                               const Thyra::VectorBase<Scalar>& dPred,
-                               const Thyra::VectorBase<Scalar>& a,
-                               const Scalar dt) const;
-
-    void setSchemeName(std::string schemeName);
-    void setBeta(Scalar beta);
-    void setGamma(Scalar gamma);
-
-    virtual bool getUseFSALDefault() const { return true; }
-    virtual std::string getICConsistencyDefault() const { return "Consistent"; }
+  void setSchemeName(std::string schemeName);
+  void setBeta(Scalar beta);
+  void setGamma(Scalar gamma);
 
 private:
 
@@ -187,8 +202,20 @@ private:
   Scalar gamma_;
 
   Teuchos::RCP<Teuchos::FancyOStream> out_;
+  Teuchos::RCP<StepperNewmarkImplicitAFormAppAction<Scalar> > stepperNewmarkImpAppAction_;
 
 };
+
+
+/// Nonmember constructor - ModelEvaluator and ParameterList
+// ------------------------------------------------------------------------
+template<class Scalar>
+Teuchos::RCP<StepperNewmarkImplicitAForm<Scalar> >
+createStepperNewmarkImplicitAForm(
+  const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& model,
+  Teuchos::RCP<Teuchos::ParameterList> pl);
+
+
 } // namespace Tempus
 
 #endif // Tempus_StepperNewmarkImplicitAForm_decl_hpp

@@ -71,7 +71,7 @@ namespace MueLu {
   BuildAggregates(const ParameterList& params,
                   const LWGraph_kokkos& graph,
                   Aggregates_kokkos& aggregates,
-                  Kokkos::View<unsigned*, typename LWGraph_kokkos::memory_space>& aggStat,
+                  Kokkos::View<unsigned*, typename LWGraph_kokkos::device_type>& aggStat,
                   LO& numNonAggregatedNodes) const {
 
     // So far we only have the non-deterministic version of the algorithm...
@@ -92,32 +92,26 @@ namespace MueLu {
   BuildAggregatesRandom(const ParameterList& params,
                         const LWGraph_kokkos& graph,
                         Aggregates_kokkos& aggregates,
-                        Kokkos::View<unsigned*, typename LWGraph_kokkos::memory_space>& aggStat,
+                        Kokkos::View<unsigned*, typename LWGraph_kokkos::device_type>& aggStat,
                         LO& numNonAggregatedNodes) const {
-    using memory_space    = typename LWGraph_kokkos::memory_space;
-    using execution_space = typename LWGraph_kokkos::execution_space;
 
-    bool makeNonAdjAggs = false;
-    bool error_on_isolated = false;
-    if(params.isParameter("aggregation: error on nodes with no on-rank neighbors"))
-      error_on_isolated = params.get<bool>("aggregation: error on nodes with no on-rank neighbors");
-    if(params.isParameter("aggregation: phase3 avoid singletons"))
-      makeNonAdjAggs = params.get<bool>("aggregation: phase3 avoid singletons");
+    bool error_on_isolated = params.get<bool>("aggregation: error on nodes with no on-rank neighbors");
+    bool makeNonAdjAggs = params.get<bool>("aggregation: phase3 avoid singletons");
 
     const LO  numRows = graph.GetNodeNumVertices();
     const int myRank  = graph.GetComm()->getRank();
 
-    auto vertex2AggId  = aggregates.GetVertex2AggId()->template getLocalView<memory_space>();
-    auto procWinner    = aggregates.GetProcWinner()  ->template getLocalView<memory_space>();
+    auto vertex2AggId  = aggregates.GetVertex2AggId()->getDeviceLocalView(Xpetra::Access::ReadWrite);
+    auto procWinner    = aggregates.GetProcWinner()  ->getDeviceLocalView(Xpetra::Access::ReadWrite);
     auto colors        = aggregates.GetGraphColors();
     const LO numColors = aggregates.GetGraphNumColors();
 
-    Kokkos::View<LO, memory_space> numAggregates("numAggregates");
+    Kokkos::View<LO, device_type> numAggregates("numAggregates");
     Kokkos::deep_copy(numAggregates, aggregates.GetNumAggregates());
 
-    Kokkos::View<unsigned*, memory_space> aggStatOld("Initial aggregation status", aggStat.extent(0));
+    Kokkos::View<unsigned*, device_type> aggStatOld("Initial aggregation status", aggStat.extent(0));
     Kokkos::deep_copy(aggStatOld, aggStat);
-    Kokkos::View<LO, memory_space> numNonAggregated("numNonAggregated");
+    Kokkos::View<LO, device_type> numNonAggregated("numNonAggregated");
     Kokkos::deep_copy(numNonAggregated, numNonAggregatedNodes);
     for(int color = 1; color < numColors + 1; ++color) {
       Kokkos::parallel_for("Aggregation Phase 3: aggregates clean-up",

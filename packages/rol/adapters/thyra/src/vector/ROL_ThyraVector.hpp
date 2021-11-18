@@ -93,19 +93,27 @@ private:
         return flatVec;
       }
 
-
       // it must be a product vector then
       Ptr<const Thyra::ProductVectorBase<Real> > prod_vec = ptr_dynamic_cast<const Thyra::ProductVectorBase<Real> >(ptrFromRef(vec));
 
-      std::vector<Teuchos::ArrayRCP<const Real> > flatVec;
-      for(int i=0;i<prod_vec->productSpace()->numBlocks();i++) {
-        Teuchos::RCP<const Thyra::VectorBase<Real> > block = prod_vec->getVectorBlock(i);
+      if(prod_vec!=Teuchos::null) {
 
-        std::vector<Teuchos::ArrayRCP<const Real> > subVec = buildFlatStructure(*block);
-        flatVec.insert(flatVec.end(),subVec.begin(),subVec.end());
+        std::vector<Teuchos::ArrayRCP<const Real> > flatVec;
+        for(int i=0;i<prod_vec->productSpace()->numBlocks();i++) {
+          Teuchos::RCP<const Thyra::VectorBase<Real> > block = prod_vec->getVectorBlock(i);
+
+          std::vector<Teuchos::ArrayRCP<const Real> > subVec = buildFlatStructure(*block);
+          flatVec.insert(flatVec.end(),subVec.begin(),subVec.end());
+        }
+
+        return flatVec;
       }
 
-      return flatVec;
+      TEUCHOS_TEST_FOR_EXCEPTION(
+          true, std::logic_error,
+          std::endl << "ROL::ThyraVector:  " <<
+          "Only handling Thyra::ProductVector and Thyra::SpmdVector." <<
+          std::endl);
     }
 
   public: 
@@ -266,6 +274,14 @@ public:
     return ::Thyra::dot<Real>(*thyra_vec_, *ex.thyra_vec_);
   }
 
+  /** \brief Apply \f$\mathtt{*this}\f$ to a dual vector.  This is equivalent
+             to the call \f$\mathtt{this->dot(x.dual())}\f$.
+  */
+  Real apply( const Vector<Real> &x ) const {
+    const ThyraVector &ex = dynamic_cast<const ThyraVector&>(x);
+    return ::Thyra::dot<Real>(*thyra_vec_, *ex.thyra_vec_);
+  }
+
   /** \brief Returns \f$ \| y \| \f$ where \f$y = \mbox{*this}\f$.
   */
   Real norm() const {
@@ -317,9 +333,17 @@ public:
     return thyra_vec_;
   }
 
+  Teuchos::RCP<const Thyra::MultiVectorBase<Real> > getMultiVector() const {
+    return thyra_vec_;
+  }
+
   /**  \brief nonconst get of the Thyra vector.
     */
   Teuchos::RCP<Thyra::VectorBase<Real> > getVector()  {
+    return thyra_vec_;
+  }
+
+  Teuchos::RCP<Thyra::MultiVectorBase<Real> > getMultiVector() {
     return thyra_vec_;
   }
 

@@ -234,7 +234,7 @@ namespace Amesos2 {
      */
     template <typename MV>
     struct same_type_get_copy {
-      static void apply(const Teuchos::Ptr<const MV>& mv,
+      static void apply(const Teuchos::Ptr<const MV> mv,
                         const Teuchos::ArrayView<typename MV::scalar_t>& v,
                         const size_t ldx,
                         Teuchos::Ptr<const Tpetra::Map<typename MV::local_ordinal_t, typename MV::global_ordinal_t, typename MV::node_t> > distribution_map,
@@ -249,9 +249,9 @@ namespace Amesos2 {
      */
     template <typename MV, typename S>
     struct diff_type_get_copy {
-      static void apply(const Teuchos::Ptr<const MV>& mv,
+      static void apply(const Teuchos::Ptr<const MV> mv,
                         const Teuchos::ArrayView<S>& v,
-                        const size_t& ldx,
+                        const size_t ldx,
                         Teuchos::Ptr<const Tpetra::Map<typename MV::local_ordinal_t, typename MV::global_ordinal_t, typename MV::node_t> > distribution_map,
                         EDistribution distribution );
     };
@@ -285,6 +285,56 @@ namespace Amesos2 {
     };
 
     /*
+      do_get
+
+      Return type (bool):
+        true:  The input kokkos_vals view is now pointing directly to the adapter's data (same memory and type).
+               If this is x for an Ax=b solve, you don't need 'do_put x' after the solve since you modified the adapter directly.
+        false: The input kokkos_vals view is now resized to match the adapter's size.
+               kokkos_vals will only have the adapter values deep_copied if bInitialize is true (see below).
+               If this is x for an Ax=b solve, you must call 'do_put x' after the solve to deep copy back to the adapter.
+
+      Inputs
+        bInitialize (bool): tells the adapter whether kokkos_vals needs to have the values of the adapter.
+          true:  We require kokkos_vals to have the same size and values of the adapter.
+                 For b in Ax=b solves, set bInitialize true because you need the size and values of the adapter.
+          false: We require kokkos_vals to have the same size as the adapter but we don't need the values.
+                 For x in Ax=b solves, set bInitialize false because you just need the size, not the values.
+
+          Note: When this method returns true, meaning direct assignment of the view occurred,
+                bInitialize is not used because you already have the values whether you need them or not.
+
+        kokkos_vals (View<scalar_t**>): The view which will contain the x or b data.
+          Do not allocate the size of kokkos_vals, let the do_get method do it for you.
+          This is because kokkos_vals may be set to point directly to the adapter memory
+          and then any pre-allocation of size will have been wasted.
+    */
+    template <class MV, typename KV>
+    struct get_1d_copy_helper_kokkos_view {
+      static bool
+      do_get (bool bInitialize,
+              const Teuchos::Ptr<const MV>& mv,
+              KV& kokkos_vals,
+              const size_t ldx,
+              Teuchos::Ptr<const Tpetra::Map<typename MV::local_ordinal_t, typename MV::global_ordinal_t, typename MV::node_t> > distribution_map,
+              EDistribution distribution = ROOTED);
+
+      static bool
+      do_get (bool bInitialize,
+              const Teuchos::Ptr<const MV>& mv,
+              KV& kokkos_vals,
+              const size_t ldx,
+              EDistribution distribution,
+              typename MV::global_ordinal_t indexBase = 0);
+
+      static bool
+      do_get (bool bInitialize,
+              const Teuchos::Ptr<const MV>& mv,
+              KV& kokkos_vals,
+              const size_t ldx);
+    };
+
+    /*
      * If the multivector scalar type and the desired scalar tpye are
      * the same, then we can do a simple straight copy.
      */
@@ -307,7 +357,7 @@ namespace Amesos2 {
     struct diff_type_data_put {
       static void apply(const Teuchos::Ptr<MV>& mv,
                         const Teuchos::ArrayView<S>& data,
-                        const size_t& ldx,
+                        const size_t ldx,
                         Teuchos::Ptr<const Tpetra::Map<typename MV::local_ordinal_t, typename MV::global_ordinal_t, typename MV::node_t> > distribution_map,
                         EDistribution distribution );
     };
@@ -335,10 +385,29 @@ namespace Amesos2 {
                          const Teuchos::ArrayView<S>& data,
                          const size_t ldx);
     };
+
+    template <class MV, typename KV>
+    struct put_1d_data_helper_kokkos_view {
+      static void do_put(const Teuchos::Ptr<MV>& mv,
+                         KV& kokkos_data,
+                         const size_t ldx,
+                         Teuchos::Ptr<const Tpetra::Map<typename MV::local_ordinal_t, typename MV::global_ordinal_t, typename MV::node_t> > distribution_map,
+                         EDistribution distribution = ROOTED);
+
+      static void do_put(const Teuchos::Ptr<MV>& mv,
+                         KV& kokkos_data,
+                         const size_t ldx,
+                         EDistribution distribution, typename MV::global_ordinal_t indexBase = 0);
+
+      static void do_put(const Teuchos::Ptr<MV>& mv,
+                         KV& kokkos_data,
+                         const size_t ldx);
+    };
   }
 } // end namespace Amesos2
 
 #include "Amesos2_TpetraMultiVecAdapter_decl.hpp"
+#include "Amesos2_KokkosMultiVecAdapter_decl.hpp"
 #ifdef HAVE_AMESOS2_EPETRA
 #  include "Amesos2_EpetraMultiVecAdapter_decl.hpp"
 #endif

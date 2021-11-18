@@ -56,6 +56,8 @@
 
 #include "MueLu_AggregationExportFactory_fwd.hpp"
 #include "MueLu_BrickAggregationFactory_fwd.hpp"
+#include "MueLu_ClassicalMapFactory_fwd.hpp"
+#include "MueLu_ClassicalPFactory_fwd.hpp"
 #include "MueLu_CoalesceDropFactory_fwd.hpp"
 #include "MueLu_CoarseMapFactory_fwd.hpp"
 #include "MueLu_ConstraintFactory_fwd.hpp"
@@ -68,7 +70,10 @@
 #include "MueLu_FactoryFactory_fwd.hpp"
 #include "MueLu_FilteredAFactory_fwd.hpp"
 #include "MueLu_GenericRFactory_fwd.hpp"
+#include "MueLu_InitialBlockNumberFactory_fwd.hpp"
 #include "MueLu_LineDetectionFactory_fwd.hpp"
+#include "MueLu_LocalOrdinalTransferFactory_fwd.hpp"
+#include "MueLu_NotayAggregationFactory_fwd.hpp"
 #include "MueLu_NullspaceFactory_fwd.hpp"
 #include "MueLu_PatternFactory_fwd.hpp"
 #include "MueLu_PgPFactory_fwd.hpp"
@@ -77,6 +82,7 @@
 #include "MueLu_RebalanceAcFactory_fwd.hpp"
 #include "MueLu_RebalanceTransferFactory_fwd.hpp"
 #include "MueLu_RepartitionFactory_fwd.hpp"
+#include "MueLu_ReitzingerPFactory_fwd.hpp"
 #include "MueLu_SaPFactory_fwd.hpp"
 #include "MueLu_SemiCoarsenPFactory_fwd.hpp"
 #include "MueLu_SmootherFactory_fwd.hpp"
@@ -100,6 +106,7 @@
 #include "MueLu_CoordinatesTransferFactory_kokkos_fwd.hpp"
 #include "MueLu_NullspaceFactory_kokkos_fwd.hpp"
 #include "MueLu_SaPFactory_kokkos_fwd.hpp"
+#include "MueLu_SemiCoarsenPFactory_kokkos_fwd.hpp"
 #include "MueLu_TentativePFactory_kokkos_fwd.hpp"
 #include "MueLu_UncoupledAggregationFactory_kokkos_fwd.hpp"
 #endif
@@ -193,6 +200,7 @@ namespace MueLu {
 
     int       blockSize_;     ///< block size of matrix (fixed block size)
     CycleType Cycle_;         ///< multigrid cycle type (V-cycle or W-cycle)
+    int       WCycleStartLevel_; ///< in case of W-cycle, level on which cycle should start
     double    scalingFactor_; ///< prolongator scaling factor
     GlobalOrdinal dofOffset_; ///< global offset variable describing offset of DOFs in operator
 
@@ -225,6 +233,10 @@ namespace MueLu {
                                           int levelID, std::vector<keep_pair>& keeps, RCP<Factory> & nullSpaceFactory) const;
     void UpdateFactoryManager_Nullspace(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
                                         int levelID, std::vector<keep_pair>& keeps, RCP<Factory> & nullSpaceFactory) const;
+    void UpdateFactoryManager_BlockNumber(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, 
+                                          FactoryManager& manager,int levelID, std::vector<keep_pair>& keeps) const;
+    void UpdateFactoryManager_LocalOrdinalTransfer(const std::string& VarName, const std::string& multigridAlgo, Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, 
+                                           FactoryManager& manager,int levelID, std::vector<keep_pair>& keeps) const;
 
     // Algorithm-specific components for UpdateFactoryManager
     void UpdateFactoryManager_SemiCoarsen(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
@@ -233,6 +245,8 @@ namespace MueLu {
                                        int levelID, std::vector<keep_pair>& keeps) const;
     void UpdateFactoryManager_SA(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
                                  int levelID, std::vector<keep_pair>& keeps) const;
+    void UpdateFactoryManager_Reitzinger(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
+                                         int levelID, std::vector<keep_pair>& keeps) const;
     void UpdateFactoryManager_Emin(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
                                    int levelID, std::vector<keep_pair>& keeps) const;
     void UpdateFactoryManager_PG(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
@@ -240,7 +254,11 @@ namespace MueLu {
     void UpdateFactoryManager_Matlab(Teuchos::ParameterList& paramList, const Teuchos::ParameterList& defaultList, FactoryManager& manager,
                                      int levelID, std::vector<keep_pair>& keeps) const;
 
+
+
+
     bool useCoordinates_;
+    bool useBlockNumber_;
     bool useKokkos_;
     //@}
 

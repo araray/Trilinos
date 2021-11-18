@@ -67,10 +67,10 @@ namespace Teuchos {
  * \relates ParameterList
  */
 enum EValidateUsed {
-  VALIDATE_USED_ENABLED   /*!< Validate that parameters in <tt>*this</tt> list
+  VALIDATE_USED_ENABLED,  /*!< Validate that parameters in <tt>*this</tt> list
                               set using the default value are present in
                               the validation list */
-  ,VALIDATE_USED_DISABLED /*!< Do not validate that parameters in <tt>*this</tt> list
+  VALIDATE_USED_DISABLED  /*!< Do not validate that parameters in <tt>*this</tt> list
                               set using the default value are present in
                               the validation list */
 };
@@ -79,10 +79,10 @@ enum EValidateUsed {
  * \relates ParameterList
  */
 enum EValidateDefaults {
-  VALIDATE_DEFAULTS_ENABLED   /*!< Validate that parameters in <tt>*this</tt> list
+  VALIDATE_DEFAULTS_ENABLED,  /*!< Validate that parameters in <tt>*this</tt> list
                                   set using the default value are present in
                                    the validation list */
-  ,VALIDATE_DEFAULTS_DISABLED /*!< Do not validate that parameters in <tt>*this</tt> list
+  VALIDATE_DEFAULTS_DISABLED  /*!< Do not validate that parameters in <tt>*this</tt> list
                                   set using the default value are present in
                                   the validation list */
 };
@@ -149,22 +149,25 @@ public:
   /** \brief Utility class for setting and passing in print options. */
   class PrintOptions {
   public:
-    PrintOptions() : indent_(0), showTypes_(false), showFlags_(false), showDoc_(false) {}
-    PrintOptions& indent(int _indent)        { indent_ = _indent; return *this; }
-    PrintOptions& showTypes(bool _showTypes) { showTypes_ = _showTypes; return *this; }
-    PrintOptions& showFlags(bool _showFlags) { showFlags_ = _showFlags; return *this; }
-    PrintOptions& showDoc(bool _showDoc)     { showDoc_ = _showDoc; return *this; }
-    PrintOptions& incrIndent(int indents)    { indent_ += indents; return *this; }
+    PrintOptions() : indent_(0), showTypes_(false), showFlags_(false), showDoc_(false), showDefault_(true) {}
+    PrintOptions& indent(int _indent)            { indent_ = _indent; return *this; }
+    PrintOptions& showTypes(bool _showTypes)     { showTypes_ = _showTypes; return *this; }
+    PrintOptions& showFlags(bool _showFlags)     { showFlags_ = _showFlags; return *this; }
+    PrintOptions& showDoc(bool _showDoc)         { showDoc_ = _showDoc; return *this; }
+    PrintOptions& showDefault(bool _showDefault) { showDefault_ = _showDefault; return *this; }
+    PrintOptions& incrIndent(int indents)        { indent_ += indents; return *this; }
     int indent() const { return indent_; }
     bool showTypes() const { return showTypes_; }
     bool showFlags() const { return showFlags_; }
     bool showDoc() const { return showDoc_; }
+    bool showDefault() const { return showDefault_; }
     PrintOptions copy() const { return PrintOptions(*this); }
   private:
     int    indent_;
     bool   showTypes_;
     bool   showFlags_;
     bool   showDoc_;
+    bool   showDefault_;
   };
 
   //@}
@@ -184,9 +187,6 @@ public:
   
   //! Destructor
   virtual ~ParameterList();
-
-  //! Get the number of stored parameters.
-  Ordinal numParams () const;
 
   //@}
   //! @name Set Functions 
@@ -490,9 +490,9 @@ public:
   /** \brief Remove a parameter (does not depend on the type of the
    * parameter).
    *
-   * \param[in] name The name of the parameter to remove
+   * \param name (in) The name of the parameter to remove
    *
-   * \param[in] throwIfNotExists If <tt>true</tt> then if the parameter with
+   * \param throwIfNotExists (in) If <tt>true</tt> then if the parameter with
    * the name <tt>name</tt> does not exist then a std::exception will be
    * thrown!
    *
@@ -577,6 +577,9 @@ public:
   bool isType(const std::string& name, T* ptr) const;
 #endif
 
+  //! Get the number of stored parameters.
+  Ordinal numParams () const;
+
   //@}
   
   //! @name I/O Functions 
@@ -595,7 +598,7 @@ public:
 
   /*! \brief Printing method for parameter lists.  Indenting is used to indicate
     parameter list hierarchies. */
-  std::ostream& print(std::ostream& os, int indent = 0, bool showTypes = false, bool showFlags = true ) const;
+  std::ostream& print(std::ostream& os, int indent = 0, bool showTypes = false, bool showFlags = true, bool showDefault = true ) const;
   
   //! Print out unused parameters in the ParameterList.
   void unused(std::ostream& os) const;
@@ -908,7 +911,7 @@ TEUCHOSPARAMETERLIST_LIB_DLL_EXPORT bool haveSameModifiers (const ParameterList&
  * documentation strings or the same validators.
  *
  * \note This function respects ordering of the ParameterList entries; the same values in a different
- *       order will result in \false.
+ *       order will result in \em false.
  *
  * \relates ParameterList
  */
@@ -923,7 +926,7 @@ TEUCHOSPARAMETERLIST_LIB_DLL_EXPORT bool haveSameValues( const ParameterList& li
  * documentation strings or the same validators.
  *
  * \note This function does not respect ordering of the ParameterList entries; the same values in a different
- *       order will result in \true.
+ *       order will result in \em true.
  *
  * \relates ParameterList
  */

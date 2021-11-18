@@ -31,14 +31,14 @@
  // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef STK_UTIL_ENVIRONMENT_COMMANDLINEPARSER_HPP
-#define STK_UTIL_ENVIRONMENT_COMMANDLINEPARSER_HPP
+#ifndef STK_UTIL_COMMAND_LINE_COMMANDLINEPARSER_HPP
+#define STK_UTIL_COMMAND_LINE_COMMANDLINEPARSER_HPP
 
-#include <stk_util/command_line/OptionsSpecification.hpp>
-#include <stk_util/command_line/ParsedOptions.hpp>
-#include <stk_util/command_line/ParseCommandLineArgs.hpp>
-#include <iostream>
-#include <string>
+#include "stk_util/environment/OptionsSpecification.hpp"  // for OptionsSpecification, operator<<
+#include "stk_util/environment/ParsedOptions.hpp"         // for ParsedOptions
+#include "stk_util/util/ReportHandler.hpp"                // for ThrowRequireMsg
+#include <iostream>                                       // for endl, operator<<, ostream, ostr...
+#include <string>                                         // for string, allocator, operator+
 
 namespace stk {
 
@@ -61,6 +61,16 @@ public:
     {
         add_flag("help,h", "display this help message and exit");
         add_flag("version,v", "display version information and exit");
+    }
+
+    void disallow_unrecognized()
+    {
+      optionsSpec.set_error_on_unrecognized();
+    }
+
+    void add_flag(const CommandLineOption &option)
+    {
+        add_flag(get_option_spec(option), option.description);
     }
 
     void add_flag(const std::string &option, const std::string &description)
@@ -107,7 +117,22 @@ public:
         const bool isFlag = false;
         const bool isRequired = false;
         optionsSpec.add_options()
-          (option, description, defaultValue, isFlag, isRequired, position);
+          (option, description, stk::DefaultValue<ValueType>(defaultValue), isFlag, isRequired, position);
+    }
+
+    template <typename ValueType>
+    void add_optional_implicit(const CommandLineOption &option,
+                               const ValueType &defaultValue)
+    {
+        add_optional_implicit(get_option_spec(option), option.description, defaultValue);
+    }
+
+    template <typename ValueType>
+    void add_optional_implicit(const std::string &option, const std::string &description,
+                               const ValueType &defaultValue)
+    {
+        optionsSpec.add_options()
+          (option, description, stk::ImplicitValue<ValueType>(defaultValue));
     }
 
     std::string get_usage() const
@@ -117,29 +142,16 @@ public:
         return os.str();
     }
 
-    ParseState parse(int argc, const char *argv[])
-    {
-        ParseState state = ParseError;
-        try
-        {
-            stk::parse_command_line_args(argc, argv, optionsSpec, parsedOptions);
-            if(is_option_provided("help"))
-                return ParseHelpOnly;
-            if(is_option_provided("version"))
-                return ParseVersionOnly;
-
-            state = ParseComplete;
-        }
-        catch(std::exception &e)
-        {
-            print_message(e.what());
-        }
-        return state;
-    }
+    ParseState parse(int argc, const char ** argv);
 
     bool is_option_provided(const std::string &option) const
     {
         return parsedOptions.count(option) > 0;
+    }
+
+    bool is_option_parsed(const std::string& option) const
+    {
+        return parsedOptions.is_parsed(option);
     }
 
     bool is_empty() const
@@ -150,6 +162,7 @@ public:
     template <typename ValueType>
     ValueType get_option_value(const std::string &option) const
     {
+        ThrowRequireMsg(is_option_provided(option), "Error, option '"<<option<<"'not provided.");
         return parsedOptions[option].as<ValueType>();
     }
 
@@ -171,4 +184,4 @@ protected:
 
 }
 
-#endif //STK_UTIL_ENVIRONMENT_COMMANDLINEPARSER_HPP
+#endif //STK_UTIL_COMMAND_LINE_COMMANDLINEPARSER_HPP

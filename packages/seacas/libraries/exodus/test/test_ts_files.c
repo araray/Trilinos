@@ -1,35 +1,9 @@
 /*
- * Copyright(c) 2005-2017 National Technology &Engineering Solutions
- * of Sandia, LLC(NTESS).Under the terms of Contract DE - NA0003525 with
- * NTESS, the U.S.Government retains certain rights in this software.
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *
- * * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following
- * disclaimer in the documentation and / or other materials provided
- * with the                                                 distribution.
- *
- * * Neither the name of NTESS nor the names of its
- * contributors may be used to endorse or promote products derived
- * from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED.IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES(INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * See packages/seacas/LICENSE for details
  */
 
 #include <exodusII.h>
@@ -56,9 +30,7 @@ void *init_file(void *varg)
 {
   param *arg = (param *)varg;
 
-  int  exoid, num_dim, num_nodes, num_elem, num_elem_blk;
   int  num_face_in_sset[10], num_nodes_in_nset[10];
-  int  num_node_sets, num_side_sets, error;
   int  i, j, k, m, *elem_map, *connect;
   int  node_list[100], elem_list[100], side_list[100];
   int  ssids[10], nsids[10];
@@ -66,7 +38,6 @@ void *init_file(void *varg)
   int  num_glo_vars, num_nod_vars, num_ele_vars, num_sset_vars, num_nset_vars;
   int *truth_tab;
   int  whole_time_step, num_time_steps;
-  int  CPU_word_size, IO_word_size;
   int  prop_array[2];
 
   float *glob_var_vals, *nodal_var_vals, *elem_var_vals;
@@ -90,29 +61,28 @@ void *init_file(void *varg)
 
   /* Specify compute and i/o word size */
 
-  CPU_word_size = 0; /* sizeof(float) */
-  IO_word_size  = 4; /* (4 bytes) */
-
   /* create EXODUS II file */
 
-  exoid = ex_create(name,           /* filename path */
-                    EX_CLOBBER,     /* create mode */
-                    &CPU_word_size, /* CPU float word size in bytes */
-                    &IO_word_size); /* I/O float word size in bytes */
+  int CPU_word_size = 0;                        /* sizeof(float) */
+  int IO_word_size  = 4;                        /* (4 bytes) */
+  int exoid         = ex_create(name,           /* filename path */
+                        EX_CLOBBER,     /* create mode */
+                        &CPU_word_size, /* CPU float word size in bytes */
+                        &IO_word_size); /* I/O float word size in bytes */
   printf("after ex_create for %s, exoid = %d\n", name, exoid);
   printf(" cpu word size: %d io word size: %d\n", CPU_word_size, IO_word_size);
 
   /* initialize file with parameters */
 
-  num_dim       = 3;
-  num_nodes     = 33;
-  num_elem      = 7;
-  num_elem_blk  = 7;
-  num_node_sets = 2;
-  num_side_sets = 5;
+  int num_dim       = 3;
+  int num_nodes     = 33;
+  int num_elem      = 7;
+  int num_elem_blk  = 7;
+  int num_node_sets = 2;
+  int num_side_sets = 5;
 
-  error = ex_put_init(exoid, title, num_dim, num_nodes, num_elem, num_elem_blk, num_node_sets,
-                      num_side_sets);
+  int error = ex_put_init(exoid, title, num_dim, num_nodes, num_elem, num_elem_blk, num_node_sets,
+                          num_side_sets);
 
   printf("after ex_put_init, error = %d\n", error);
 
@@ -1291,22 +1261,19 @@ void *init_file(void *varg)
 int main(int argc, char *argv[])
 {
   pthread_t threads[NUM_THREADS];
-  int       rc;
-  long      t;
-
-  param arg[NUM_THREADS];
+  param     arg[NUM_THREADS];
 
   printf("Running on %d threads\n", NUM_THREADS);
-  for (t = 0; t < NUM_THREADS; t++) {
+  for (long t = 0; t < NUM_THREADS; t++) {
     arg[t].threadid = t;
-    rc              = pthread_create(&threads[t], NULL, init_file, (void *)(arg + t));
+    int rc          = pthread_create(&threads[t], NULL, init_file, (void *)(arg + t));
     if (rc) {
       printf("ERROR; return code from pthread_create() is %d\n", rc);
       exit(-1);
     }
   }
 
-  for (t = 0; t < NUM_THREADS; t++) {
+  for (long t = 0; t < NUM_THREADS; t++) {
     pthread_join(threads[t], NULL);
   }
 }

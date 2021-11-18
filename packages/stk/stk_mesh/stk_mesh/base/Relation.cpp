@@ -40,7 +40,6 @@
 #include <stk_mesh/base/Entity.hpp>     // for Entity
 #include <stk_mesh/base/MetaData.hpp>   // for MetaData
 #include <utility>                      // for pair
-#include "stk_mesh/base/ConnectivityMap.hpp"  // for ConnectivityMap
 #include "stk_mesh/base/Types.hpp"      // for EntityRank, OrdinalVector, etc
 #include <stk_mesh/baseImpl/MeshImplUtils.hpp>
 #include "stk_topology/topology.hpp"    // for topology, etc
@@ -58,17 +57,6 @@ Relation::RawRelationType & Relation::RawRelationType::operator =(const Relation
 }
 
 //----------------------------------------------------------------------
-
-std::ostream &
-operator << ( std::ostream & s , const Relation & rel )
-{
-  Entity const e = rel.entity();
-
-  s << "[" << rel.relation_ordinal() << "]->(" << rel.entity_rank()
-    << ", " << e.local_offset() << ")";
-
-  return s ;
-}
 
 namespace {
 
@@ -143,56 +131,14 @@ void get_entities_through_relations(
 
 void get_entities_through_relations(
   const BulkData& mesh,
-  const Entity* entities_begin ,
-  const Entity* entities_end ,
-        EntityRank              entities_related_rank ,
-        std::vector<Entity> & entities_related )
-{
-  entities_related.clear();
-
-  if ( entities_begin != entities_end ) {
-
-    int num_rels = mesh.num_connectivity(entities_begin[0], entities_related_rank);
-    Entity const* rel_entities = mesh.begin(entities_begin[0], entities_related_rank);
-
-    get_entities_through_relations(mesh, rel_entities, rel_entities + num_rels,
-                                   entities_begin+1, entities_end, entities_related);
-  }
-}
-
-void get_entities_through_relations(
-  const BulkData& mesh,
   const std::vector<Entity> & entities ,
         EntityRank              entities_related_rank ,
         std::vector<Entity> & entities_related )
 {
-  entities_related.clear();
-
-  if ( ! entities.empty() ) {
-
-    const Entity* i = entities.data();
-    const Entity* j = i+entities.size();
-
-    int num_rels = mesh.num_connectivity(*i, entities_related_rank);
-    Entity const* rel_entities = mesh.begin(*i, entities_related_rank);
-
-    ++i;
-    get_entities_through_relations(mesh, rel_entities, rel_entities + num_rels, i, j, entities_related);
-  }
+  impl::find_entities_these_nodes_have_in_common(mesh, entities_related_rank,
+                                                 entities.size(), entities.data(),
+                                                 entities_related);
 }
-
-//----------------------------------------------------------------------
-
-
-void get_part_ordinals_to_induce_on_lower_ranks_except_for_omits(const BulkData       & mesh,
-                             const Entity           entity_from,
-                             const OrdinalVector  & omit,
-                                   EntityRank       entity_rank_to,
-                                   OrdinalVector  & induced_parts)
-{
-    impl::get_part_ordinals_to_induce_on_lower_ranks_except_for_omits(mesh,entity_from,omit,entity_rank_to,induced_parts);
-}
-
 
 //----------------------------------------------------------------------
 
@@ -210,9 +156,14 @@ void induced_part_membership(const BulkData& mesh,
     int num_rels = mesh.num_connectivity(entity, irank);
     Entity const* rels     = mesh.begin(entity, irank);
 
+    const Bucket* prevBucketPtr = nullptr;
     for (int j = 0; j < num_rels; ++j)
     {
-      impl::get_part_ordinals_to_induce_on_lower_ranks(mesh, rels[j], e_rank, induced_parts);
+      const Bucket* curBucketPtr = mesh.bucket_ptr(rels[j]);
+      if (prevBucketPtr != curBucketPtr) {
+        prevBucketPtr = curBucketPtr;
+        impl::get_part_ordinals_to_induce_on_lower_ranks(mesh, *curBucketPtr, e_rank, induced_parts);
+      }
     }
   }
 }

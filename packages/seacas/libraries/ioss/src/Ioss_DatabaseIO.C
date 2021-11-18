@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #include <Ioss_BoundingBox.h>
 #include <Ioss_CodeTypes.h>
@@ -47,6 +21,7 @@
 #include <Ioss_SerializeIO.h>
 #include <Ioss_SideBlock.h>
 #include <Ioss_SideSet.h>
+#include <Ioss_Sort.h>
 #include <Ioss_State.h>
 #include <Ioss_StructuredBlock.h>
 #include <Ioss_SurfaceSplit.h>
@@ -74,11 +49,11 @@ extern "C" {
 #endif
 
 namespace {
-  auto initial_time = std::chrono::high_resolution_clock::now();
+  auto initial_time = std::chrono::steady_clock::now();
 
-  void log_time(std::chrono::time_point<std::chrono::high_resolution_clock> &start,
-                std::chrono::time_point<std::chrono::high_resolution_clock> &finish,
-                int current_state, double state_time, bool is_input, bool single_proc_only,
+  void log_time(std::chrono::time_point<std::chrono::steady_clock> &start,
+                std::chrono::time_point<std::chrono::steady_clock> &finish, int current_state,
+                double state_time, bool is_input, bool single_proc_only,
                 const Ioss::ParallelUtils &util);
 
   void log_field(const char *symbol, const Ioss::GroupingEntity *entity, const Ioss::Field &field,
@@ -99,8 +74,11 @@ namespace {
     unsigned int       min_hash   = util.global_minmax(hash_code, Ioss::ParallelUtils::DO_MIN);
     if (max_hash != min_hash) {
       const std::string &ge_name = ge->name();
-      fmt::print(IOSS_WARNING, "Parallel inconsistency detected for {} field '{}' on entity '{}'\n",
-                 in_out == 0 ? "writing" : "reading", field_name, ge_name);
+      fmt::print(Ioss::WARNING(),
+                 "[{}] Parallel inconsistency detected for {} field '{}' on entity '{}'. (Hash: {} "
+                 "{} {})\n",
+                 in_out == 0 ? "writing" : "reading", util.parallel_rank(), field_name, ge_name,
+                 hash_code, min_hash, max_hash);
       return false;
     }
     return true;
@@ -151,12 +129,48 @@ namespace {
       ymin = ymax = 0.0;
     }
   }
+
+  void calc_bounding_box(size_t ndim, size_t node_count, std::vector<double> &coordinates,
+                         double &xmin, double &ymin, double &zmin, double &xmax, double &ymax,
+                         double &zmax)
+  {
+    xmin = DBL_MAX;
+    ymin = DBL_MAX;
+    zmin = DBL_MAX;
+
+    xmax = -DBL_MAX;
+    ymax = -DBL_MAX;
+    zmax = -DBL_MAX;
+
+    for (size_t i = 0; i < node_count; i++) {
+      xmin = my_min(xmin, coordinates[ndim * i + 0]);
+      xmax = my_max(xmax, coordinates[ndim * i + 0]);
+
+      if (ndim > 1) {
+        ymin = my_min(ymin, coordinates[ndim * i + 1]);
+        ymax = my_max(ymax, coordinates[ndim * i + 1]);
+      }
+
+      if (ndim > 2) {
+        zmin = my_min(zmin, coordinates[ndim * i + 2]);
+        zmax = my_max(zmax, coordinates[ndim * i + 2]);
+      }
+    }
+    if (ndim < 3) {
+      zmin = zmax = 0.0;
+    }
+    if (ndim < 2) {
+      ymin = ymax = 0.0;
+    }
+  }
 } // namespace
 
 namespace Ioss {
   DatabaseIO::DatabaseIO(Region *region, std::string filename, DatabaseUsage db_usage,
                          MPI_Comm communicator, const PropertyManager &props)
-      : properties(props), DBFilename(std::move(filename)), dbUsage(db_usage), util_(communicator),
+      : properties(props), DBFilename(std::move(filename)), dbUsage(db_usage),
+        util_(db_usage == WRITE_HISTORY || db_usage == WRITE_HEARTBEAT ? MPI_COMM_SELF
+                                                                       : communicator),
         region_(region), isInput(is_input_event(db_usage)),
         singleProcOnly(db_usage == WRITE_HISTORY || db_usage == WRITE_HEARTBEAT ||
                        SerializeIO::isEnabled())
@@ -228,7 +242,12 @@ namespace Ioss {
     if (!is_input()) {
       // Create full path to the output file at this point if it doesn't
       // exist...
-      create_path(DBFilename);
+      if (isParallel) {
+        Ioss::FileInfo::create_path(DBFilename, util().communicator());
+      }
+      else {
+        Ioss::FileInfo::create_path(DBFilename);
+      }
     }
   }
 
@@ -292,13 +311,13 @@ namespace Ioss {
           usingDataWarp = true;
           dwPath        = bb_path;
           if (myProcessor == 0) {
-            fmt::print(stderr, "\nDataWarp Burst Buffer Enabled.  Path = `{}`\n\n", dwPath);
+            fmt::print(Ioss::OUTPUT(), "\nDataWarp Burst Buffer Enabled.  Path = `{}`\n\n", dwPath);
           }
         }
         else {
           if (myProcessor == 0) {
-            fmt::print(IOSS_WARNING,
-                       "\nWARNING: DataWarp enabled via Ioss property `ENABLE_DATAWARP`, but\n"
+            fmt::print(Ioss::WARNING(),
+                       "DataWarp enabled via Ioss property `ENABLE_DATAWARP`, but\n"
                        "         burst buffer path was not specified via `DW_JOB_STRIPED` or "
                        "`DW_JOB_PRIVATE`\n"
                        "         environment variables (typically set by queuing system)\n"
@@ -321,13 +340,18 @@ namespace Ioss {
     if (using_dw()) {      // We are about to write to a output database in BB
       Ioss::FileInfo path{filename};
       Ioss::FileInfo bb_file{get_dwPath() + path.tailname()};
-      if (bb_file.exists() &&
-          !bb_file.is_writable()) { // already existing file which has been closed
-        // If we can't write to the file on the BB, then it is a file which
-        // is being staged by datawarp system over to the permanent filesystem.
-        // Wait until staging has finished...
-        // stage wait returns 0 = success, -ENOENT or -errno
+      if (bb_file.exists() && !bb_file.is_writable()) {
+        // already existing file which has been closed If we can't
+        // write to the file on the BB, then it is a file which is
+        // being staged by datawarp system over to the permanent
+        // filesystem.  Wait until staging has finished...  stage wait
+        // returns 0 = success, -ENOENT or -errno
 #if defined SEACAS_HAVE_DATAWARP
+#if IOSS_DEBUG_OUTPUT
+        if (myProcessor == 0) {
+          fmt::print(Ioss::DEBUG(), "DW: dw_wait_file_stage({});\n", bb_file.filename());
+        }
+#endif
         int dwret = dw_wait_file_stage(bb_file.filename().c_str());
         if (dwret < 0) {
           std::ostringstream errmsg;
@@ -337,7 +361,7 @@ namespace Ioss {
         }
 #else
         // Used to debug DataWarp logic on systems without DataWarp...
-        fmt::print(stderr, "DW: (FAKE) dw_wait_file_stage({});\n", bb_file.filename());
+        fmt::print(Ioss::DEBUG(), "DW: (FAKE) dw_wait_file_stage({});\n", bb_file.filename());
 #endif
       }
       set_dwname(bb_file.filename());
@@ -353,10 +377,40 @@ namespace Ioss {
   void DatabaseIO::closeDW() const
   {
     if (using_dw()) {
-      if (!using_parallel_io() || (using_parallel_io() && myProcessor == 0)) {
+      if (!using_parallel_io() || myProcessor == 0) {
 #if defined SEACAS_HAVE_DATAWARP
+        int complete = 0, pending = 0, deferred = 0, failed = 0;
+        dw_query_file_stage(get_dwname().c_str(), &complete, &pending, &deferred, &failed);
+#if IOSS_DEBUG_OUTPUT
+        auto initial = std::chrono::steady_clock::now();
+        fmt::print(Ioss::DEBUG(), "Query: {}, {}, {}, {}\n", complete, pending, deferred, failed);
+#endif
+        if (pending > 0) {
+          int dwret = dw_wait_file_stage(get_dwname().c_str());
+          if (dwret < 0) {
+            std::ostringstream errmsg;
+            fmt::print(errmsg, "ERROR: failed waiting for file stage `{}`: {}\n", get_dwname(),
+                       std::strerror(-dwret));
+            IOSS_ERROR(errmsg);
+          }
+#if IOSS_DEBUG_OUTPUT
+          dw_query_file_stage(get_dwname().c_str(), &complete, &pending, &deferred, &failed);
+          fmt::print(Ioss::DEBUG(), "Query: {}, {}, {}, {}\n", complete, pending, deferred, failed);
+#endif
+        }
+
+#if IOSS_DEBUG_OUTPUT
+        fmt::print(Ioss::DEBUG(), "\nDW: BEGIN dw_stage_file_out({}, {}, DW_STAGE_IMMEDIATE);\n",
+                   get_dwname(), get_pfsname());
+#endif
         int ret =
             dw_stage_file_out(get_dwname().c_str(), get_pfsname().c_str(), DW_STAGE_IMMEDIATE);
+
+#if IOSS_DEBUG_OUTPUT
+        auto                          time_now = std::chrono::steady_clock::now();
+        std::chrono::duration<double> diff     = time_now - initial;
+        fmt::print(Ioss::DEBUG(), "\nDW: END dw_stage_file_out({})\n", diff.count());
+#endif
         if (ret < 0) {
           std::ostringstream errmsg;
           fmt::print(errmsg, "ERROR: file staging of `{}` to `{}` failed at close: {}\n",
@@ -364,7 +418,7 @@ namespace Ioss {
           IOSS_ERROR(errmsg);
         }
 #else
-        fmt::print(stderr, "\nDW: (FAKE) dw_stage_file_out({}, {}, DW_STAGE_IMMEDIATE);\n",
+        fmt::print(Ioss::DEBUG(), "\nDW: (FAKE) dw_stage_file_out({}, {}, DW_STAGE_IMMEDIATE);\n",
                    get_dwname(), get_pfsname());
 #endif
       }
@@ -385,68 +439,6 @@ namespace Ioss {
       exists = static_cast<IfDatabaseExistsBehavior>(properties.get("APPEND_OUTPUT").get_int());
     }
     return exists;
-  }
-
-#if defined(_MSC_VER)
-#include <direct.h>
-#ifndef S_ISDIR
-#define S_ISDIR(mode) (((mode)&S_IFMT) == S_IFDIR)
-#endif
-#endif
-
-  void DatabaseIO::create_path(const std::string &filename) const
-  {
-    bool               error_found = false;
-    std::ostringstream errmsg;
-
-    if (myProcessor == 0) {
-      Ioss::FileInfo file      = Ioss::FileInfo(filename);
-      std::string    path      = file.pathname();
-      std::string    path_root = path[0] == '/' ? "/" : "";
-
-      auto comps = tokenize(path, "/");
-      for (const auto &comp : comps) {
-        path_root += comp;
-
-        struct stat st;
-        if (stat(path_root.c_str(), &st) != 0) {
-          const int mode = 0777; // Users umask will be applied to this.
-#ifdef _MSC_VER
-          if (mkdir(path_root.c_str()) != 0 && errno != EEXIST) {
-#else
-          if (mkdir(path_root.c_str(), mode) != 0 && errno != EEXIST) {
-#endif
-            fmt::print(errmsg, "ERROR: Cannot create directory '{}': {}\n", path_root,
-                       std::strerror(errno));
-            error_found = true;
-            break;
-          }
-        }
-        else if (!S_ISDIR(st.st_mode)) {
-          errno = ENOTDIR;
-          fmt::print(errmsg, "ERROR: Path '{}' is not a directory.\n", path_root);
-          error_found = true;
-          break;
-        }
-        path_root += "/";
-      }
-    }
-    else {
-      // Give the other processors something to say in case there is an error.
-      fmt::print(errmsg,
-                 "ERROR: Could not create path. See processor 0 output for more details.\n");
-    }
-
-    // Sync all processors with error status...
-    // All processors but 0 will have error_found=false
-    // Processor 0 will have error_found = true or false depending on path
-    // result.
-    int is_error = error_found ? 1 : 0;
-    error_found  = (util().global_minmax(is_error, Ioss::ParallelUtils::DO_MAX) == 1);
-
-    if (error_found) {
-      IOSS_ERROR(errmsg);
-    }
   }
 
   const std::string &DatabaseIO::decoded_filename() const
@@ -488,7 +480,7 @@ namespace Ioss {
   {
     IOSS_FUNC_ENTER(m_);
     if (m_timeStateInOut) {
-      m_stateStart = std::chrono::high_resolution_clock::now();
+      m_stateStart = std::chrono::steady_clock::now();
     }
     return begin_state__(state, time);
   }
@@ -497,7 +489,7 @@ namespace Ioss {
     IOSS_FUNC_ENTER(m_);
     bool res = end_state__(state, time);
     if (m_timeStateInOut) {
-      auto finish = std::chrono::high_resolution_clock::now();
+      auto finish = std::chrono::steady_clock::now();
       log_time(m_stateStart, finish, state, time, is_input(), singleProcOnly, util_);
     }
     return res;
@@ -566,8 +558,8 @@ namespace Ioss {
   void DatabaseIO::create_group(EntityType /*type*/, const std::string &type_name,
                                 const std::vector<std::string> &group_spec, const T * /*set_type*/)
   {
-    fmt::print(IOSS_WARNING,
-               "WARNING: Grouping of {0} sets is not yet implemented.\n"
+    fmt::print(Ioss::WARNING(),
+               "Grouping of {0} sets is not yet implemented.\n"
                "         Skipping the creation of {0} set '{1}'\n\n",
                type_name, group_spec[0]);
   }
@@ -621,11 +613,10 @@ namespace Ioss {
         }
       }
       else {
-        fmt::print(
-            IOSS_WARNING,
-            "WARNING: While creating the grouped surface '{}', the surface '{}' does not exist. "
-            "This surface will skipped and not added to the group.\n\n",
-            group_spec[0], group_spec[i]);
+        fmt::print(Ioss::WARNING(),
+                   "While creating the grouped surface '{}', the surface '{}' does not exist. "
+                   "This surface will skipped and not added to the group.\n\n",
+                   group_spec[0], group_spec[i]);
       }
     }
   }
@@ -636,7 +627,7 @@ namespace Ioss {
   // have to check each face (or group of faces) individually.
   void DatabaseIO::set_common_side_topology() const
   {
-    DatabaseIO *new_this = const_cast<DatabaseIO *>(this);
+    auto *new_this = const_cast<DatabaseIO *>(this);
 
     bool                         first          = true;
     const ElementBlockContainer &element_blocks = get_region()->get_element_blocks();
@@ -703,11 +694,11 @@ namespace Ioss {
   {
     if (!omissions.empty()) {
       blockOmissions.assign(omissions.cbegin(), omissions.cend());
-      std::sort(blockOmissions.begin(), blockOmissions.end());
+      Ioss::sort(blockOmissions.begin(), blockOmissions.end());
     }
     if (!inclusions.empty()) {
       blockInclusions.assign(inclusions.cbegin(), inclusions.cend());
-      std::sort(blockInclusions.begin(), blockInclusions.end());
+      Ioss::sort(blockInclusions.begin(), blockInclusions.end());
     }
   }
 
@@ -726,7 +717,6 @@ namespace Ioss {
     // This is used in other code speed up some tests.
 
     // Spheres and Circle have no faces/edges, so handle them special...
-    bool all_sphere = true;
 
     if (sideTopology.empty()) {
       // Set contains (parent_element, boundary_topology) pairs...
@@ -734,6 +724,7 @@ namespace Ioss {
 
       const ElementBlockContainer &element_blocks = get_region()->get_element_blocks();
 
+      bool all_sphere = true;
       for (auto &block : element_blocks) {
         const ElementTopology *elem_type = block->topology();
         const ElementTopology *side_type = elem_type->boundary_type();
@@ -767,7 +758,7 @@ namespace Ioss {
       assert(!side_topo.empty());
       assert(sideTopology.empty());
       // Copy into the sideTopology container...
-      DatabaseIO *new_this = const_cast<DatabaseIO *>(this);
+      auto *new_this = const_cast<DatabaseIO *>(this);
       std::copy(side_topo.cbegin(), side_topo.cend(), std::back_inserter(new_this->sideTopology));
     }
     assert(!sideTopology.empty());
@@ -853,7 +844,7 @@ namespace Ioss {
         if (int_byte_size_api() == 8) {
           std::vector<int64_t> conn;
           eb->get_field_data("connectivity_raw", conn);
-          for (auto node : conn) {
+          for (auto &node : conn) {
             assert(node > 0 && node - 1 < nodeCount);
             node_used[node - 1] = blk_position + 1;
           }
@@ -861,7 +852,7 @@ namespace Ioss {
         else {
           std::vector<int> conn;
           eb->get_field_data("connectivity_raw", conn);
-          for (auto node : conn) {
+          for (auto &node : conn) {
             assert(node > 0 && node - 1 < nodeCount);
             node_used[node - 1] = blk_position + 1;
           }
@@ -894,7 +885,7 @@ namespace Ioss {
       }
 
       // Now sort by increasing processor number.
-      std::sort(proc_node.begin(), proc_node.end());
+      Ioss::sort(proc_node.begin(), proc_node.end());
 
       // Pack the data: global_node_id, bits for each block, ...
       // Use 'int' as basic type...
@@ -945,8 +936,10 @@ namespace Ioss {
       assert(result != MPI_SUCCESS || non_zero == req_cnt);
 
       if (result != MPI_SUCCESS) {
-        fmt::print(stderr, "ERROR: MPI_Irecv error on processor {} in {}", util().parallel_rank(),
+        std::ostringstream errmsg;
+        fmt::print(errmsg, "ERROR: MPI_Irecv error on processor {} in {}", util().parallel_rank(),
                    __func__);
+        IOSS_ERROR(errmsg);
       }
 
       int local_error  = (MPI_SUCCESS == result) ? 0 : 1;
@@ -973,8 +966,10 @@ namespace Ioss {
       assert(result != MPI_SUCCESS || non_zero == req_cnt);
 
       if (result != MPI_SUCCESS) {
-        fmt::print(stderr, "ERROR: MPI_Rsend error on processor {} in {}", util().parallel_rank(),
+        std::ostringstream errmsg;
+        fmt::print(errmsg, "ERROR: MPI_Rsend error on processor {} in {}", util().parallel_rank(),
                    __func__);
+        IOSS_ERROR(errmsg);
       }
 
       local_error  = (MPI_SUCCESS == result) ? 0 : 1;
@@ -986,11 +981,13 @@ namespace Ioss {
         IOSS_ERROR(errmsg);
       }
 
-      result = MPI_Waitall(req_cnt, TOPTR(request), TOPTR(status));
+      result = MPI_Waitall(req_cnt, request.data(), status.data());
 
       if (result != MPI_SUCCESS) {
-        fmt::print(stderr, "ERROR: MPI_Waitall error on processor {} in {}", util().parallel_rank(),
+        std::ostringstream errmsg;
+        fmt::print(errmsg, "ERROR: MPI_Waitall error on processor {} in {}", util().parallel_rank(),
                    __func__);
+        IOSS_ERROR(errmsg);
       }
 
       // Unpack the data and update the inv_con arrays for boundary
@@ -1048,7 +1045,7 @@ namespace Ioss {
       }
 
       std::vector<unsigned> out_data(element_blocks.size() * bits_size);
-      MPI_Allreduce((void *)TOPTR(data), TOPTR(out_data), static_cast<int>(data.size()),
+      MPI_Allreduce((void *)data.data(), out_data.data(), static_cast<int>(data.size()),
                     MPI_UNSIGNED, MPI_BOR, util().communicator());
 
       offset = 0;
@@ -1126,6 +1123,32 @@ namespace Ioss {
     return elementBlockBoundingBoxes[eb->name()];
   }
 
+  AxisAlignedBoundingBox DatabaseIO::get_bounding_box(const Ioss::NodeBlock *nb) const
+  {
+    std::vector<double> coordinates;
+    nb->get_field_data("mesh_model_coordinates", coordinates);
+    ssize_t nnode = nb->entity_count();
+    ssize_t ndim  = nb->get_property("component_degree").get_int();
+
+    double xmin, ymin, zmin, xmax, ymax, zmax;
+    calc_bounding_box(ndim, nnode, coordinates, xmin, ymin, zmin, xmax, ymax, zmax);
+
+    std::vector<double> minmax;
+    minmax.reserve(6);
+    minmax.push_back(xmin);
+    minmax.push_back(ymin);
+    minmax.push_back(zmin);
+    minmax.push_back(-xmax);
+    minmax.push_back(-ymax);
+    minmax.push_back(-zmax);
+
+    util().global_array_minmax(minmax, Ioss::ParallelUtils::DO_MIN);
+
+    AxisAlignedBoundingBox bbox(minmax[0], minmax[1], minmax[2], -minmax[3], -minmax[4],
+                                -minmax[5]);
+    return bbox;
+  }
+
   AxisAlignedBoundingBox DatabaseIO::get_bounding_box(const Ioss::StructuredBlock *sb) const
   {
     ssize_t ndim = sb->get_property("component_degree").get_int();
@@ -1151,14 +1174,14 @@ namespace Ioss {
       zz     = std::make_pair(*(z.first), *(z.second));
     }
 
-    return AxisAlignedBoundingBox(xx.first, yy.first, zz.first, xx.second, yy.second, zz.second);
+    return {xx.first, yy.first, zz.first, xx.second, yy.second, zz.second};
   }
 } // namespace Ioss
 
 namespace {
-  void log_time(std::chrono::time_point<std::chrono::high_resolution_clock> &start,
-                std::chrono::time_point<std::chrono::high_resolution_clock> &finish,
-                int current_state, double state_time, bool is_input, bool single_proc_only,
+  void log_time(std::chrono::time_point<std::chrono::steady_clock> &start,
+                std::chrono::time_point<std::chrono::steady_clock> &finish, int current_state,
+                double state_time, bool is_input, bool single_proc_only,
                 const Ioss::ParallelUtils &util)
   {
     std::vector<double> all_times;
@@ -1185,7 +1208,7 @@ namespace {
         fmt::print(strm, "{} (ms)\n", total);
       }
       else if (util.parallel_size() > 4) {
-        std::sort(all_times.begin(), all_times.end());
+        Ioss::sort(all_times.begin(), all_times.end());
         fmt::print(strm, " Min: {}\tMax: {}\tMed: {}", all_times.front(), all_times.back(),
                    all_times[all_times.size() / 2]);
       }
@@ -1198,7 +1221,7 @@ namespace {
       if (util.parallel_size() > 1) {
         fmt::print(strm, "\tTot: {} (ms)\n", total);
       }
-      fmt::print(stderr, "{}", strm.str());
+      fmt::print(Ioss::DEBUG(), "{}", strm.str());
     }
   }
 
@@ -1217,7 +1240,7 @@ namespace {
       if (util.parallel_rank() == 0 || single_proc_only) {
         const std::string &           name = entity->name();
         std::ostringstream            strm;
-        auto                          now  = std::chrono::high_resolution_clock::now();
+        auto                          now  = std::chrono::steady_clock::now();
         std::chrono::duration<double> diff = now - initial_time;
         fmt::print(strm, "{} [{:.3f}]\t", symbol, diff.count());
 
@@ -1240,7 +1263,7 @@ namespace {
           fmt::print(strm, " T:{:8d}", total);
         }
         fmt::print(strm, "\t{}/{}\n", name, field.get_name());
-        fmt::print(stderr, "{}", strm.str());
+        fmt::print(Ioss::DEBUG(), "{}", strm.str());
       }
     }
     else {
@@ -1248,7 +1271,7 @@ namespace {
         util.barrier();
       }
       if (util.parallel_rank() == 0 || single_proc_only) {
-        auto                          time_now = std::chrono::high_resolution_clock::now();
+        auto                          time_now = std::chrono::steady_clock::now();
         std::chrono::duration<double> diff     = time_now - initial_time;
         fmt::print("{} [{:.3f}]\n", symbol, diff.count());
       }

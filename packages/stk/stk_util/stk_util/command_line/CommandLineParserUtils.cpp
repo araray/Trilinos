@@ -1,61 +1,22 @@
-#include <stk_util/parallel/Parallel.hpp>
-#include <stk_util/command_line/CommandLineParser.hpp>
-#include <stk_util/command_line/CommandLineParserParallel.hpp>
-#include <stk_util/command_line/CommandLineParserUtils.hpp>
-#include <stk_util/environment/FileUtils.hpp>
-#include <stk_util/registry/ProductRegistry.hpp>
-#include <fstream>
-#include <string>
+#include "stk_util/command_line/CommandLineParserUtils.hpp"
+#include "stk_util/command_line/CommandLineParser.hpp"          // for CommandLineParser, Comman...
+#include "stk_util/command_line/CommandLineParserParallel.hpp"  // for CommandLineParserParallel
+#include "stk_util/environment/Env.hpp"                         // for outputP0
+#include "stk_util/parallel/Parallel.hpp"                       // for MPI_Finalize, parallel_ma...
+#include "stk_util/registry/ProductRegistry.hpp"                // for get_version
+#include "stk_util/util/ReportHandler.hpp"                      // for ThrowRequireMsg
+#include "stk_util/util/string_utils.hpp"                       // for tailname
+#include <cstdlib>                                              // for exit
+#include <fstream>                                              // for endl, basic_ostream, ostream
+#include <string>                                               // for allocator, string, operator+
 
 namespace stk {
-
-std::string angle_it(const std::string &s)
-{
-    return "<" + s + ">";
-}
-std::string bracket_it(const std::string &s)
-{
-    return "[" + s + "]";
-}
-std::string dash_it(const std::string &s)
-{
-    return "--" + s;
-}
-
-std::string rm_dashes(const std::string &s)
-{
-  size_t pos = s.find_first_not_of(" -");
-  if (pos != std::string::npos) {
-    return s.substr(pos);
-  }
-  return s;
-}
-
-std::string get_substring_before_comma(const std::string& s)
-{
-  size_t pos = s.find(",");
-  return s.substr(0,pos);
-}
-
-std::string get_substring_after_comma(const std::string& s)
-{
-  size_t pos = s.find(",");
-  if (pos != std::string::npos) {
-    return s.substr(pos+1);
-  }
-  return "";
-}
 
 std::string get_quick_error(const std::string &execName, const std::string &quickExample)
 {
     std::string s = quickExample;
     s += "Use '" + execName + " --help' for more information.";
     return s;
-}
-
-std::string get_version(const std::string &executableName)
-{
-    return executableName + " " + stk::ProductRegistry::version();
 }
 
 void parse_command_line(int argc,
@@ -65,7 +26,7 @@ void parse_command_line(int argc,
                         stk::CommandLineParserParallel& commandLine,
                         MPI_Comm comm)
 {
-    std::string execName = stk::util::tailname(argv[0]);
+    std::string execName = stk::tailname(argv[0]);
     stk::CommandLineParser::ParseState state = commandLine.parse(argc, argv);
     if(state == stk::CommandLineParser::ParseVersionOnly)
         stk::parallel::print_and_exit(stk::get_version(execName), comm);
@@ -75,7 +36,7 @@ void parse_command_line(int argc,
         std::string usage = quickExample + commandLine.get_usage() + longExample;
         stk::parallel::print_and_exit(usage, comm);
     }
-    stk::parallel::require(state == stk::CommandLineParser::ParseComplete, stk::get_quick_error(execName, quickExample), comm);
+    ThrowRequireMsg(state == stk::CommandLineParser::ParseComplete, stk::get_quick_error(execName, quickExample));
 }
 
 namespace parallel {
@@ -83,30 +44,9 @@ namespace parallel {
 void print_and_exit(const std::string &msg, MPI_Comm comm)
 {
     if(stk::parallel_machine_rank(comm) == 0)
-        std::cerr << msg << std::endl;
-    MPI_Finalize();
+        sierra::Env::outputP0() << msg << std::endl;
+    stk::parallel_machine_finalize();
     std::exit(0);
-}
-
-void require(bool requirement, const std::string &msg, MPI_Comm comm)
-{
-    if(!requirement)
-        print_and_exit(msg, comm);
-}
-
-bool does_file_exist(const std::string& filename)
-{
-    bool exists = true;
-    if(!std::ifstream(filename))
-        exists = false;
-    return exists;
-}
-
-void require_file_exists(const std::string& inFile, const std::string& execName, const std::string& quickExample, MPI_Comm comm)
-{
-    require(does_file_exist(inFile),
-                           "Error: input file does not exist.\n" + stk::get_quick_error(execName, quickExample),
-                           comm);
 }
 
 }

@@ -74,6 +74,8 @@ public :
     ,m_comm(global_comm)
     ,m_coordinates_field (m_mesh.mesh_meta_data().coordinate_field())
     ,m_transfer_fields   (fields)
+    ,m_lastKey(stk::mesh::EntityKey::INVALID)
+    ,m_lastEntity()
   {
     m_entity_keys.reserve(entities.size());
     for (size_t i=0 ; i<entities.size() ; ++i) {
@@ -90,22 +92,42 @@ public :
     }
   }
 
-  virtual ~TransferCopyByIdStkMeshAdapter() {}
+  virtual ~TransferCopyByIdStkMeshAdapter() override = default;
 
-  const void* field_data(const Mesh_ID & id, const unsigned field_index) const
+  stk::mesh::Entity get_cached_entity(stk::mesh::EntityKey key) const
+  {
+    if (key != m_lastKey) {
+      m_lastKey = key;
+      m_lastEntity = m_mesh.get_entity(key);
+    }
+    return m_lastEntity;
+  }
+
+  const void* field_data(const Mesh_ID & id, const unsigned field_index) const override
   {
     EntityKey key(static_cast<EntityKey::entity_key_t>(id));
-    const mesh::Entity entity = m_mesh.get_entity(key);
+    const mesh::Entity entity = get_cached_entity(key);
     stk::mesh::FieldBase* field=m_transfer_fields[field_index];
     return reinterpret_cast<const void*>(stk::mesh::field_data(*field, entity));
   }
 
-  void* field_data(const Mesh_ID & id, const unsigned field_index)
+  void* field_data(const Mesh_ID & id, const unsigned field_index) override
   {
     EntityKey key(static_cast<EntityKey::entity_key_t>(id));
-    const mesh::Entity entity = m_mesh.get_entity(key);
+    const mesh::Entity entity = get_cached_entity(key);
     stk::mesh::FieldBase* field=m_transfer_fields[field_index];
     return reinterpret_cast<void*>(stk::mesh::field_data(*field, entity));
+  }
+
+  std::string field_name(const unsigned field_index) const override
+  {
+    ThrowRequireMsg(field_index < m_transfer_fields.size(),
+                    "P" << m_mesh.parallel_rank() <<
+                    " stk::transfer::StkMeshAdapter Error, attempt to access invalid field index [" << field_index <<
+                    "] in get_field_name(const unsigned field_index) is invalid!");
+
+    stk::mesh::FieldBase* field=m_transfer_fields[field_index];
+    return field->name();
   }
 
   stk::mesh::FieldBase* get_field(const unsigned field_index)
@@ -119,38 +141,38 @@ public :
     return field;
   }
 
-  unsigned field_data_size(const Mesh_ID & id, const unsigned field_index) const
+  unsigned field_data_size(const Mesh_ID & id, const unsigned field_index) const override
   {
     EntityKey key(static_cast<EntityKey::entity_key_t>(id));
-    const mesh::Entity entity    = m_mesh.get_entity(key);
+    const mesh::Entity entity = get_cached_entity(key);
     const mesh::FieldBase &field = *m_transfer_fields[field_index];
 
     return stk::mesh::field_bytes_per_entity(field, entity);
   }
 
-  unsigned num_fields() const
+  unsigned num_fields() const override
   {
     return m_transfer_fields.size();
   }
 
-  ParallelMachine comm() const
+  ParallelMachine comm() const override
   {
     return m_comm;
   }
 
-  const MeshIDVector & get_mesh_ids() const
+  const MeshIDVector & get_mesh_ids() const override
   {
     return m_ids;
   }
 
-  bool is_locally_owned(const Mesh_ID & k) const
+  bool is_locally_owned(const Mesh_ID & k) const override
   {
     EntityKey key(static_cast<EntityKey::entity_key_t>(k));
-    Entity entity = m_mesh.get_entity(key);
+    const mesh::Entity entity = get_cached_entity(key);
     return m_mesh.is_valid(entity) && m_mesh.bucket(entity).owned();
   }
 
-  std::string print_mesh_id(const Mesh_ID& k) const
+  std::string print_mesh_id(const Mesh_ID& k) const override
   {
     EntityKey key(static_cast<EntityKey::entity_key_t>(k));
     std::ostringstream oss;
@@ -158,12 +180,12 @@ public :
     return oss.str();
   }
 
-  void centroid(const Mesh_ID& k, double coords[3]) const
+  void centroid(const Mesh_ID& k, double coords[3]) const override
   {
     for (int i=0 ; i<3 ; ++i) { coords[i] = 0.0; }
     const unsigned dimension = m_mesh.mesh_meta_data().spatial_dimension();
     EntityKey key(static_cast<EntityKey::entity_key_t>(k));
-    Entity entity = m_mesh.get_entity(key);
+    const mesh::Entity entity = get_cached_entity(key);
 
     if (key.rank() == stk::topology::NODE_RANK) {
       const double* c = static_cast<const double*>(stk::mesh::field_data(*m_coordinates_field, entity));
@@ -187,13 +209,51 @@ public :
     }
   }
 
-private:
+  DataTypeKey::data_t get_field_type(const unsigned fieldIndex) const override
+  { 
+    ThrowRequireMsg(fieldIndex < m_transfer_fields.size(),
+                    "P" << m_mesh.parallel_rank() <<
+                    " stk::transfer::StkMeshAdapter Error, attempt to access invalid field index [" << fieldIndex <<
+                    "] in get_field_type(const unsigned fieldIndex) is invalid!");
+
+    stk::mesh::FieldBase* field=m_transfer_fields[fieldIndex];
+
+    DataTypeKey::data_t dataType( DataTypeKey::data_t::INVALID_TYPE );
+
+ 
+    if(field->type_is<unsigned>()) {
+      dataType = DataTypeKey::data_t::UNSIGNED_INTEGER;
+    }
+    else if(field->type_is<int>()) {
+      dataType = DataTypeKey::data_t::INTEGER;
+    }
+    else if(field->type_is<int64_t>()) {
+      dataType = DataTypeKey::data_t::LONG_INTEGER;
+    }
+    else if(field->type_is<uint64_t>()) {
+      dataType = DataTypeKey::data_t::UNSIGNED_INTEGER_64;
+    }
+    else if(field->type_is<double>()) {
+      dataType = DataTypeKey::data_t::DOUBLE;
+    }
+    else if(field->type_is<long double>()) {
+      dataType = DataTypeKey::data_t::LONG_DOUBLE;
+    } else {
+      ThrowRequireMsg(false, "Unsupported data type");
+    }
+    return dataType;
+  }
+   
+
+protected:
   stk::mesh::BulkData & m_mesh;
   stk::ParallelMachine m_comm;
   const stk::mesh::FieldBase* m_coordinates_field;
   FieldVector m_transfer_fields;
   EntityKeyVector m_entity_keys;
   MeshIDVector m_ids;
+  mutable stk::mesh::EntityKey m_lastKey;
+  mutable stk::mesh::Entity m_lastEntity;
 };
 
 } // transfer

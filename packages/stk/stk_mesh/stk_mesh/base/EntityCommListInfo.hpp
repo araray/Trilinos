@@ -35,6 +35,7 @@
 #define STK_ENTITYCOMMLIST_INFO_HPP
 
 #include <vector>
+#include <stk_mesh/base/Types.hpp>
 #include <stk_mesh/base/EntityKey.hpp>
 #include <stk_mesh/base/Entity.hpp>
 
@@ -48,8 +49,6 @@ struct EntityCommListInfo
 {
   EntityKey key;
   Entity    entity; // Might be invalid if entity has been deleted.
-  Bucket* bucket;
-  size_t bucket_ordinal;
   const EntityComm* entity_comm; // Might be NULL if entity has been deleted.
 };
 

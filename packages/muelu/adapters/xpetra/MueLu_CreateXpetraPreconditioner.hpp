@@ -1,9 +1,48 @@
-/*
- * MueLu_CreateXpetraPreconditioner.hpp
- *
- *  Created on: Feb 5, 2016
- *      Author: tawiesn
- */
+// @HEADER
+//
+// ***********************************************************************
+//
+//        MueLu: A package for multigrid based preconditioning
+//                  Copyright 2012 Sandia Corporation
+//
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+// the U.S. Government retains certain rights in this software.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+// 1. Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright
+// notice, this list of conditions and the following disclaimer in the
+// documentation and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the Corporation nor the names of the
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
+// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+// LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+// Questions? Contact
+//                    Jonathan Hu       (jhu@sandia.gov)
+//                    Andrey Prokopenko (aprokop@sandia.gov)
+//                    Ray Tuminaro      (rstumin@sandia.gov)
+//
+// ***********************************************************************
+//
+// @HEADER
 
 #ifndef PACKAGES_MUELU_ADAPTERS_XPETRA_MUELU_CREATEXPETRAPRECONDITIONER_HPP_
 #define PACKAGES_MUELU_ADAPTERS_XPETRA_MUELU_CREATEXPETRAPRECONDITIONER_HPP_
@@ -105,7 +144,7 @@ namespace MueLu {
       const bool writeZeroTimers  = false;
       const bool ignoreZeroTimers = true;
       const std::string filter    = timerName;
-      Teuchos::TimeMonitor::summarize(op->getRowMap()->getComm().ptr(), std::cout, alwaysWriteLocal, writeGlobalStats,
+      Teuchos::TimeMonitor::summarize(op->getRowMap()->getComm().ptr(), H->GetOStream(Statistics0), alwaysWriteLocal, writeGlobalStats,
                                       writeZeroTimers, Teuchos::Union, filter, ignoreZeroTimers);
     }
 
@@ -201,7 +240,7 @@ namespace MueLu {
       const bool writeZeroTimers  = false;
       const bool ignoreZeroTimers = true;
       const std::string filter    = timerName;
-      Teuchos::TimeMonitor::summarize(A->getRowMap()->getComm().ptr(), std::cout, alwaysWriteLocal, writeGlobalStats,
+      Teuchos::TimeMonitor::summarize(A->getRowMap()->getComm().ptr(), H->GetOStream(Statistics0), alwaysWriteLocal, writeGlobalStats,
                                       writeZeroTimers, Teuchos::Union, filter, ignoreZeroTimers);
     }
 
@@ -209,63 +248,6 @@ namespace MueLu {
   }
 
 
-#ifdef HAVE_MUELU_DEPRECATED_CODE
-
-  /*!
-    @brief Helper function to create a MueLu preconditioner that can be used by Xpetra.
-    @ingroup MueLuAdapters
-    Given an Xpetra::Matrix, this function returns a constructed MueLu preconditioner.
-    @param[in] inA Matrix
-    @param[in] inParamList Parameter list
-    @param[in] inCoords  Coordinates.  The first vector is x, the second (if necessary) y, the third (if necessary) z.
-    @param[in] inNullspace Near nullspace of the matrix.
-  */
-
-  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  MUELU_DEPRECATED
-  Teuchos::RCP<MueLu::Hierarchy<Scalar,LocalOrdinal,GlobalOrdinal,Node> >
-  CreateXpetraPreconditioner(Teuchos::RCP<Xpetra::Matrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > op,
-                             const Teuchos::ParameterList& inParamList,
-                             Teuchos::RCP<Xpetra::MultiVector<typename Teuchos::ScalarTraits<Scalar>::coordinateType, LocalOrdinal, GlobalOrdinal, Node> > coords,
-                             Teuchos::RCP<Xpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > nullspace) {
-
-    Teuchos::ParameterList userParamList = inParamList.sublist("user data");
-    if (Teuchos::nonnull(coords)) {
-      userParamList.set<RCP<Xpetra::MultiVector<typename Teuchos::ScalarTraits<Scalar>::coordinateType, LocalOrdinal, GlobalOrdinal, Node> > >("Coordinates", coords);
-    }
-    if(Teuchos::nonnull(nullspace)) {
-      userParamList.set<RCP<Xpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > >("Nullspace", nullspace);
-    }
-
-    return CreateXpetraPreconditioner(op, inParamList);
-
-  }
-
-  /*!
-    @brief Helper function to create a MueLu preconditioner that can be used by Xpetra.
-    @ingroup MueLuAdapters
-    Given an Xpetra::Matrix, this function returns a constructed MueLu preconditioner.
-    @param[in] inA Matrix
-    @param[in] inParamList Parameter list
-    @param[in] inCoords (optional) Coordinates.  The first vector is x, the second (if necessary) y, the third (if necessary) z.
-  */
-
-  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  MUELU_DEPRECATED
-  Teuchos::RCP<MueLu::Hierarchy<Scalar,LocalOrdinal,GlobalOrdinal,Node> >
-  CreateXpetraPreconditioner(Teuchos::RCP<Xpetra::Matrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > op,
-                             const Teuchos::ParameterList& inParamList,
-                             Teuchos::RCP<Xpetra::MultiVector<typename Teuchos::ScalarTraits<Scalar>::coordinateType, LocalOrdinal, GlobalOrdinal, Node> > coords) {
-
-    Teuchos::ParameterList mueluParams = inParamList;
-    Teuchos::ParameterList& userParamList = mueluParams.sublist("user data");
-    if (Teuchos::nonnull(coords)) {
-      userParamList.set<RCP<Xpetra::MultiVector<typename Teuchos::ScalarTraits<Scalar>::coordinateType, LocalOrdinal, GlobalOrdinal, Node> > >("Coordinates", coords);
-    }
-    return CreateXpetraPreconditioner(op, mueluParams);
-  }
-
-#endif // HAVE_MUELU_DEPRECATED_CODE
 
 } //namespace
 

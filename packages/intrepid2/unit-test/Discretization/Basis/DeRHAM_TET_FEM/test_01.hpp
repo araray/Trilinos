@@ -77,7 +77,7 @@ namespace Test {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
@@ -142,13 +142,10 @@ int DeRHAM_TET_FEM_Test01(const bool verbose) {
       switch (comp) {
       case 0:
         return std::sin(x)*std::sin(y)*std::sin(z)+2.0*std::cos(x)*std::cos(y)*std::cos(z);
-        break;
       case 1:
         return std::exp(x)*std::exp(y)*std::exp(z);
-        break;
       case 2:
         return std::log(x+2)*std::log(y+2)*std::log(z+2);
-        break;
       default:
         return 0;
       }
@@ -285,7 +282,7 @@ int DeRHAM_TET_FEM_Test01(const bool verbose) {
             "\nIts max norm at HGRAD DOF coordinates is: " << maxNorm << std::endl;;
       }
     }
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -421,7 +418,7 @@ int DeRHAM_TET_FEM_Test01(const bool verbose) {
             "\nIts max norm at HCURL DOF coordinates is: " << maxNorm << std::endl;;
       }
     }
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -530,7 +527,7 @@ int DeRHAM_TET_FEM_Test01(const bool verbose) {
       }
 
     }
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";

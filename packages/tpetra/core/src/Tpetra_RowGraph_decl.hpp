@@ -73,12 +73,35 @@ namespace Tpetra {
     //! \name Typedefs
     //@{
     //! The type of local indices in the graph.
-    typedef LocalOrdinal  local_ordinal_type;
+    typedef LocalOrdinal local_ordinal_type;
     //! The type of global indices in the graph.
     typedef GlobalOrdinal global_ordinal_type;
     //! The Kokkos Node type.
-    typedef Node          node_type;
+    typedef Node node_type;
     //@}
+
+    typedef typename
+        Kokkos::View<LocalOrdinal *, typename Node::device_type>::const_type
+        local_inds_device_view_type;
+    typedef typename local_inds_device_view_type::HostMirror::const_type
+        local_inds_host_view_type;
+    typedef typename local_inds_device_view_type::HostMirror
+        nonconst_local_inds_host_view_type;
+
+
+    typedef typename
+        Kokkos::View<GlobalOrdinal *, typename Node::device_type>::const_type
+        global_inds_device_view_type;
+    typedef typename global_inds_device_view_type::HostMirror::const_type
+        global_inds_host_view_type;
+    typedef typename global_inds_device_view_type::HostMirror
+        nonconst_global_inds_host_view_type;
+
+    typedef typename 
+        Kokkos::View<const size_t*, typename Node::device_type>::const_type
+        row_ptrs_device_view_type;
+    typedef typename row_ptrs_device_view_type::HostMirror::const_type
+        row_ptrs_host_view_type;
 
     //! Destructor (virtual for memory safety of derived classes).
     virtual ~RowGraph() {};
@@ -90,10 +113,6 @@ namespace Tpetra {
     virtual Teuchos::RCP<const Teuchos::Comm<int> >
     getComm () const = 0;
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    //! The Kokkos Node instance with which this object was created.
-    virtual TPETRA_DEPRECATED Teuchos::RCP<Node> getNode () const = 0;
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     //! The Map that describes this graph's distribution of rows over processes.
     virtual Teuchos::RCP<const Map<LocalOrdinal,GlobalOrdinal,Node> >
@@ -166,44 +185,6 @@ namespace Tpetra {
     //! Whether fillComplete() has been called (without an intervening resumeFill()).
     virtual bool isFillComplete() const = 0;
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    /// \brief Number of diagonal entries over all processes in the
-    ///   graph's communicator.
-    ///
-    /// \warning DO NOT CALL THIS METHOD!  This method is DEPRECATED
-    ///   and will DISAPPEAR VERY SOON per #2630.
-    virtual global_size_t TPETRA_DEPRECATED getGlobalNumDiags () const = 0;
-
-    /// \brief Number of diagonal entries on the calling process.
-    ///
-    /// \warning DO NOT CALL THIS METHOD!  This method is DEPRECATED
-    ///   and will DISAPPEAR VERY SOON per #2630.
-    virtual size_t TPETRA_DEPRECATED getNodeNumDiags () const = 0;
-
-    /// \brief Whether the graph is locally lower triangular.
-    ///
-    /// \warning DO NOT CALL THIS METHOD!  This method is DEPRECATED
-    ///   and will DISAPPEAR VERY SOON per #2630.
-    ///
-    /// \pre Subclasses reserve the right to impose preconditions on
-    ///   the matrix's state.
-    ///
-    /// \note This is entirely a local property.  That means this
-    ///   method may return different results on different processes.
-    virtual bool TPETRA_DEPRECATED isLowerTriangular () const = 0;
-
-    /// \brief Whether the graph is locally upper triangular.
-    ///
-    /// \warning DO NOT CALL THIS METHOD!  This method is DEPRECATED
-    ///   and will DISAPPEAR VERY SOON per #2630.
-    ///
-    /// \pre Subclasses reserve the right to impose preconditions on
-    ///   the matrix's state.
-    ///
-    /// \note This is entirely a local property.  That means this
-    ///   method may return different results on different processes.
-    virtual bool TPETRA_DEPRECATED isUpperTriangular () const = 0;
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     //@}
     //! @name Access to entries in a row
@@ -224,11 +205,17 @@ namespace Tpetra {
     ///
     /// \pre <tt>getRowMap()->isNodeGlobalElement(gblRow)<tt> is <tt>true</tt>.
     /// \pre <tt>gblColInds.size() >= getNumEntriesInGlobalRow(gblRow)</tt> is <tt>true</tt>.
+
+    virtual void
+    getGlobalRowCopy (const GlobalOrdinal gblRow,
+                      nonconst_global_inds_host_view_type& gblColInds,
+                      size_t& numColInds) const = 0;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
     virtual void
     getGlobalRowCopy (GlobalOrdinal gblRow,
                       const Teuchos::ArrayView<GlobalOrdinal>& gblColInds,
                       size_t& numColInds) const = 0;
-
+#endif
     /// \brief Get a copy of the local column indices in a given row
     ///   of the graph.
     ///
@@ -246,9 +233,15 @@ namespace Tpetra {
     /// \pre <tt>getRowMap()->isNodeLocalElement(lclRow)<tt> is <tt>true</tt>.
     /// \pre <tt>lclColInds.size() >= getNumEntriesInLocalRow(lclRow)</tt> is <tt>true</tt>.
     virtual void
+    getLocalRowCopy (const LocalOrdinal lclRow,
+                     nonconst_local_inds_host_view_type & lclColInds,
+                     size_t& numColInds) const = 0;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+    virtual void
     getLocalRowCopy (LocalOrdinal lclRow,
                      const Teuchos::ArrayView<LocalOrdinal>& lclColInds,
                      size_t& numColInds) const = 0;
+#endif
 
     /// \brief Whether this class implements getLocalRowView() and
     ///   getGlobalRowView().
@@ -289,7 +282,12 @@ namespace Tpetra {
     /// one major release after introducing this class.
     virtual void
     getLocalRowView (const LocalOrdinal lclRow,
+                     local_inds_host_view_type & lclColInds) const = 0;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+    virtual void
+    getLocalRowView (const LocalOrdinal lclRow,
                      Teuchos::ArrayView<const LocalOrdinal>& lclColInds) const;
+#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
     /// \brief Get a const, non-persisting view of the given global
     ///   row's global column indices, as a Teuchos::ArrayView.
@@ -308,7 +306,12 @@ namespace Tpetra {
     /// one major release after introducing this class.
     virtual void
     getGlobalRowView (const GlobalOrdinal gblRow,
+                      global_inds_host_view_type& gblColInds) const = 0;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+    virtual void
+    getGlobalRowView (const GlobalOrdinal gblRow,
                       Teuchos::ArrayView<const GlobalOrdinal>& gblColInds) const;
+#endif
 
     //@}
     //! \name Implementation of Packable interface
@@ -319,8 +322,7 @@ namespace Tpetra {
     pack (const Teuchos::ArrayView<const LocalOrdinal>& exportLIDs,
           Teuchos::Array<GlobalOrdinal>& exports,
           const Teuchos::ArrayView<size_t>& numPacketsPerLID,
-          size_t& constantNumPackets,
-          Distributor& distor) const;
+          size_t& constantNumPackets) const;
     //@}
   }; // class RowGraph
 } // namespace Tpetra

@@ -126,7 +126,7 @@ namespace MueLu {
       } else {
         RCP<BlockedCrsMatrix> bA00 = Teuchos::rcp_dynamic_cast<BlockedCrsMatrix>(A00);
         TEUCHOS_TEST_FOR_EXCEPTION(bA00.is_null()==false, MueLu::Exceptions::RuntimeError,"MueLu::SchurComplementFactory::Build: Mass lumping not implemented. Implement a mass lumping kernel!");
-        diag = Utilities::GetLumpedMatrixDiagonal(A00);
+        diag = Utilities::GetLumpedMatrixDiagonal(*A00);
       }
       // invert diagonal vector. Replace all entries smaller than 1e-4 by one!
       RCP<Vector> D = (!fixing ? Utilities::GetInverse(diag) : Utilities::GetInverse(diag, 1e-4, one));
@@ -134,7 +134,7 @@ namespace MueLu {
       D->scale(Teuchos::as<Scalar>(-one/omega));
       // left scale matrix T with (scaled) diagonal D
       // Copy the value of A01 so we can do the left scale.
-      RCP<Matrix> T = MatrixFactory::BuildCopy(A01);
+      RCP<Matrix> T = MatrixFactory::BuildCopy(A01, false);
       T->leftScale(*D);
 
       // build Schur complement operator
@@ -142,8 +142,8 @@ namespace MueLu {
         TEUCHOS_TEST_FOR_EXCEPTION(T->getRangeMap()->isSameAs(*(A10->getDomainMap())) == false, Exceptions::RuntimeError,
                                    "MueLu::SchurComplementFactory::Build: RangeMap of A01 and domain map of A10 are not the same.");
         RCP<ParameterList> myparams = rcp(new ParameterList);
+        myparams->set("compute global constants", true);
         S = Xpetra::MatrixMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::Multiply(*A10, false, *T, false, GetOStream(Statistics2),true,true,std::string("SchurComplementFactory"),myparams);
-
       } else {
         // nested blocking
         RCP<BlockedCrsMatrix> bA10 = Teuchos::rcp_dynamic_cast<BlockedCrsMatrix>(A10);

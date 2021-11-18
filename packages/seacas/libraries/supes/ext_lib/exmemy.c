@@ -1,39 +1,11 @@
 /*
- * Copyright(C) 2008-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * * Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * * Neither the name of NTESS nor the names of its
- *   contributors may be used to endorse or promote products derived
- *   from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 /*
- * $Id: exmemy.c,v 1.19 2008/12/17 22:47:19 gdsjaar Exp $
  */
 
 /*
@@ -148,16 +120,13 @@ void exmemy(FTNINT *memreq, FTNINT *locblk, FTNINT *memrtn)
   size_t numbytes;
   size_t NumSize; /* Get multiplier which allows us to */
   /* convert everything in terms of Numeric Storage Units. */
-  size_t *block_location;
-  size_t *new_location;
-
   NumSize = sizeof(FTNREAL) / sizeof(char);
 
   /* Normal allocation call */
   if (*memreq > 0) { /* Then we need more memory. */
     numbytes = (*memreq) * NumSize;
 
-    block_location = (size_t *)malloc(numbytes);
+    size_t *block_location = (size_t *)malloc(numbytes);
 
     /* printf("%11x %11d\n", block_location, numbytes); */
     /* convert back to numerical storage units */
@@ -170,7 +139,7 @@ void exmemy(FTNINT *memreq, FTNINT *locblk, FTNINT *memrtn)
      */
     assert(block_location == (size_t *)((size_t)(*locblk) * NumSize));
 
-    if (block_location == 0) {
+    if (block_location == NULL) {
       /*
        * Then the call to 'malloc' has failed, most likely due to
        * asking for more memory than what's available.
@@ -196,7 +165,7 @@ void exmemy(FTNINT *memreq, FTNINT *locblk, FTNINT *memrtn)
     /* Adjust '*locblk' to be the raw address.  It is passed
      * in in terms of Numeric Storage Units.
      */
-    block_location = (size_t *)((size_t)(*locblk) * NumSize);
+    size_t *block_location = (size_t *)((size_t)(*locblk) * NumSize);
 
     if (*memrtn == -999 || *memreq == 0) {
       /* Handle normal 'free' */
@@ -208,10 +177,10 @@ void exmemy(FTNINT *memreq, FTNINT *locblk, FTNINT *memrtn)
       /* realloc call to shrink/grow memory */
       numbytes = -(*memreq) * NumSize;
       /* printf("PRE:  %11x %11d (realloc)\n", block_location, numbytes); */
-      new_location = realloc(block_location, numbytes);
+      size_t *new_location = realloc(block_location, numbytes);
       /* printf("POST: %11x %11d\n", new_location, numbytes); */
 
-      if (new_location == 0 && *memreq > 0) {
+      if (new_location == NULL && *memreq > 0) {
         /*
          * Then the call to 'realloc' has failed, most likely due to
          * asking for more memory than what's available.
@@ -231,24 +200,21 @@ void exmemy(FTNINT *memreq, FTNINT *locblk, FTNINT *memrtn)
 }
 
 #ifdef TEST
-#include <assert.h>
 #include <stdio.h>
 
 int main(int argc, char **argv)
 {
-  int    i;
-  FTNINT memreq;
   FTNINT locblk;
   FTNINT memrtn;
-  size_t first;
-  size_t last;
+  size_t first = 0;
+  size_t last  = 0;
 
   assert(sizeof(FTNREAL) == sizeof(FTNINT));
 
   printf("Size of FORTRAN int/real  = %lu bytes\n", sizeof(FTNINT));
 
-  memreq = 10000000; /* 10 Million words */
-  for (i = 0; i < 1000; i++) {
+  FTNINT memreq = 10000000; /* 10 Million words */
+  for (int i = 0; i < 1000; i++) {
 #if defined(ADDC_)
     exmemy_(&memreq, &locblk, &memrtn);
 #else

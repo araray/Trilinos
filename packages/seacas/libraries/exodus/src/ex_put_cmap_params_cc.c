@@ -1,36 +1,9 @@
 /*
- * Copyright (c) 2005-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 /*****************************************************************************/
 /*****************************************************************************/
@@ -62,17 +35,17 @@
 #include <exodusII.h>     // for ex_err, etc
 #include <exodusII_int.h> // for EX_FATAL, ex__leavedef, etc
 
-int ex_put_cmap_params_cc(int exoid, void_int *node_cmap_ids, void_int *node_cmap_node_cnts,
-                          void_int *node_proc_ptrs, void_int *elem_cmap_ids,
-                          void_int *elem_cmap_elem_cnts, void_int *elem_proc_ptrs)
+int ex_put_cmap_params_cc(int exoid, const void_int *node_cmap_ids,
+                          const void_int *node_cmap_node_cnts, const void_int *node_proc_ptrs,
+                          const void_int *elem_cmap_ids, const void_int *elem_cmap_elem_cnts,
+                          const void_int *elem_proc_ptrs)
 {
-  size_t num_n_comm_maps, num_e_comm_maps, num_procs_in_file;
-  int    status, icm, n_varid[2], e_varid[2], iproc;
+  size_t num_n_comm_maps, num_e_comm_maps;
+  int    status, n_varid[2], e_varid[2], iproc;
   int    varid, n_dimid[1], e_dimid[1];
   int    n_varid_idx, e_varid_idx;
   int    num_icm;
   size_t start[1], count[1];
-  size_t ecnt_cmap, ncnt_cmap;
 
   long long nl_ecnt_cmap, nl_ncnt_cmap;
   void_int *n_var_idx = NULL;
@@ -81,14 +54,16 @@ int ex_put_cmap_params_cc(int exoid, void_int *node_cmap_ids, void_int *node_cma
   int nmstat;
 
   char errmsg[MAX_ERR_LENGTH];
-  int  format;
   int  index_type, bulk_type;
   /*-----------------------------Execution begins-----------------------------*/
 
   EX_FUNC_ENTER();
-  ex__check_valid_file_id(exoid, __func__);
+  if (ex__check_valid_file_id(exoid, __func__) == EX_FATAL) {
+    EX_FUNC_LEAVE(EX_FATAL);
+  }
 
   /* See if using NC_FORMAT_NETCDF4 format... */
+  int format;
   nc_inq_format(exoid, &format);
   if ((ex_int64_status(exoid) & EX_BULK_INT64_DB) || (format == NC_FORMAT_NETCDF4)) {
     index_type = NC_INT64;
@@ -111,6 +86,7 @@ int ex_put_cmap_params_cc(int exoid, void_int *node_cmap_ids, void_int *node_cma
     EX_FUNC_LEAVE(EX_FATAL);
   }
 
+  size_t num_procs_in_file;
   if ((status = nc_inq_dimlen(exoid, n_dimid[0], &num_procs_in_file)) != NC_NOERR) {
     snprintf(errmsg, MAX_ERR_LENGTH,
              "ERROR: failed to find length of dimension \"%s\" in file ID %d", DIM_NUM_PROCS_F,
@@ -177,6 +153,7 @@ file ID %d",
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get variable \"%s\" from file ID %d",
                VAR_N_COMM_INFO_IDX, exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
+      free(n_var_idx);
       EX_FUNC_LEAVE(EX_FATAL);
     }
   } /* "if (num_n_comm_maps > 0)" */
@@ -231,6 +208,7 @@ file ID %d",
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get variable \"%s\" from file ID %d",
                VAR_E_COMM_INFO_IDX, exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
+      free(e_var_idx);
       EX_FUNC_LEAVE(EX_FATAL);
     }
   } /* "if (num_e_comm_maps >0)" */
@@ -260,7 +238,7 @@ file ID %d",
     }
 
     /* now add up all of the nodal communications maps */
-    ncnt_cmap = 0;
+    size_t ncnt_cmap = 0;
     for (iproc = 0; iproc < num_procs_in_file; iproc++) {
       if (index_type == NC_INT64) {
         num_icm = ((int64_t *)n_var_idx)[iproc + 1] - ((int64_t *)n_var_idx)[iproc];
@@ -268,7 +246,7 @@ file ID %d",
       else {
         num_icm = ((int *)n_var_idx)[iproc + 1] - ((int *)n_var_idx)[iproc];
       }
-      for (icm = 0; icm < num_icm; icm++) {
+      for (int icm = 0; icm < num_icm; icm++) {
         if (ex_int64_status(exoid) & EX_BULK_INT64_API) {
           ncnt_cmap += ((int64_t *)node_cmap_node_cnts)[((int64_t *)node_proc_ptrs)[iproc] + icm];
         }
@@ -332,7 +310,7 @@ file ID %d",
     }
 
     /* now add up all of the nodal communications maps */
-    ecnt_cmap = 0;
+    size_t ecnt_cmap = 0;
     for (iproc = 0; iproc < num_procs_in_file; iproc++) {
       if (index_type == NC_INT64) {
         num_icm = ((int64_t *)e_var_idx)[iproc + 1] - ((int64_t *)e_var_idx)[iproc];
@@ -340,7 +318,7 @@ file ID %d",
       else {
         num_icm = ((int *)e_var_idx)[iproc + 1] - ((int *)e_var_idx)[iproc];
       }
-      for (icm = 0; icm < num_icm; icm++) {
+      for (int icm = 0; icm < num_icm; icm++) {
         if (ex_int64_status(exoid) & EX_BULK_INT64_API) {
           ecnt_cmap += ((int64_t *)elem_cmap_elem_cnts)[((int64_t *)elem_proc_ptrs)[iproc] + icm];
         }
@@ -438,7 +416,7 @@ file ID %d",
       else {
         num_icm = ((int *)n_var_idx)[iproc + 1] - ((int *)n_var_idx)[iproc];
       }
-      for (icm = 0; icm < num_icm; icm++) {
+      for (int icm = 0; icm < num_icm; icm++) {
         size_t cnt;
         if (ex_int64_status(exoid) & EX_BULK_INT64_API) {
           cnt = ((int64_t *)node_cmap_node_cnts)[proc_ptr + icm];
@@ -549,7 +527,7 @@ file ID %d",
       else {
         num_icm = ((int *)e_var_idx)[iproc + 1] - ((int *)e_var_idx)[iproc];
       }
-      for (icm = 0; icm < num_icm; icm++) {
+      for (int icm = 0; icm < num_icm; icm++) {
 
         size_t cnt;
         if (ex_int64_status(exoid) & EX_BULK_INT64_API) {

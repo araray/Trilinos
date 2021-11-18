@@ -57,6 +57,7 @@
 #include "MueLu_ConfigDefs.hpp"
 
 #include "MueLu_Exceptions.hpp"
+#include "MueLu_Aggregates.hpp"
 #include "MueLu_Hierarchy.hpp"
 #include "MueLu_HierarchyFactory.hpp"
 #include "MueLu_Level.hpp"
@@ -93,7 +94,9 @@ namespace MueLu {
         doPRrebalance_          (MasterList::getDefault<bool>("repartition: rebalance P and R")),
         implicitTranspose_      (MasterList::getDefault<bool>("transpose: use implicit")),
         fuseProlongationAndUpdate_ (MasterList::getDefault<bool>("fuse prolongation and update")),
-        graphOutputLevel_(-1) { }
+        sizeOfMultiVectors_     (MasterList::getDefault<int>("number of vectors")),
+        // -2 = no output, -1 = all levels
+        graphOutputLevel_(-2) { }
 
     //!
     virtual ~HierarchyManager() { }
@@ -171,8 +174,8 @@ namespace MueLu {
       // Setup Hierarchy
       H.SetMaxCoarseSize(maxCoarseSize_);
       VerboseObject::SetDefaultVerbLevel(verbosity_);
-      if (graphOutputLevel_ >= 0)
-        H.EnableGraphDumping("dep_graph.dot", graphOutputLevel_);
+      if (graphOutputLevel_ >= 0 || graphOutputLevel_ == -1)
+        H.EnableGraphDumping("dep_graph", graphOutputLevel_);
 
       if (VerboseObject::IsPrint(Statistics2)) {
         RCP<Matrix> Amat = rcp_dynamic_cast<Matrix>(Op);
@@ -229,6 +232,8 @@ namespace MueLu {
       ExportDataSetKeepFlags(H, restrictorsToPrint_,  "R");
       ExportDataSetKeepFlags(H, nullspaceToPrint_,  "Nullspace");
       ExportDataSetKeepFlags(H, coordinatesToPrint_,  "Coordinates");
+      // NOTE: Aggregates use the next level's Factory
+      ExportDataSetKeepFlagsNextLevel(H, aggregatesToPrint_,  "Aggregates");
 #ifdef HAVE_MUELU_INTREPID2
       ExportDataSetKeepFlags(H,elementToNodeMapsToPrint_, "pcoarsen: element to node map");
 #endif
@@ -242,14 +247,17 @@ namespace MueLu {
                          LvlMngr(levelID-1, lastLevelID),
                          LvlMngr(levelID,   lastLevelID),
                          LvlMngr(levelID+1, lastLevelID));
+        H.GetLevel(levelID)->print(H.GetOStream(Developer), verbosity_);
 
         isLastLevel = r || (levelID == lastLevelID);
         levelID++;
       }
       if (!matvecParams_.is_null())
         H.SetMatvecParams(matvecParams_);
-      // FIXME: Should allow specification of NumVectors on parameterlist
-      H.AllocateLevelMultiVectors(1);
+      H.AllocateLevelMultiVectors(sizeOfMultiVectors_);
+      // Set hierarchy description.
+      // This is cached, but involves and MPI_Allreduce.
+      H.description();
       H.describe(H.GetOStream(Runtime0), verbosity_);
 
       // When we reuse hierarchy, it is necessary that we don't
@@ -268,6 +276,7 @@ namespace MueLu {
       WriteData<Matrix>(H, restrictorsToPrint_,  "R");
       WriteData<MultiVector>(H, nullspaceToPrint_,  "Nullspace");
       WriteData<MultiVector>(H, coordinatesToPrint_,  "Coordinates");
+      WriteDataAggregates(H, aggregatesToPrint_,  "Aggregates");
 #ifdef HAVE_MUELU_INTREPID2
       typedef Kokkos::DynRankView<LocalOrdinal,typename Node::device_type> FCi;
       WriteDataFC<FCi>(H,elementToNodeMapsToPrint_, "pcoarsen: element to node map","el2node");
@@ -316,12 +325,14 @@ namespace MueLu {
     bool                  doPRrebalance_;
     bool                  implicitTranspose_;
     bool                  fuseProlongationAndUpdate_;
+    int                   sizeOfMultiVectors_;
     int                   graphOutputLevel_;
     Teuchos::Array<int>   matricesToPrint_;
     Teuchos::Array<int>   prolongatorsToPrint_;
     Teuchos::Array<int>   restrictorsToPrint_;
     Teuchos::Array<int>   nullspaceToPrint_;
     Teuchos::Array<int>   coordinatesToPrint_;
+    Teuchos::Array<int>   aggregatesToPrint_;
     Teuchos::Array<int>   elementToNodeMapsToPrint_;
     Teuchos::RCP<Teuchos::ParameterList> matvecParams_;
 
@@ -339,11 +350,25 @@ namespace MueLu {
       }
     }
 
+    void ExportDataSetKeepFlagsNextLevel(Hierarchy& H, const Teuchos::Array<int>& data, const std::string& name) const {
+      for (int i = 0; i < data.size(); ++i) {
+        if (data[i] < H.GetNumLevels()) {
+          RCP<Level> L = H.GetLevel(data[i]);
+	  if(!L.is_null()  && data[i]+1 < levelManagers_.size())
+	    L->AddKeepFlag(name, &*levelManagers_[data[i]+1]->GetFactory(name));
+        }
+      }
+    }
+
 
     template<class T>
     void WriteData(Hierarchy& H, const Teuchos::Array<int>& data, const std::string& name) const {
       for (int i = 0; i < data.size(); ++i) {
-        std::string fileName = name + "_" + Teuchos::toString(data[i]) + ".m";
+        std::string fileName;
+        if (H.getObjectLabel() != "")
+          fileName = H.getObjectLabel() + "_" + name + "_" + Teuchos::toString(data[i]) + ".m";
+        else
+          fileName = name + "_" + Teuchos::toString(data[i]) + ".m";
 
         if (data[i] < H.GetNumLevels()) {
           RCP<Level> L = H.GetLevel(data[i]);
@@ -366,6 +391,31 @@ namespace MueLu {
       }
     }
 
+
+    void WriteDataAggregates(Hierarchy& H, const Teuchos::Array<int>& data, const std::string& name) const {
+      for (int i = 0; i < data.size(); ++i) {
+        const std::string fileName = name + "_" + Teuchos::toString(data[i]) + ".m";
+        
+        if (data[i] < H.GetNumLevels()) {
+          RCP<Level> L = H.GetLevel(data[i]);
+
+          // NOTE: Aggregates use the next level's factory
+          RCP<Aggregates> agg;
+          if(data[i]+1 < H.GetNumLevels() && L->IsAvailable(name,&*levelManagers_[data[i]+1]->GetFactory(name))) {
+            // Try generating factory
+            agg = L->template Get< RCP<Aggregates> >(name,&*levelManagers_[data[i]+1]->GetFactory(name));  
+          }
+          else if (L->IsAvailable(name)) {
+            agg = L->template Get<RCP<Aggregates> >("Aggregates");
+          }
+          if(!agg.is_null()) {
+            std::ofstream ofs(fileName);
+            Teuchos::FancyOStream fofs(rcp(&ofs,false));
+            agg->print(fofs,Teuchos::VERB_EXTREME);
+          }
+        }
+      }
+    }
 
     template<class T>
     void WriteDataFC(Hierarchy& H, const Teuchos::Array<int>& data, const std::string& name, const std::string & ofname) const {
@@ -390,10 +440,6 @@ namespace MueLu {
     // For dumping an IntrepidPCoarsening element-to-node map to disk
     template<class T>
     void WriteFieldContainer(const std::string& fileName, T & fcont,const Map &colMap) const {
-      typedef LocalOrdinal LO;
-      typedef GlobalOrdinal GO;
-      typedef Node NO;
-      typedef Xpetra::MultiVector<GO,LO,GO,NO> GOMultiVector;
 
       size_t num_els = (size_t) fcont.extent(0);
       size_t num_vecs =(size_t) fcont.extent(1);

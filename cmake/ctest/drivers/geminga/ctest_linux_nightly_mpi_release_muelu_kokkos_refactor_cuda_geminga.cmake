@@ -76,12 +76,9 @@ SET(Trilinos_PACKAGES MueLu Xpetra Amesos2)
 SET(EXTRA_CONFIGURE_OPTIONS
   ### ETI ###
   "-DTrilinos_ENABLE_EXPLICIT_INSTANTIATION:BOOL=ON"
-    "-DTpetra_INST_INT_LONG_LONG:BOOL=OFF"
-    "-DTrilinos_ENABLE_COMPLEX:BOOL=ON"
-    "-DTeuchos_ENABLE_COMPLEX:BOOL=OFF"
-    "-DTpetra_INST_COMPLEX_DOUBLE:BOOL=OFF"
-    "-DTpetra_INST_COMPLEX_FLOAT:BOOL=OFF"
-    "-DTpetra_INST_SERIAL=ON"
+  "-DTrilinos_ENABLE_COMPLEX:BOOL=ON"
+  "-DTeuchos_ENABLE_COMPLEX:BOOL=ON"
+  "-DTpetra_INST_COMPLEX_DOUBLE:BOOL=ON"
 
   ### MISC ###
   "-DTrilinos_ENABLE_DEPENDENCY_UNIT_TESTS:BOOL=OFF"
@@ -89,15 +86,15 @@ SET(EXTRA_CONFIGURE_OPTIONS
 
   ### TPLS ###
   "-DTPL_ENABLE_SuperLU:BOOL=ON"
-      "-DSuperLU_INCLUDE_DIRS:PATH=$ENV{SEMS_SUPERLU_INCLUDE_PATH}"
-      "-DSuperLU_LIBRARY_DIRS:PATH=$ENV{SEMS_SUPERLU_LIBRARY_PATH}"
 
   ### PACKAGES CONFIGURATION ###
       "-DMueLu_ENABLE_Experimental:BOOL=ON"
       "-DMueLu_ENABLE_Kokkos_Refactor:BOOL=ON"
-      "-DMueLu_ENABLE_Kokkos_Refactor_Use_By_Default:BOOL=ON"
       "-DXpetra_ENABLE_Experimental:BOOL=ON"
       "-DXpetra_ENABLE_Kokkos_Refactor:BOOL=ON"
+
+  # Disable Pamgen due to weird nvcc errors
+  "-DTrilinos_ENABLE_Pamgen:BOOL=OFF"
 )
 
 #

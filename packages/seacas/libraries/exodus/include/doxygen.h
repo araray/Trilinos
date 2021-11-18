@@ -31,14 +31,15 @@ For bug reports, documentation errors, and enhancement suggestions, contact:
 - EMAIL: gdsjaar@sandia.gov
 - EMAIL: gsjaardema@gmail.com
 - PHONE: (505) 844-2701 (office)
-- PHONE: (505) 999-8991 (cell)
 
 \section license License
 The EXODUS library is licensed under the BSD open source license.
 
-     Copyright (c) 2005-2017 National Technology & Engineering Solutions
+     Copyright(C) 1999-2021 National Technology & Engineering Solutions
      of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
      NTESS, the U.S. Government retains certain rights in this software.
+
+     See packages/seacas/LICENSE for details
 
      Redistribution and use in source and binary forms, with or without
      modification, are permitted provided that the following conditions are
@@ -288,7 +289,7 @@ there is a database with longer names and the reader does not change
 the length of names to be returned, any API call that returns a name
 will truncate the name at 32 characters.
 
-To avoid this, the reading application can all 
+To avoid this, the reading application can all
 ~~~{.c}
   // Determine maximum length of names stored on database
   int max_name_length = ex_inquire_int(exoid, EX_INQ_DB_MAX_USED_NAME_LENGTH);
@@ -408,7 +409,6 @@ element attributes, node sets, side sets, and object properties.
 @example ../test/testcp_nl.c
 @example ../test/testcp_tran.c
 @example ../test/testcpd.c
-@example ../test/testrd-groups.c
 @example ../test/testrd-long-name.c
 @example ../test/testrd-nfaced.c
 @example ../test/testrd-nsided.c

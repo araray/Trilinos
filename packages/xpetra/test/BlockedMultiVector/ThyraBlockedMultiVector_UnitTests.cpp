@@ -59,14 +59,14 @@
 
 #include <Xpetra_MapUtils.hpp>
 #include <Xpetra_MapFactory.hpp>
-#include <Xpetra_MapExtractorFactory.hpp>
+#include <Xpetra_MapExtractor.hpp>
 #include <Xpetra_BlockedMultiVector.hpp>
 #include <Xpetra_ReorderedBlockedMultiVector.hpp>
 #include <Xpetra_Exceptions.hpp>
 #include <Xpetra_ThyraUtils.hpp>
 
 #ifdef HAVE_XPETRA_THYRA
-#include <Thyra_DefaultProductVectorSpace_decl.hpp>
+#include <Thyra_DefaultProductVectorSpace.hpp>
 #endif
 
 #include <set>

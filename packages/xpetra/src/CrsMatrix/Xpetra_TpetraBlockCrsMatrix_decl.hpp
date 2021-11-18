@@ -54,10 +54,10 @@
 #include "Tpetra_CrsMatrix.hpp"
 
 #include "Xpetra_CrsMatrix.hpp"
-#include "Xpetra_TpetraMap.hpp"
-#include "Xpetra_TpetraMultiVector.hpp"
-#include "Xpetra_TpetraVector.hpp"
-#include "Xpetra_TpetraCrsGraph.hpp"
+#include "Xpetra_TpetraMap_decl.hpp"
+#include "Xpetra_TpetraMultiVector_decl.hpp"
+#include "Xpetra_TpetraVector_decl.hpp"
+#include "Xpetra_TpetraCrsGraph_decl.hpp"
 #include "Xpetra_Exceptions.hpp"
 
 
@@ -81,14 +81,12 @@ namespace Xpetra {
     //! Constructor specifying fixed number of entries for each row (not implemented)
     TpetraBlockCrsMatrix(const  Teuchos::RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > > &rowMap, 
                          size_t maxNumEntriesPerRow, 
-                         ProfileType pftype=DynamicProfile, 
                          const Teuchos::RCP< Teuchos::ParameterList > &params=Teuchos::null);
 
 
     //! Constructor specifying (possibly different) number of entries in each row (not implemented)
     TpetraBlockCrsMatrix(const Teuchos::RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > > &rowMap, 
                          const ArrayRCP< const size_t > &NumEntriesPerRowToAlloc, 
-                         ProfileType pftype=DynamicProfile, 
                          const Teuchos::RCP< Teuchos::ParameterList > &params=Teuchos::null);
 
 
@@ -96,7 +94,6 @@ namespace Xpetra {
     TpetraBlockCrsMatrix(const Teuchos::RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > > &rowMap, 
                          const Teuchos::RCP< const  Map< LocalOrdinal, GlobalOrdinal, Node > > &colMap, 
                          size_t maxNumEntriesPerRow, 
-                         ProfileType pftype=DynamicProfile, 
                          const Teuchos::RCP< Teuchos::ParameterList > &params=Teuchos::null);
 
 
@@ -104,7 +101,6 @@ namespace Xpetra {
     TpetraBlockCrsMatrix(const Teuchos::RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > > &rowMap, 
                          const Teuchos::RCP< const  Map< LocalOrdinal, GlobalOrdinal, Node > > &colMap, 
                          const ArrayRCP< const size_t > &NumEntriesPerRowToAlloc, 
-                         ProfileType pftype=DynamicProfile, 
                          const Teuchos::RCP< Teuchos::ParameterList > &params=Teuchos::null);
 
 
@@ -204,7 +200,9 @@ namespace Xpetra {
                       ArrayRCP<const LocalOrdinal>& colind, 
                       ArrayRCP<const Scalar>& values)  const;
 
-
+    //! Gets the 1D pointer arrays of the graph (not implemented)
+    void getAllValues(ArrayRCP<Scalar>& values);                      
+                     
     //! @name Transformational Methods
 
     //!
@@ -311,6 +309,9 @@ namespace Xpetra {
     //! Computes the sparse matrix-multivector multiplication.
     void apply(const MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &X, MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &Y, Teuchos::ETransp mode=Teuchos::NO_TRANS, Scalar alpha=ScalarTraits< Scalar >::one(), Scalar beta=ScalarTraits< Scalar >::zero()) const;
 
+    //! Computes the matrix-multivector multiplication for region layout matrices (currently no block implementation)
+    void apply(const MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &X, MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &Y, Teuchos::ETransp mode, Scalar alpha, Scalar beta, bool sumInterfaceValues, const RCP<Import<LocalOrdinal, GlobalOrdinal, Node> >& regionInterfaceImporter, const Teuchos::ArrayRCP<LocalOrdinal>& regionInterfaceLIDs) const;
+
     //! Returns the Map associated with the domain of this operator. This will be null until fillComplete() is called.
     const RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > >  getDomainMap() const;
 
@@ -333,14 +334,6 @@ namespace Xpetra {
     void setObjectLabel( const std::string &objectLabel );
 
 
-#ifdef XPETRA_ENABLE_DEPRECATED_CODE
-    //! Deep copy constructor
-    // This probably never compiled but also never got called... 
-    // We're leaving this in the decl file for now as part of the ETI work
-    // just to maintain status-quo but it'll go away anyhow with deprecations
-    // soon.
-    TpetraBlockCrsMatrix(const TpetraBlockCrsMatrix& matrix);
-#endif  // XPETRA_ENABLE_DEPRECATED_CODE
 
 
     //! Get a copy of the diagonal entries owned by this node, with local row idices 
@@ -388,16 +381,6 @@ namespace Xpetra {
     void removeEmptyProcessesInPlace (const Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node> >& newMap);    
 
 
-#ifdef XPETRA_ENABLE_DEPRECATED_CODE
-    template<class Node2>
-    RCP<TpetraBlockCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node2> > 
-    XPETRA_DEPRECATED 
-    clone(const RCP<Node2> &node2) const
-    {
-      return RCP<TpetraBlockCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node2> >
-        (new TpetraBlockCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node2>(mtx_->clone(node2)));
-    }
-#endif  // XPETRA_ENABLE_DEPRECATED_CODE
 
     //! @name Xpetra specific
 
@@ -417,8 +400,13 @@ namespace Xpetra {
 #ifdef HAVE_XPETRA_TPETRA
     //using local_matrix_type = typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type;
     using local_matrix_type = typename CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type;
-
-    local_matrix_type getLocalMatrix () const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+    local_matrix_type getLocalMatrix () const {
+      return getLocalMatrixDevice();
+    }
+#endif
+    local_matrix_type getLocalMatrixDevice () const;
+    typename local_matrix_type::HostMirror getLocalMatrixHost () const;
 
     void setAllValues (const typename local_matrix_type::row_map_type& ptr,
                        const typename local_matrix_type::StaticCrsGraphType::entries_type::non_const_type& ind,

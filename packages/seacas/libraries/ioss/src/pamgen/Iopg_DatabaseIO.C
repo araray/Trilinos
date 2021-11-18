@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #include <create_inline_mesh.h>
 #include <pamgen_im_exodusII.h>
@@ -79,8 +53,9 @@ namespace {
   // Output a message that the operation is unsupported and die...
   void unsupported(const char *operation)
   {
-    std::cerr << "ERROR: Unsupported functionality called: " << operation << '\n';
-    std::abort();
+    std::ostringstream errmsg;
+    errmsg << "ERROR: Unsupported functionality called: " << operation << '\n';
+    IOSS_ERROR(errmsg);
   }
 
   const size_t max_string_length = MAX_STR_LENGTH;
@@ -96,10 +71,8 @@ namespace {
   void pamgen_error(int exoid, int lineno, int /* processor */)
   {
     std::ostringstream errmsg;
-
     errmsg << "Pamgen error at line " << lineno << " in file '" << Version()
            << "' Please report to gdsjaar@sandia.gov if you need help.";
-
     IOSS_ERROR(errmsg);
   }
 } // namespace
@@ -209,7 +182,7 @@ namespace Iopg {
       }
     }
     else {
-      std::ifstream f(get_filename().c_str());
+      std::ifstream f(get_filename());
       if (!f) {
         std::ostringstream errmsg;
         errmsg << "Error opening file '" << get_filename() << "'.";
@@ -234,7 +207,7 @@ namespace Iopg {
       retval = Create_Pamgen_Mesh(mesh_description.c_str(), dimension, util().parallel_rank(),
                                   util().parallel_size(), INT_MAX);
     }
-    catch (const std::exception &x) {
+    catch (...) {
       error_detected = true;
     }
 
@@ -292,7 +265,7 @@ namespace Iopg {
     nodeBlockCount = 1;
 
     if (nodeCount == 0) {
-      IOSS_WARNING << "No nodes were found in the model, file '" << decoded_filename() << "'";
+      Ioss::WARNING() << "No nodes were found in the model, file '" << decoded_filename() << "'";
     }
     else if (nodeCount < 0) {
       // NOTE: Code will not continue past this call...
@@ -303,7 +276,8 @@ namespace Iopg {
     }
 
     if (elementCount == 0) {
-      IOSS_WARNING << "No elements were found in the model, file: '" << decoded_filename() << "'";
+      Ioss::WARNING() << "No elements were found in the model, file: '" << decoded_filename()
+                      << "'";
     }
 
     if (elementCount < 0) {
@@ -552,8 +526,7 @@ namespace Iopg {
       block->property_add(Ioss::Property("guid", util().generate_guid(id)));
       block->property_add(Ioss::Property("original_block_order", iblk));
 
-      if (block->get_property("topology_type").get_string() != save_type && save_type != "null" &&
-          save_type != "") {
+      if (block->topology()->name() != save_type && save_type != "null" && save_type != "") {
         // Maintain original element type on output database if possible.
         block->property_add(Ioss::Property("original_topology_type", save_type));
       }
@@ -650,8 +623,8 @@ namespace Iopg {
         }
 
         int error =
-            im_ne_get_cmap_params(get_file_pointer(), TOPTR(nodeCmapIds), TOPTR(nodeCmapNodeCnts),
-                                  TOPTR(elemCmapIds), TOPTR(elemCmapElemCnts), myProcessor);
+            im_ne_get_cmap_params(get_file_pointer(), nodeCmapIds.data(), nodeCmapNodeCnts.data(),
+                                  elemCmapIds.data(), elemCmapElemCnts.data(), myProcessor);
         if (error < 0)
           pamgen_error(get_file_pointer(), __LINE__, myProcessor);
 
@@ -886,8 +859,8 @@ namespace Iopg {
               block = get_region()->get_element_block(topo_or_block_name);
               if (block == nullptr) {
                 std::ostringstream errmsg;
-                std::cerr << "INTERNAL ERROR: Could not find element block '" << topo_or_block_name
-                          << "' Something is wrong in the Ioex::DatabaseIO class. Please report.\n";
+                errmsg << "INTERNAL ERROR: Could not find element block '" << topo_or_block_name
+                       << "' Something is wrong in the Iopg::DatabaseIO class. Please report.\n";
                 IOSS_ERROR(errmsg);
               }
               elem_topo = block->topology();
@@ -1098,7 +1071,6 @@ int64_t DatabaseIO::get_field_internal(const Ioss::ElementBlock *eb, const Ioss:
   size_t num_to_get = field.verify(data_size);
   if (num_to_get > 0) {
 
-    int                   ierr             = 0;
     int                   id               = eb->get_property("id").get_int();
     int                   my_element_count = eb->entity_count();
     Ioss::Field::RoleType role             = field.get_role();
@@ -1108,13 +1080,13 @@ int64_t DatabaseIO::get_field_internal(const Ioss::ElementBlock *eb, const Ioss:
       // (The 'genesis' portion)
 
       if (field.get_name() == "connectivity" || field.get_name() == "connectivity_raw") {
-        int element_nodes = eb->get_property("topology_node_count").get_int();
+        int element_nodes = eb->topology()->number_nodes();
         assert(field.raw_storage()->component_count() == element_nodes);
 
         // The connectivity is stored in a 1D array.
         // The element_node index varies fastet
         if (my_element_count > 0) {
-          ierr = im_ex_get_elem_conn(get_file_pointer(), id, static_cast<int *>(data));
+          int ierr = im_ex_get_elem_conn(get_file_pointer(), id, static_cast<int *>(data));
           if (ierr < 0)
             pamgen_error(get_file_pointer(), __LINE__, myProcessor);
 
@@ -1330,7 +1302,7 @@ int64_t DatabaseIO::get_field_internal(const Ioss::SideBlock *fb, const Ioss::Fi
         }
         else {
           Ioss::IntVector is_valid_side;
-          Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, element, TOPTR(sides),
+          Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, element, sides.data(),
                                                       number_sides, get_region());
           size_t ieb = 0;
           for (int iel = 0; iel < number_sides; iel++) {
@@ -1379,8 +1351,8 @@ int64_t DatabaseIO::get_field_internal(const Ioss::SideBlock *fb, const Ioss::Fi
         }
         else {
           Ioss::IntVector is_valid_side;
-          Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, TOPTR(element),
-                                                      TOPTR(sides), number_sides, get_region());
+          Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, element.data(),
+                                                      sides.data(), number_sides, get_region());
 
           size_t index = 0;
           for (int iel = 0; iel < number_sides; iel++) {
@@ -1605,10 +1577,9 @@ int DatabaseIO::get_side_connectivity(const Ioss::SideBlock *fb, int id, int, in
                                       size_t /* data_size */) const
 {
   // Get size of data stored on the file...
-  int ierr;
   int number_sides;
   int number_distribution_factors;
-  ierr =
+  int ierr =
       im_ex_get_side_set_param(get_file_pointer(), id, &number_sides, &number_distribution_factors);
   if (ierr < 0)
     pamgen_error(get_file_pointer(), __LINE__, myProcessor);
@@ -1625,7 +1596,7 @@ int DatabaseIO::get_side_connectivity(const Ioss::SideBlock *fb, int id, int, in
   //----
 
   Ioss::IntVector is_valid_side;
-  Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, TOPTR(element), TOPTR(side),
+  Ioss::Utils::calculate_sideblock_membership(is_valid_side, fb, 4, element.data(), side.data(),
                                               number_sides, get_region());
 
   Ioss::IntVector     elconnect;

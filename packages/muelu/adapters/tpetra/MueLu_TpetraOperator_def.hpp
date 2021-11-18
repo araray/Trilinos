@@ -105,17 +105,18 @@ Teuchos::RCP<const Tpetra::Map<LocalOrdinal,GlobalOrdinal,Node> > TpetraOperator
 template<class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
 void TpetraOperator<Scalar,LocalOrdinal,GlobalOrdinal,Node>::apply(const Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>& X,
                                                                                Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>& Y,
-                                                                               Teuchos::ETransp /* mode */, Scalar /* alpha */, Scalar /* beta */) const {
+                                                                               Teuchos::ETransp mode, Scalar /* alpha */, Scalar /* beta */) const {
   typedef Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>       TMV;
   typedef Xpetra::TpetraMultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> XTMV;
+
+  TEUCHOS_TEST_FOR_EXCEPTION(mode!=Teuchos::NO_TRANS,std::logic_error,"MueLu::TpetraOperator does not support applying the adjoint operator");
 
   try {
     TMV& temp_x = const_cast<TMV &>(X);
     const XTMV tX(rcpFromRef(temp_x));
     XTMV       tY(rcpFromRef(Y));
 
-    tY.putScalar(Teuchos::ScalarTraits<Scalar>::zero());
-    if(!Hierarchy_.is_null()) 
+    if(!Hierarchy_.is_null())
       Hierarchy_->Iterate(tX, tY, 1, true);
     else
       Operator_->apply(tX, tY);
@@ -143,20 +144,6 @@ RCP<Xpetra::Operator<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
 TpetraOperator<Scalar,LocalOrdinal,GlobalOrdinal,Node>::GetOperator() const {
   return Operator_;
 }
-
-#ifdef HAVE_MUELU_DEPRECATED_CODE
-template<class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-template <class NewNode>
-Teuchos::RCP< TpetraOperator<Scalar, LocalOrdinal, GlobalOrdinal, NewNode> >
-MUELU_DEPRECATED
-TpetraOperator<Scalar,LocalOrdinal,GlobalOrdinal,Node>::clone(const RCP<NewNode>& new_node) const {
-  if(!Hierarchy_.is_null()) 
-    return Teuchos::rcp (new TpetraOperator<Scalar, LocalOrdinal, GlobalOrdinal, NewNode> (Hierarchy_->template clone<NewNode> (new_node))); 
-  else
-    return Teuchos::null;
-}
-#endif
-
 
 } // namespace
 #endif //ifdef HAVE_MUELU_TPETRA

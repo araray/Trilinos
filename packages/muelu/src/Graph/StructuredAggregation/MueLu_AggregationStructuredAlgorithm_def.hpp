@@ -80,10 +80,11 @@ namespace MueLu {
       out = Teuchos::getFancyOStream(rcp(new Teuchos::oblackholestream()));
     }
 
-    RCP<IndexManager> geoData = aggregates.GetIndexManager();
-    const bool   coupled      = geoData->isAggregationCoupled();
-    ArrayRCP<LO> vertex2AggId = aggregates.GetVertex2AggId()->getDataNonConst(0);
-    ArrayRCP<LO> procWinner   = aggregates.GetProcWinner()  ->getDataNonConst(0);
+    RCP<IndexManager> geoData      = aggregates.GetIndexManager();
+    const bool   coupled           = geoData->isAggregationCoupled();
+    const bool   singleCoarsePoint = geoData->isSingleCoarsePoint();
+    ArrayRCP<LO> vertex2AggId      = aggregates.GetVertex2AggId()->getDataNonConst(0);
+    ArrayRCP<LO> procWinner        = aggregates.GetProcWinner()  ->getDataNonConst(0);
     Array<LO>    ghostedCoarseNodeCoarseLIDs;
     Array<int>   ghostedCoarseNodeCoarsePIDs;
     Array<GO>    ghostedCoarseNodeCoarseGIDs;
@@ -101,17 +102,22 @@ namespace MueLu {
       geoData->getFineNodeGhostedTuple(nodeIdx, ghostedIdx[0], ghostedIdx[1], ghostedIdx[2]);
 
       for(int dim = 0; dim < 3; ++dim) {
-        coarseIdx[dim] = ghostedIdx[dim] / geoData->getCoarseningRate(dim);
-        rem    = ghostedIdx[dim] % geoData->getCoarseningRate(dim);
-        if(ghostedIdx[dim] - geoData->getOffset(dim)
-           < geoData->getLocalFineNodesInDir(dim) - geoData->getCoarseningEndRate(dim)) {
-          rate = geoData->getCoarseningRate(dim);
+        if(singleCoarsePoint
+           && (geoData->getLocalFineNodesInDir(dim) - 1 < geoData->getCoarseningRate(dim))) {
+          coarseIdx[dim] = 0;
         } else {
-          rate = geoData->getCoarseningEndRate(dim);
+          coarseIdx[dim] = ghostedIdx[dim] / geoData->getCoarseningRate(dim);
+          rem    = ghostedIdx[dim] % geoData->getCoarseningRate(dim);
+          if(ghostedIdx[dim] - geoData->getOffset(dim)
+             < geoData->getLocalFineNodesInDir(dim) - geoData->getCoarseningEndRate(dim)) {
+            rate = geoData->getCoarseningRate(dim);
+          } else {
+            rate = geoData->getCoarseningEndRate(dim);
+          }
+          if(rem > (rate / 2)) {++coarseIdx[dim];}
+          if(coupled && (geoData->getStartGhostedCoarseNode(dim)*geoData->getCoarseningRate(dim)
+                         > geoData->getStartIndex(dim))) {--coarseIdx[dim];}
         }
-        if(rem > (rate / 2)) {++coarseIdx[dim];}
-        if(coupled && (geoData->getStartGhostedCoarseNode(dim)*geoData->getCoarseningRate(dim)
-                       > geoData->getStartIndex(dim))) {--coarseIdx[dim];}
       }
 
       geoData->getCoarseNodeGhostedLID(coarseIdx[0], coarseIdx[1], coarseIdx[2],
@@ -142,7 +148,7 @@ namespace MueLu {
       out = Teuchos::getFancyOStream(rcp(new Teuchos::oblackholestream()));
     }
 
-    const bool coupled = geoData->isAggregationCoupled();
+    const bool coupled           = geoData->isAggregationCoupled();
 
     // Compute the number of coarse points needed to interpolate quantities to a fine point
     int numInterpolationPoints = 0;
@@ -241,8 +247,7 @@ namespace MueLu {
     *out << "Call constructor of CrsGraph" << std::endl;
     myGraph = CrsGraphFactory::Build(rowMap,
                                      colMap,
-                                     nnzOnRow,
-                                     Xpetra::StaticProfile);
+                                     nnzOnRow);
 
     *out << "Fill CrsGraph" << std::endl;
     LO rowIdx = 0;
@@ -257,7 +262,7 @@ namespace MueLu {
     myGraph->fillComplete(domainMap, rowMap);
     *out << "Prolongator CrsGraph computed" << std::endl;
 
-  } // BuildAggregates()
+  } // BuildGraph()
 
 
   template <class LocalOrdinal, class GlobalOrdinal, class Node>
@@ -289,17 +294,24 @@ namespace MueLu {
       geoData->getFineNodeGhostedTuple(nodeIdx, ghostedIdx[0], ghostedIdx[1], ghostedIdx[2]);
 
       for(int dim = 0; dim < 3; ++dim) {
-        coarseIdx[dim] = ghostedIdx[dim] / geoData->getCoarseningRate(dim);
-        rem    = ghostedIdx[dim] % geoData->getCoarseningRate(dim);
-        if(ghostedIdx[dim] - geoData->getOffset(dim)
-           < geoData->getLocalFineNodesInDir(dim) - geoData->getCoarseningEndRate(dim)) {
-          rate = geoData->getCoarseningRate(dim);
+        if(geoData->isSingleCoarsePoint()
+           && (geoData->getLocalFineNodesInDir(dim) - 1 < geoData->getCoarseningRate(dim))) {
+          coarseIdx[dim] = 0;
         } else {
-          rate = geoData->getCoarseningEndRate(dim);
+          coarseIdx[dim] = ghostedIdx[dim] / geoData->getCoarseningRate(dim);
+          rem    = ghostedIdx[dim] % geoData->getCoarseningRate(dim);
+          if(ghostedIdx[dim] - geoData->getOffset(dim)
+             < geoData->getLocalFineNodesInDir(dim) - geoData->getCoarseningEndRate(dim)) {
+            rate = geoData->getCoarseningRate(dim);
+          } else {
+            rate = geoData->getCoarseningEndRate(dim);
+          }
+          if(rem > (rate / 2)) {++coarseIdx[dim];}
+          if( (geoData->getStartGhostedCoarseNode(dim)*geoData->getCoarseningRate(dim)
+               > geoData->getStartIndex(dim)) && geoData->isAggregationCoupled() ) {
+            --coarseIdx[dim];
+          }
         }
-        if(rem > (rate / 2)) {++coarseIdx[dim];}
-        if( (geoData->getStartGhostedCoarseNode(dim)*geoData->getCoarseningRate(dim)
-             > geoData->getStartIndex(dim)) && geoData->isAggregationCoupled() ) {--coarseIdx[dim];}
       }
 
       geoData->getCoarseNodeGhostedLID(coarseIdx[0], coarseIdx[1], coarseIdx[2],

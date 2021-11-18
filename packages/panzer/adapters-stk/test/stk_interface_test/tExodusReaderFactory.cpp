@@ -62,9 +62,36 @@
    #include "Epetra_SerialComm.h"
 #endif
 
+#include "Ioss_DatabaseIO.h"
+#include "Ioss_IOFactory.h"
+#include "Ioss_Region.h"
+#include "Ioss_EdgeBlock.h"
+#include "Ioss_FaceBlock.h"
+
 #ifdef PANZER_HAVE_IOSS
 
 namespace panzer_stk {
+  
+void edge_face_block_test_helper(Teuchos::FancyOStream &out,
+                                 bool &success,
+                                 std::string exodus_filename,
+                                 uint32_t expected_edge_block_count,
+                                 uint32_t expected_face_block_count)
+{
+   Ioss::DatabaseIO *db_io = Ioss::IOFactory::create("exodus", 
+                                                     exodus_filename.c_str(), 
+                                                     Ioss::READ_MODEL);
+   TEST_ASSERT(db_io);
+
+   Ioss::Region region(db_io);
+   TEST_ASSERT(db_io->ok() == true);
+
+   auto all_edge_blocks = region.get_edge_blocks();
+   TEST_ASSERT(all_edge_blocks.size() == expected_edge_block_count);
+   auto all_face_blocks = region.get_face_blocks();
+   TEST_ASSERT(all_face_blocks.size() == expected_face_block_count);
+}
+
 
 TEUCHOS_UNIT_TEST(tExodusReaderFactory, basic_test)
 {
@@ -169,6 +196,180 @@ TEUCHOS_UNIT_TEST(tExodusReaderFactory, basic_test)
          TEST_EQUALITY(mesh->getEntityCounts(mesh->getSideRank()),22);
          TEST_EQUALITY(mesh->getEntityCounts(mesh->getNodeRank()),15);
       }
+   }
+}
+
+/*
+ * This is a much simplified copy of the "basic_test" 
+ * which confirms that by default the edge and face 
+ * blocks are NOT created when reading in an Exodus 
+ * file that doesn't already have edge or face blocks.
+*/
+TEUCHOS_UNIT_TEST(tExodusReaderFactory, default_edge_face_block_test)
+{
+   auto erf = Teuchos::rcp(new STK_ExodusReaderFactory());
+
+   Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::rcp(new Teuchos::ParameterList);
+   pl->set("File Name","meshes/basic3d.gen");
+   erf->setParameterList(pl);
+
+   // read from file and build mesh
+   Teuchos::RCP<STK_Interface> mesh = erf->buildUncommitedMesh(MPI_COMM_WORLD);
+   erf->completeMeshConstruction(*mesh,MPI_COMM_WORLD);
+
+   TEST_ASSERT(mesh!=Teuchos::null);
+   TEST_ASSERT(mesh->getDimension()==3);
+   TEST_ASSERT(mesh->isWritable());
+   TEST_ASSERT(not mesh->isModifiable());
+
+   mesh->writeToExodus("meshes/default_edge_face_block_check.gen");
+
+   // check edge blocks
+   std::vector<std::string> edgeblocks;
+   mesh->getEdgeBlockNames(edgeblocks);
+   TEST_EQUALITY((int) edgeblocks.size(),0);
+
+   // check face blocks
+   std::vector<std::string> faceblocks;
+   mesh->getFaceBlockNames(faceblocks);
+   TEST_EQUALITY((int) faceblocks.size(),0);
+
+   edge_face_block_test_helper(out,
+                               success,
+                               "meshes/default_edge_face_block_check.gen",
+                               0,
+                               0);
+}
+
+/*
+ * This is a much simplified copy of the "basic_test" 
+ * which confirms that the edge block is created in
+ * step 1 and copied in step 2.
+*/
+TEUCHOS_UNIT_TEST(tExodusReaderFactory, edge_block_test)
+{
+   {
+   auto erf = Teuchos::rcp(new STK_ExodusReaderFactory());
+
+   Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::rcp(new Teuchos::ParameterList);
+   pl->set("File Name","meshes/basic.gen");
+   pl->set("Create Edge Blocks",true);
+   erf->setParameterList(pl);
+
+   // read from file and build mesh
+   Teuchos::RCP<STK_Interface> mesh = erf->buildUncommitedMesh(MPI_COMM_WORLD);
+   erf->completeMeshConstruction(*mesh,MPI_COMM_WORLD);
+
+   TEST_ASSERT(mesh!=Teuchos::null);
+   TEST_ASSERT(mesh->getDimension()==2);
+   TEST_ASSERT(mesh->isWritable());
+   TEST_ASSERT(not mesh->isModifiable());
+
+   mesh->writeToExodus("meshes/edge_block_check.gen");
+
+   // check edge blocks
+   std::vector<std::string> edgeblocks;
+   mesh->getEdgeBlockNames(edgeblocks);
+   TEST_EQUALITY((int) edgeblocks.size(),1);
+
+   edge_face_block_test_helper(out,
+                               success,
+                               "meshes/edge_block_check.gen",
+                               1,
+                               0);
+   }
+   {
+   // in an effort to be as cerebral as possible I read in the
+   // outputed mesh and then re-output it
+
+   // read from file and build mesh
+   auto erf = Teuchos::rcp(new STK_ExodusReaderFactory());
+
+   Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::rcp(new Teuchos::ParameterList);
+   pl->set("File Name","meshes/edge_block_check.gen");
+   pl->set("Create Edge Blocks",true);
+   erf->setParameterList(pl);
+
+   Teuchos::RCP<STK_Interface> mesh = erf->buildMesh(MPI_COMM_WORLD);
+
+   // check edge blocks
+   std::vector<std::string> edgeblocks;
+   mesh->getEdgeBlockNames(edgeblocks);
+   TEST_EQUALITY((int) edgeblocks.size(),1);
+
+   mesh->writeToExodus("meshes/edge_block_check2.gen");
+
+   edge_face_block_test_helper(out,
+                               success,
+                               "meshes/edge_block_check2.gen",
+                               1,
+                               0);
+   }
+}
+
+/*
+ * This is a much simplified copy of the "basic_test" 
+ * which confirms that the face block is created in
+ * step 1 and copied in step 2.
+*/
+TEUCHOS_UNIT_TEST(tExodusReaderFactory, face_block_test)
+{
+   {
+   auto erf = Teuchos::rcp(new STK_ExodusReaderFactory());
+
+   Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::rcp(new Teuchos::ParameterList);
+   pl->set("File Name","meshes/basic3d.gen");
+   pl->set("Create Face Blocks",true);
+   erf->setParameterList(pl);
+
+   // read from file and build mesh
+   Teuchos::RCP<STK_Interface> mesh = erf->buildUncommitedMesh(MPI_COMM_WORLD);
+   erf->completeMeshConstruction(*mesh,MPI_COMM_WORLD);
+
+   TEST_ASSERT(mesh!=Teuchos::null);
+   TEST_ASSERT(mesh->getDimension()==3);
+   TEST_ASSERT(mesh->isWritable());
+   TEST_ASSERT(not mesh->isModifiable());
+
+   mesh->writeToExodus("meshes/face_block_check.gen");
+
+   // check face blocks
+   std::vector<std::string> faceblocks;
+   mesh->getFaceBlockNames(faceblocks);
+   TEST_EQUALITY((int) faceblocks.size(),1);
+
+   edge_face_block_test_helper(out,
+                               success,
+                               "meshes/face_block_check.gen",
+                               0,
+                               1);
+   }
+   {
+   // in an effort to be as cerebral as possible I read in the
+   // outputed mesh and then re-output it
+
+   // read from file and build mesh
+   auto erf = Teuchos::rcp(new STK_ExodusReaderFactory());
+
+   Teuchos::RCP<Teuchos::ParameterList> pl = Teuchos::rcp(new Teuchos::ParameterList);
+   pl->set("File Name","meshes/face_block_check.gen");
+   pl->set("Create Face Blocks",true);
+   erf->setParameterList(pl);
+
+   Teuchos::RCP<STK_Interface> mesh = erf->buildMesh(MPI_COMM_WORLD);
+
+   // check face blocks
+   std::vector<std::string> faceblocks;
+   mesh->getFaceBlockNames(faceblocks);
+   TEST_EQUALITY((int) faceblocks.size(),1);
+
+   mesh->writeToExodus("meshes/face_block_check2.gen");
+
+   edge_face_block_test_helper(out,
+                               success,
+                               "meshes/face_block_check2.gen",
+                               0,
+                               1);
    }
 }
 

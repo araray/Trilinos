@@ -53,8 +53,10 @@
 #include "MueLu_CoalesceDropFactory.hpp"
 #include "MueLu_CoarseMapFactory.hpp"
 #include "MueLu_ConstraintFactory.hpp"
+#include "MueLu_AggregateQualityEstimateFactory.hpp"
 #include "MueLu_CoordinatesTransferFactory.hpp"
 #include "MueLu_DirectSolver.hpp"
+#include "MueLu_InitialBlockNumberFactory.hpp"
 #include "MueLu_LineDetectionFactory.hpp"
 // #include "MueLu_MultiVectorTransferFactory.hpp"
 #include "MueLu_NoFactory.hpp"
@@ -70,8 +72,11 @@
 #include "MueLu_TransPFactory.hpp"
 #include "MueLu_TrilinosSmoother.hpp"
 #include "MueLu_UncoupledAggregationFactory.hpp"
+#include "MueLu_StructuredAggregationFactory.hpp"
 #include "MueLu_HybridAggregationFactory.hpp"
 #include "MueLu_ZoltanInterface.hpp"
+#include "MueLu_InterfaceMappingTransferFactory.hpp"
+#include "MueLu_InterfaceAggregationFactory.hpp"
 
 #ifdef HAVE_MUELU_KOKKOS_REFACTOR
 #include "MueLu_AmalgamationFactory_kokkos.hpp"
@@ -190,12 +195,17 @@ namespace MueLu {
       if (varName == "Graph")                           return MUELU_KOKKOS_FACTORY(varName, CoalesceDropFactory, CoalesceDropFactory_kokkos);
       if (varName == "UnAmalgamationInfo")              return MUELU_KOKKOS_FACTORY(varName, AmalgamationFactory, AmalgamationFactory_kokkos);
       if (varName == "Aggregates")                      return MUELU_KOKKOS_FACTORY(varName, UncoupledAggregationFactory, UncoupledAggregationFactory_kokkos);
+      if (varName == "AggregateQualities")              return SetAndReturnDefaultFactory(varName, rcp(new AggregateQualityEstimateFactory()));
       if (varName == "CoarseMap")                       return MUELU_KOKKOS_FACTORY(varName, CoarseMapFactory, CoarseMapFactory_kokkos);
       if (varName == "DofsPerNode")                     return GetFactory("Graph");
       if (varName == "Filtering")                       return GetFactory("Graph");
+      if (varName == "BlockNumber")                     return SetAndReturnDefaultFactory(varName, rcp(new InitialBlockNumberFactory()));
       if (varName == "LineDetection_VertLineIds")       return SetAndReturnDefaultFactory(varName, rcp(new LineDetectionFactory()));
       if (varName == "LineDetection_Layers")            return GetFactory("LineDetection_VertLineIds");
       if (varName == "CoarseNumZLayers")                return GetFactory("LineDetection_VertLineIds");
+      
+      // Structured
+      if (varName == "structuredInterpolationOrder")    return SetAndReturnDefaultFactory(varName, rcp(new StructuredAggregationFactory()));
 
       // Non-Galerkin
       if (varName == "K")                               return GetFactory("A");
@@ -223,9 +233,11 @@ namespace MueLu {
       }
       if (varName == "CoarseSolver")                    return SetAndReturnDefaultFactory(varName, rcp(new SmootherFactory(rcp(new DirectSolver()), Teuchos::null)));
 
+      if (varName == "DualNodeID2PrimalNodeID")         return SetAndReturnDefaultFactory(varName, rcp(new InterfaceMappingTransferFactory()));
+      if (varName == "CoarseDualNodeID2PrimalNodeID")   return SetAndReturnDefaultFactory(varName, rcp(new InterfaceAggregationFactory()));
 #ifdef HAVE_MUELU_INTREPID2
       // If we're asking for it, find who made P
-      if (varName == "pcoarsen: element to node map")                      return GetFactory("P");
+      if (varName == "pcoarsen: element to node map")   return GetFactory("P");
 #endif
 
       TEUCHOS_TEST_FOR_EXCEPTION(true, MueLu::Exceptions::RuntimeError, "MueLu::FactoryManager::GetDefaultFactory(): No default factory available for building '" + varName + "'.");
@@ -246,8 +258,9 @@ namespace MueLu {
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   void FactoryManager<Scalar, LocalOrdinal, GlobalOrdinal, Node>::Print() const {
     std::map<std::string, RCP<const FactoryBase> >::const_iterator it;
-
     Teuchos::FancyOStream& fancy = GetOStream(Debug);
+    //auto & fancy = std::cout;// For debugging
+
 
     fancy << "Users factory table (factoryTable_):" << std::endl;
     for (it = factoryTable_.begin(); it != factoryTable_.end(); it++) {

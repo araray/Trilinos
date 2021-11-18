@@ -80,16 +80,6 @@ namespace {
     return ret;
   }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  // Get an instance of the given Kokkos Node type.
-  //
-  // \warning This function is NOT reentrant, and therefore NOT thread safe.
-  template <class Node>
-  Teuchos::RCP<Node> getNode () {
-    Teuchos::ParameterList pl;
-    return Teuchos::rcp (new Node (pl));
-  }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
   // Test getVector() / getVectorNonConst()
   // More specifically, this test verifies that the newly created vector will remain valid after the disappearance of the references to the multivector in user code.
@@ -163,7 +153,7 @@ namespace {
     }
 
     // get a view of the multivector data on the host memory
-    typename dual_view_type::t_host_um hostView = mv->getHostLocalView ();
+    typename dual_view_type::t_host_um hostView = mv->getHostLocalView (Xpetra::Access::ReadWrite);
 
     TEST_EQUALITY(hostView.extent(0), numLocal);
     TEST_EQUALITY(hostView.extent(1), 3);

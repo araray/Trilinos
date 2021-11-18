@@ -32,19 +32,17 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <stk_util/stk_config.h>
+#include "stk_util/stk_config.h"
 
 #ifdef STK_HAVE_STKIO
 
-#include <gtest/gtest.h>
-#include <stk_topology/topology.hpp>
-#include <Ioss_Utils.h>
-#include <Ioss_ElementTopology.h>
-// #include <Ioss_Initializer.h>
-#include <init/Ionit_Initializer.h>
-#include <stk_io/IossBridge.hpp>
-#include <stk_mesh/base/MetaData.hpp>
-
+#include "gtest/gtest.h"
+#include "Ioss_ElementTopology.h"
+#include "Ioss_Utils.h"
+#include "init/Ionit_Initializer.h"
+#include "stk_io/IossBridge.hpp"
+#include "stk_mesh/base/MetaData.hpp"
+#include "stk_topology/topology.hpp"
 #include <vector>
 
 namespace {
@@ -98,6 +96,18 @@ void setUpMappingsToTest(std::vector<TopologyMapper>& topologyMappings)
     exodusNumNodes=20;
     iossTopologyName="hex20";
     stkTopology=stk::topology::HEXAHEDRON_20;
+    topologyMappings.push_back(TopologyMapper(exodusName, exodusNumNodes, iossTopologyName, stkTopology));
+
+    exodusName="quad";
+    exodusNumNodes=6;
+    iossTopologyName="quad6";
+    stkTopology=stk::topology::QUAD_6;
+    topologyMappings.push_back(TopologyMapper(exodusName, exodusNumNodes, iossTopologyName, stkTopology));
+
+    exodusName="wedge";
+    exodusNumNodes=12;
+    iossTopologyName="wedge12";
+    stkTopology=stk::topology::WEDGE_12;
     topologyMappings.push_back(TopologyMapper(exodusName, exodusNumNodes, iossTopologyName, stkTopology));
 }
 

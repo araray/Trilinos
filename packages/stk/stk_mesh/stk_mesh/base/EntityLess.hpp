@@ -34,6 +34,8 @@
 #ifndef STK_ENTITYLESS_HPP
 #define STK_ENTITYLESS_HPP
 
+#include <stk_mesh/base/Types.hpp>
+
 namespace stk {
 namespace mesh {
 
@@ -58,13 +60,6 @@ private:
   const EntityRank m_sideRank;
 #endif
 }; //struct EntityLess
-
-class EntitySorterBase
-{
-public:
-    virtual ~EntitySorterBase() {}
-    virtual void sort(stk::mesh::BulkData &bulk, stk::mesh::EntityVector& entityVector) const = 0;
-};
 
 }
 }

@@ -10,6 +10,7 @@
 #define Tempus_StepperExplicit_decl_hpp
 
 // Tempus
+#include "Tempus_config.hpp"
 #include "Tempus_Stepper.hpp"
 
 
@@ -21,13 +22,14 @@ class ExplicitODEParameters
     ExplicitODEParameters()
       : timeStepSize_(Scalar(0.0)), stageNumber_(0)
     {}
+
     /// Constructor
     ExplicitODEParameters(Scalar timeStepSize, int stageNumber = 0)
       : timeStepSize_(timeStepSize), stageNumber_(stageNumber)
     {}
 
-    Scalar                                timeStepSize_;
-    int                                   stageNumber_;
+    Scalar timeStepSize_;
+    int    stageNumber_;
 };
 
 
@@ -44,12 +46,13 @@ public:
 
   /// \name Basic explicit stepper methods
   //@{
+    /// Set model
     virtual void setModel(
       const Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >& appModel);
-    virtual void setNonConstModel(
-      const Teuchos::RCP<Thyra::ModelEvaluator<Scalar> >& appModel);
+
+    /// Return the application ModelEvaluator.
     virtual Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >
-      getModel(){return appModel_;}
+      getModel() const {return appModel_;}
 
     virtual Scalar getInitTimeStep(
         const Teuchos::RCP<SolutionHistory<Scalar> >& /* solutionHistory */) const
@@ -60,7 +63,7 @@ public:
       const Teuchos::RCP<SolutionHistory<Scalar> >& solutionHistory);
 
     virtual void setSolver(
-      Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> > solver = Teuchos::null);
+      Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> > solver);
 
     virtual Teuchos::RCP<Thyra::NonlinearSolverBase<Scalar> > getSolver() const
       { return Teuchos::null; }
@@ -73,29 +76,9 @@ public:
     virtual bool isExplicit()         const {return true;}
     virtual bool isImplicit()         const {return false;}
     virtual bool isExplicitImplicit() const
-      {return isExplicit() and isImplicit();}
+      {return isExplicit() && isImplicit();}
     virtual bool isOneStepMethod()    const {return true;}
     virtual bool isMultiStepMethod()  const {return !isOneStepMethod();}
-
-    /// Set x for Stepper storage.
-    virtual void setStepperX(Teuchos::RCP<Thyra::VectorBase<Scalar> > x)
-      { stepperX_ = x; }
-    /// Set xDot for Stepper storage.
-    virtual void setStepperXDot(Teuchos::RCP<Thyra::VectorBase<Scalar> > xDot)
-      { stepperXDot_ = xDot; }
-    /// Set x for Stepper storage.
-    virtual void setStepperXDotDot(Teuchos::RCP<Thyra::VectorBase<Scalar> > xDotDot)
-      { stepperXDotDot_ = xDotDot; }
-
-    /// Get x from SolutionState or Stepper storage.
-    virtual Teuchos::RCP<Thyra::VectorBase<Scalar> > getStepperX(
-      Teuchos::RCP<SolutionState<Scalar> > state);
-    /// Get xDot from SolutionState or Stepper storage.
-    virtual Teuchos::RCP<Thyra::VectorBase<Scalar> > getStepperXDot(
-      Teuchos::RCP<SolutionState<Scalar> > state);
-    /// Get xDotDot from SolutionState or Stepper storage.
-    virtual Teuchos::RCP<Thyra::VectorBase<Scalar> > getStepperXDotDot(
-      Teuchos::RCP<SolutionState<Scalar> > state);
 
     /// Evaluate xDot = f(x,t).
     virtual void evaluateExplicitODE(
@@ -113,6 +96,17 @@ public:
       const Teuchos::RCP<ExplicitODEParameters<Scalar> > & p );
   //@}
 
+  /// \name Overridden from Teuchos::Describable
+  //@{
+    virtual void describe(Teuchos::FancyOStream        & out,
+                          const Teuchos::EVerbosityLevel verbLevel) const;
+  //@}
+
+  virtual bool isValidSetup(Teuchos::FancyOStream & out) const;
+
+  /// Set StepperExplicit member data from the ParameterList.
+  void setStepperExplicitValues(Teuchos::RCP<Teuchos::ParameterList> pl);
+
 protected:
 
   /// Explicit ODE ModelEvaluator
@@ -121,13 +115,8 @@ protected:
   Thyra::ModelEvaluatorBase::InArgs<Scalar>          inArgs_;
   Thyra::ModelEvaluatorBase::OutArgs<Scalar>         outArgs_;
 
-  Teuchos::RCP<StepperObserver<Scalar> >             stepperObserver_;
-
-  // RCP to state or temporary storage if needed.
-  Teuchos::RCP<Thyra::VectorBase<Scalar> >           stepperX_;
-  Teuchos::RCP<Thyra::VectorBase<Scalar> >           stepperXDot_;
-  Teuchos::RCP<Thyra::VectorBase<Scalar> >           stepperXDotDot_;
 };
+
 
 } // namespace Tempus
 #endif // Tempus_StepperExplicit_decl_hpp

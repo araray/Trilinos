@@ -2,8 +2,9 @@
 #define PHALANX_KOKKOS_DEVICE_TYPES_HPP
 
 //Kokkos includes
-#include "Kokkos_Core.hpp"
 #include "Kokkos_View_Fad.hpp"
+#include "Kokkos_DynRankView_Fad.hpp"
+#include "Kokkos_Core.hpp"
 #include "Phalanx_config.hpp"
 #include "Sacado_Fad_ExpressionTraits.hpp"
 #include <type_traits>
@@ -15,31 +16,21 @@
 namespace PHX {
 
 #if defined(PHX_KOKKOS_DEVICE_TYPE_CUDA)
-
-  //#include <Kokkos_Cuda.hpp>
-  typedef Kokkos::Cuda Device;
-
+  using Device = Kokkos::Cuda;
 #elif defined(PHX_KOKKOS_DEVICE_TYPE_OPENMP)
-
-  //#include <Kokkos_hwloc.hpp>
-  //#include <Kokkos_OpenMP.hpp>
-  typedef Kokkos::OpenMP Device;
-
+  using Device = Kokkos::OpenMP;
 #elif defined(PHX_KOKKOS_DEVICE_TYPE_THREAD)
-
-#include <Kokkos_hwloc.hpp>
-  //#include <Kokkos_Threads.hpp>
-  typedef Kokkos::Threads Device;
-
+  #include <Kokkos_hwloc.hpp>
+  using Device = Kokkos::Threads;
 #elif defined(PHX_KOKKOS_DEVICE_TYPE_SERIAL)
-
-  //#include <Kokkos_Serial.hpp>
-  typedef Kokkos::Serial Device;
-
+  using Device = Kokkos::Serial;
 #endif
 
   using exec_space = PHX::Device::execution_space;
-  using mem_space = PHX::Device::memory_space;
+  using mem_space  = PHX::Device::memory_space;
+
+  using ExecSpace  = PHX::Device::execution_space;
+  using MemSpace   = PHX::Device::memory_space;
 
 }
 
@@ -79,7 +70,7 @@ namespace PHX {
 
   using DefaultDevLayout = PHX::exec_space::array_layout;
 
-#if defined(SACADO_VIEW_CUDA_HIERARCHICAL_DFAD)
+#if defined(SACADO_VIEW_CUDA_HIERARCHICAL_DFAD) || defined(SACADO_VIEW_CUDA_HIERARCHICAL)
 
 #if defined(KOKKOS_ENABLE_CUDA)
   // Contiguous layout with FAD stride of 32.  IMPORTANT: The
@@ -106,6 +97,9 @@ namespace PHX {
 
   template<typename DataType>
   using AtomicView = Kokkos::View<DataType,typename PHX::DevLayout<DataType>::type,PHX::Device,Kokkos::MemoryTraits<Kokkos::Atomic>>;
+
+  template<typename DataType>
+  using UnmanagedView = Kokkos::View<DataType,typename PHX::DevLayout<DataType>::type,PHX::Device,Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 }
 
 #endif

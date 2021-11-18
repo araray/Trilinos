@@ -97,7 +97,7 @@ namespace Test {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
@@ -151,10 +151,8 @@ int OrientationTri(const bool verbose) {
       switch (comp) {
       case 0:
         return f0 + a*x;
-        break;
       case 1:
         return f1 + a*y;
-        break;
       default:
         return 0;
       }
@@ -172,10 +170,8 @@ int OrientationTri(const bool verbose) {
       switch (comp) {
       case 0:
         return f0 - a2*y;
-        break;
       case 1:
         return f1 + a2*x;
-        break;
       default:
         return 0;
       }
@@ -362,25 +358,27 @@ int OrientationTri(const bool verbose) {
 
        //Testing Kronecker property of basis functions
        {
+         DynRankView ConstructWithLabel(basisValuesAtDofCoords, numCells, basisCardinality, basisCardinality);
+         DynRankView ConstructWithLabel(basisValuesAtDofCoordsOriented, numCells, basisCardinality, basisCardinality);
+         DynRankView ConstructWithLabel(transformedBasisValuesAtDofCoordsOriented, numCells, basisCardinality, basisCardinality);
+         
          for(ordinal_type i=0; i<numCells; ++i) {
-           DynRankView ConstructWithLabel(basisValuesAtDofCoords, numCells, basisCardinality, basisCardinality);
-           DynRankView ConstructWithLabel(basisValuesAtDofCoordsOriented, numCells, basisCardinality, basisCardinality);
-           DynRankView ConstructWithLabel(transformedBasisValuesAtDofCoordsOriented, numCells, basisCardinality, basisCardinality);
            auto inView = Kokkos::subview( dofCoordsOriented,i,Kokkos::ALL(),Kokkos::ALL());
            auto outView =Kokkos::subview( basisValuesAtDofCoords,i,Kokkos::ALL(),Kokkos::ALL());
            basis.getValues(outView, inView);
+         }
 
-           // modify basis values to account for orientations
-           ots::modifyBasisByOrientation(basisValuesAtDofCoordsOriented,
-               basisValuesAtDofCoords,
-               elemOrts,
-               &basis);
+         // modify basis values to account for orientations
+         ots::modifyBasisByOrientation(basisValuesAtDofCoordsOriented,
+                                       basisValuesAtDofCoords,
+                                       elemOrts,
+                                       &basis);
 
-           // transform basis values
-           deep_copy(transformedBasisValuesAtDofCoordsOriented,
-               basisValuesAtDofCoordsOriented);
+         // transform basis values
+         deep_copy(transformedBasisValuesAtDofCoordsOriented,
+                   basisValuesAtDofCoordsOriented);
 
-
+         for(ordinal_type i=0; i<numCells; ++i) {
            for(ordinal_type k=0; k<basisCardinality; ++k) {
              for(ordinal_type j=0; j<basisCardinality; ++j){
                ValueType dofValue = transformedBasisValuesAtDofCoordsOriented(i,k,j) * dofCoeffsPhys(i,j);
@@ -437,21 +435,19 @@ int OrientationTri(const bool verbose) {
        //check that fun values at reference points coincide with those computed using basis functions
        DynRankView ConstructWithLabel(basisValuesAtRefCoordsOriented, numCells, basisCardinality, numRefCoords);
        DynRankView ConstructWithLabel(transformedBasisValuesAtRefCoordsOriented, numCells, basisCardinality, numRefCoords);
-       DynRankView basisValuesAtRefCoordsCells("inValues", numCells, basisCardinality, numRefCoords);
 
        DynRankView ConstructWithLabel(basisValuesAtRefCoords, basisCardinality, numRefCoords);
        basis.getValues(basisValuesAtRefCoords, refPoints);
-       rst::clone(basisValuesAtRefCoordsCells,basisValuesAtRefCoords);
 
        // modify basis values to account for orientations
        ots::modifyBasisByOrientation(basisValuesAtRefCoordsOriented,
-           basisValuesAtRefCoordsCells,
-           elemOrts,
-           &basis);
+                                     basisValuesAtRefCoords,
+                                     elemOrts,
+                                     &basis);
 
        // transform basis values
        deep_copy(transformedBasisValuesAtRefCoordsOriented,
-           basisValuesAtRefCoordsOriented);
+                 basisValuesAtRefCoordsOriented);
 
        DynRankView ConstructWithLabel(funAtRefCoordsOriented, numCells, numRefCoords);
        for(ordinal_type i=0; i<numCells; ++i) {
@@ -480,7 +476,7 @@ int OrientationTri(const bool verbose) {
      }
    } while(std::next_permutation(&reorder[0]+1, &reorder[0]+3)); //reorder vertices of common edge
 
- } catch (std::exception err) {
+ } catch (std::exception &err) {
    std::cout << " Exeption\n";
    *outStream << err.what() << "\n\n";
    errorFlag = -1000;
@@ -539,10 +535,8 @@ int OrientationTri(const bool verbose) {
 
 
 
-        //computing edges and tangents
-        ValueType edgeTan[numCells][numElemEdges][dim];
+        //computing edges
         ordinal_type edgeIndex[numCells];
-
         {
           edgeType edge={};
           //bool edgeOrientation[numCells][4];
@@ -561,8 +555,6 @@ int OrientationTri(const bool verbose) {
               for (std::size_t k=0; k<tri.getNodeCount(1,ie); ++k)
                 edge[k] = reorder[edge[k]];
               std::sort(edge.begin(),edge.end());
-              for(int d=0; d<dim; ++d)
-                edgeTan[i][ie][d] = vertices[edge[1]][d]-vertices[edge[0]][d];
             }
           }
         }
@@ -657,7 +649,6 @@ int OrientationTri(const bool verbose) {
           auto numEdgeDOFs = basis.getDofCount(1,0);
           DynRankView ConstructWithLabel(refEdgeTan,  dim);
 
-          const ValueType refEdgeLength = 2.0;
           for(ordinal_type i=0; i<numCells; ++i) {
 
             for(ordinal_type iedge=0; iedge<numElemEdges; iedge++) {
@@ -668,7 +659,7 @@ int OrientationTri(const bool verbose) {
               ct::getReferenceEdgeTangent(refEdgeTan, iedge, tri);
               ValueType edgeTan2d[dim] = {};
               for(ordinal_type d=0; d <dim; ++d)
-                edgeTan2d[d] = refEdgeTan(d)*((eOrt[iedge] == 0) ? 1 : -1)*refEdgeLength;
+                edgeTan2d[d] = refEdgeTan(d)*((eOrt[iedge] == 0) ? 1 : -1);
 
               for(ordinal_type j=0; j<numEdgeDOFs; ++j) {
                 auto idof = basis.getDofOrdinal(1, iedge, j);
@@ -686,32 +677,6 @@ int OrientationTri(const bool verbose) {
         ct::setJacobian(jacobian, dofCoordsOriented, physVertexes, tri);
         ct::setJacobianInv (jacobian_inv, jacobian);
         rst::matvec(dofCoeffsPhys, jacobian, dofCoeffsTmp);
-
-        //check whether dofCoeffs related to edges are proportional to edges' tangents
-        {
-          auto numEdgeDOFs = basis.getDofCount(1,0);
-          for(ordinal_type i=0; i<numCells; ++i) {
-
-            for(ordinal_type iedge=0; iedge<numElemEdges; iedge++)
-              for(ordinal_type j=0; j<numEdgeDOFs; ++j) {
-                auto idof = basis.getDofOrdinal(1, iedge, j);
-                ValueType tangent[dim];
-                bool areDifferent = false;
-                for(ordinal_type d=0; d <dim; ++d) {
-                  tangent[d] = edgeTan[i][iedge][d];
-                  if(std::abs(dofCoeffsPhys(i,idof,d) - tangent[d])>tol)
-                    areDifferent = true;
-                }
-                if(areDifferent) {
-                  errorFlag++;
-                  *outStream << std::setw(70) << "^^^^----FAILURE!" << "\n";
-                  *outStream << "Coefficients of Dof " << idof << " at cell "  << i << " are NOT equivalent to the tangent of edge " << iedge << "\n";
-                  *outStream << "Dof Coefficients are: (" << dofCoeffsPhys(i,idof,0) << ", " << dofCoeffsPhys(i,idof,1)  << ")\n";
-                  *outStream << "Edge tangent is: (" << tangent[0] << ", " << tangent[1] << ")\n";
-                }
-              }
-          }
-        }
 
         //Testing Kronecker property of basis functions
         {
@@ -845,7 +810,7 @@ int OrientationTri(const bool verbose) {
       }
     } while(std::next_permutation(&reorder[0]+1, &reorder[0]+3)); //reorder vertices of common edge
 
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     std::cout << " Exeption\n";
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
@@ -1026,7 +991,6 @@ int OrientationTri(const bool verbose) {
 
           DynRankView ConstructWithLabel(refEdgeNormal,  dim);
 
-          const ValueType refEdgeLength = 2.0;
           for(ordinal_type i=0; i<numCells; ++i) {
             ordinal_type fOrt[numElemEdges];
             elemOrts(i).getEdgeOrientation(fOrt, numElemEdges);
@@ -1034,7 +998,7 @@ int OrientationTri(const bool verbose) {
               ct::getReferenceSideNormal(refEdgeNormal, iedge, tri);
               ValueType edgeNormal2d[dim];
               for(ordinal_type d=0; d <dim; ++d)
-                edgeNormal2d[d] = refEdgeNormal(d)*c[fOrt[iedge]]*refEdgeLength;
+                edgeNormal2d[d] = refEdgeNormal(d)*c[fOrt[iedge]];
               
               for(ordinal_type j=0; j<numEdgeDOFs; ++j) {
                 auto idof = basis.getDofOrdinal(dim-1, iedge, j);
@@ -1069,15 +1033,21 @@ int OrientationTri(const bool verbose) {
                 auto idof = basis.getDofOrdinal(dim-1, iedge, j);
               ValueType normal[dim];
               bool areDifferent = false;
+              ValueType norm1(0), norm2(0);
+              for(ordinal_type d=0; d <dim; ++d) {
+                norm1 += pow(edgeNormal[i][iedge][d],2);
+                norm2 += pow(dofCoeffsPhys(i,idof,d),2);
+              }
+              norm1 = sqrt(norm1); norm2=sqrt(norm2);
               for(ordinal_type d=0; d <dim; ++d) {
                 normal[d] = edgeNormal[i][iedge][d];
-                if(std::abs(dofCoeffsPhys(i,idof,d) - normal[d])>tol)
+                if(std::abs(dofCoeffsPhys(i,idof,d)/norm2 - normal[d]/norm1)>tol)
                   areDifferent = true;
               }
               if(areDifferent) {
                 errorFlag++;
                 *outStream << std::setw(70) << "^^^^----FAILURE!" << "\n";
-                *outStream << "Coefficients of Dof " << idof << " at cell "  << i << " are NOT equivalent to the normal of edge " << iedge << "\n";
+                *outStream << "Coefficients of Dof " << idof << " at cell "  << i << " are NOT proportional to the normal of edge " << iedge << "\n";
                 *outStream << "Dof Coefficients are: (" << dofCoeffsPhys(i,idof,0) << ", " << dofCoeffsPhys(i,idof,1) <<  ")\n";
                 *outStream << "Edge normal is: (" << normal[0] << ", " << normal[1]  << ")\n";
               }
@@ -1217,7 +1187,7 @@ int OrientationTri(const bool verbose) {
       }
     } while(std::next_permutation(&reorder[0]+1, &reorder[0]+3)); //reorder vertices of common edge
 
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     std::cout << " Exeption\n";
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;

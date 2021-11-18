@@ -16,6 +16,10 @@ namespace balance
 
 //////////////////////////////////////////////////////////////////////////
 
+BalanceSettings::BalanceSettings()
+  : m_initialDecompMethod("RIB")
+{}
+
 size_t BalanceSettings::getNumNodesRequiredForConnection(stk::topology element1Topology, stk::topology element2Topology) const
 {
     return 1;
@@ -46,6 +50,10 @@ bool BalanceSettings::includeSearchResultsInGraph() const
     return false;
 }
 
+void BalanceSettings::setIncludeSearchResultsInGraph(bool doContactSearch) 
+{
+}
+
 double BalanceSettings::getToleranceForFaceSearch(const stk::mesh::BulkData & mesh,
                                                   const stk::mesh::FieldBase & coordField,
                                                   const stk::mesh::Entity * faceNodes,
@@ -58,9 +66,19 @@ void BalanceSettings::setToleranceFunctionForFaceSearch(std::shared_ptr<stk::bal
 {
 }
 
+bool BalanceSettings::isConstantFaceSearchTolerance() const
+{
+    return true;
+}
+
 double BalanceSettings::getToleranceForParticleSearch() const
 {
     return 0.0;
+}
+
+double BalanceSettings::getAbsoluteToleranceForParticleSearch(stk::mesh::Entity particle) const
+{
+    return getParticleRadius(particle) * getToleranceForParticleSearch();
 }
 
 double BalanceSettings::getGraphEdgeWeightForSearch() const
@@ -78,6 +96,17 @@ double BalanceSettings::getVertexWeightMultiplierForVertexInSearch() const
     return 15;
 }
 
+void BalanceSettings::setVertexWeightBlockMultiplier(const std::string & blockName, double multiplier)
+{
+  m_vertexWeightBlockMultipliers[blockName] = multiplier;
+}
+
+const BlockWeightMultipliers &
+BalanceSettings::getVertexWeightBlockMultipliers() const
+{
+  return m_vertexWeightBlockMultipliers;
+}
+
 bool BalanceSettings::isIncrementalRebalance() const
 {
     return false;
@@ -88,19 +117,9 @@ bool BalanceSettings::isMultiCriteriaRebalance() const
     return false;
 }
 
-bool BalanceSettings::areVertexWeightsProvidedInAVector() const
-{
-    return false;
-}
-
 bool BalanceSettings::areVertexWeightsProvidedViaFields() const
 {
     return false;
-}
-
-std::vector<double> BalanceSettings::getVertexWeightsViaVector() const
-{
-    return std::vector<double>();
 }
 
 double BalanceSettings::getImbalanceTolerance() const
@@ -115,6 +134,11 @@ void BalanceSettings::setDecompMethod(const std::string& method)
 std::string BalanceSettings::getDecompMethod() const
 {
     return std::string("parmetis");
+}
+
+std::string BalanceSettings::getInitialDecompMethod() const
+{
+    return m_initialDecompMethod;
 }
 
 std::string BalanceSettings::getCoordinateFieldName() const
@@ -145,13 +169,13 @@ bool BalanceSettings::setVertexWeightsBasedOnNumberAdjacencies() const
     return false;
 }
 
-// For graph based methods (parmetis) only
+// For graph based methods only
 bool BalanceSettings::allowModificationOfVertexWeightsForSmallMeshes() const
 {
     return true;
 }
 
-// For graph based methods (parmetis) only
+// For graph based methods only
 bool BalanceSettings::shouldFixMechanisms() const
 {
     return false;
@@ -162,21 +186,67 @@ bool BalanceSettings::shouldFixSpiders() const
     return false;
 }
 
-std::string BalanceSettings::getSpiderConnectivityCountFieldName() const
+std::string BalanceSettings::getSpiderBeamConnectivityCountFieldName() const
 {
     return "beam_connectivity_count";
 }
 
-const stk::mesh::Field<int> * BalanceSettings::getSpiderConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
+std::string BalanceSettings::getSpiderVolumeConnectivityCountFieldName() const
+{
+    return "volume_connectivity_count";
+}
+
+const stk::mesh::Field<int> * BalanceSettings::getSpiderBeamConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
 {
     return nullptr;
 }
 
-bool BalanceSettings::useLocalIds() const
+const stk::mesh::Field<int> * BalanceSettings::getSpiderVolumeConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
+{
+    return nullptr;
+}
+
+bool BalanceSettings::usingColoring() const
 {
     return getGraphOption() == stk::balance::BalanceSettings::COLOR_MESH ||
            getGraphOption() == stk::balance::BalanceSettings::COLOR_MESH_BY_TOPOLOGY ||
            getGraphOption() == stk::balance::BalanceSettings::COLOR_MESH_AND_OUTPUT_COLOR_FIELDS;
+}
+
+
+bool BalanceSettings::useNodeBalancer() const
+{
+  return false;
+}
+
+double BalanceSettings::getNodeBalancerTargetLoadBalance() const
+{
+  return 1.0;
+}
+
+unsigned BalanceSettings::getNodeBalancerMaxIterations() const
+{
+  return 5;
+}
+
+void BalanceSettings::set_input_filename(const std::string& filename)
+{
+  m_inputFilename = filename;
+}
+
+std::string BalanceSettings::get_input_filename() const
+{
+  return m_inputFilename;
+}
+
+void BalanceSettings::set_output_filename(const std::string& filename)
+{
+  m_outputFilename = filename;
+}
+
+std::string BalanceSettings::get_output_filename() const
+{
+  return m_outputFilename;
 }
 
 //////////////////////////////////////
@@ -250,6 +320,8 @@ int GraphCreationSettings::getGraphVertexWeight(stk::topology type) const
         case stk::topology::LINE_2:
         case stk::topology::BEAM_2:
         case stk::topology::BEAM_3:
+        case stk::topology::SPRING_2:
+        case stk::topology::SPRING_3:
             return 1;
         case stk::topology::SHELL_TRIANGLE_3:
             return 3;
@@ -267,12 +339,16 @@ int GraphCreationSettings::getGraphVertexWeight(stk::topology type) const
             return 3;
         case stk::topology::HEXAHEDRON_20:
             return 8;
+        case stk::topology::PYRAMID_5:
+            return 1;
         case stk::topology::TETRAHEDRON_4:
             return 1;
         case stk::topology::TETRAHEDRON_10:
             return 6;
         case stk::topology::WEDGE_6:
             return 2;
+        case stk::topology::WEDGE_12:
+            // TODO
         case stk::topology::WEDGE_15:
             return 12;
         default:
@@ -291,7 +367,12 @@ BalanceSettings::GraphOption GraphCreationSettings::getGraphOption() const
 
 bool GraphCreationSettings::includeSearchResultsInGraph() const
 {
-    return true;
+    return m_includeSearchResultInGraph;
+}
+
+void GraphCreationSettings::setIncludeSearchResultsInGraph(bool doContactSearch)
+{
+    m_includeSearchResultInGraph = doContactSearch;
 }
 
 double GraphCreationSettings::getToleranceForParticleSearch() const
@@ -303,6 +384,11 @@ void GraphCreationSettings::setToleranceFunctionForFaceSearch(std::shared_ptr<st
 {
     m_faceSearchToleranceFunction = faceSearchTolerance;
     m_UseConstantToleranceForFaceSearch = false;
+}
+
+bool GraphCreationSettings::isConstantFaceSearchTolerance() const
+{
+  return m_UseConstantToleranceForFaceSearch;
 }
 
 double GraphCreationSettings::getToleranceForFaceSearch(const stk::mesh::BulkData & mesh,
@@ -337,8 +423,10 @@ void GraphCreationSettings::setDecompMethod(const std::string& input_method)
 {
     method = input_method;
 }
+
 void GraphCreationSettings::setToleranceForFaceSearch(double tol)
 {
+    m_UseConstantToleranceForFaceSearch = true;
     mToleranceForFaceSearch = tol;
 }
 void GraphCreationSettings::setToleranceForParticleSearch(double tol)
@@ -368,6 +456,8 @@ int GraphCreationSettings::getConnectionTableIndex(stk::topology elementTopology
         case stk::topology::BEAM_3:
         case stk::topology::SHELL_LINE_2:
         case stk::topology::SHELL_LINE_3:
+        case stk::topology::SPRING_2:
+        case stk::topology::SPRING_3:
             tableIndex = 1;
             break;
         case stk::topology::TRI_3_2D:
@@ -432,6 +522,8 @@ int GraphCreationSettings::getEdgeWeightTableIndex(stk::topology elementTopology
         case stk::topology::BEAM_3:
         case stk::topology::SHELL_LINE_2:
         case stk::topology::SHELL_LINE_3:
+        case stk::topology::SPRING_2:
+        case stk::topology::SPRING_3:
             tableIndex = 1;
             break;
         case stk::topology::TRI_3_2D:
@@ -461,6 +553,7 @@ int GraphCreationSettings::getEdgeWeightTableIndex(stk::topology elementTopology
         case stk::topology::TET_11:
         case stk::topology::PYRAMID_13:
         case stk::topology::PYRAMID_14:
+        case stk::topology::WEDGE_12:
         case stk::topology::WEDGE_15:
         case stk::topology::WEDGE_18:
         case stk::topology::HEX_27:
@@ -499,14 +592,58 @@ bool GraphCreationSettings::shouldFixSpiders() const
     return m_shouldFixSpiders;
 }
 
-const stk::mesh::Field<int> * GraphCreationSettings::getSpiderConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
+const stk::mesh::Field<int> * GraphCreationSettings::getSpiderBeamConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
 {
-    if (m_spiderConnectivityCountField == nullptr) {
-        m_spiderConnectivityCountField = reinterpret_cast<stk::mesh::Field<int>*>(stkMeshBulkData.mesh_meta_data().get_field(stk::topology::NODE_RANK,
-                                                                                                                             getSpiderConnectivityCountFieldName()));
-        ThrowRequireMsg(m_spiderConnectivityCountField != nullptr, "Must create spider connectivity field when stomping spiders.");
+    if (m_spiderBeamConnectivityCountField == nullptr) {
+        m_spiderBeamConnectivityCountField =
+            reinterpret_cast<stk::mesh::Field<int>*>(stkMeshBulkData.mesh_meta_data().get_field(stk::topology::NODE_RANK,
+                                                     getSpiderBeamConnectivityCountFieldName()));
+        ThrowRequireMsg(m_spiderBeamConnectivityCountField != nullptr,
+                        "Must create nodal spider beam connectivity count field when stomping spiders.");
     }
-    return m_spiderConnectivityCountField;
+    return m_spiderBeamConnectivityCountField;
+}
+
+const stk::mesh::Field<int> * GraphCreationSettings::getSpiderVolumeConnectivityCountField(const stk::mesh::BulkData & stkMeshBulkData) const
+{
+    if (m_spiderVolumeConnectivityCountField == nullptr) {
+        m_spiderVolumeConnectivityCountField =
+            reinterpret_cast<stk::mesh::Field<int>*>(stkMeshBulkData.mesh_meta_data().get_field(stk::topology::ELEM_RANK,
+                                                     getSpiderVolumeConnectivityCountFieldName()));
+        ThrowRequireMsg(m_spiderVolumeConnectivityCountField != nullptr,
+                        "Must create element spider volume connectivity count field when stomping spiders.");
+    }
+    return m_spiderVolumeConnectivityCountField;
+}
+
+void GraphCreationSettings::setUseNodeBalancer(bool useBalancer)
+{
+  m_useNodeBalancer = useBalancer;
+}
+
+void GraphCreationSettings::setNodeBalancerTargetLoadBalance(double targetLoadBalance)
+{
+  m_nodeBalancerTargetLoadBalance = targetLoadBalance;
+}
+
+void GraphCreationSettings::setNodeBalancerMaxIterations(unsigned maxIterations)
+{
+  m_nodeBalancerMaxIterations = maxIterations;
+}
+
+bool GraphCreationSettings::useNodeBalancer() const
+{
+  return m_useNodeBalancer;
+}
+
+double GraphCreationSettings::getNodeBalancerTargetLoadBalance() const
+{
+  return m_nodeBalancerTargetLoadBalance;
+}
+
+unsigned GraphCreationSettings::getNodeBalancerMaxIterations() const
+{
+  return m_nodeBalancerMaxIterations;
 }
 
 const std::string& get_coloring_part_base_name()

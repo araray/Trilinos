@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2010 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #include <tokenize.h>
 
@@ -115,7 +89,7 @@ namespace Ioad {
   {
     // Write field properties
     std::vector<std::string> property_list = properties_to_save(entity);
-    for (auto property_name : property_list) {
+    for (auto &property_name : property_list) {
       Ioss::Property property = entity->get_property(property_name);
 
       std::string variable_name = get_property_variable_name(property_name);
@@ -143,7 +117,7 @@ namespace Ioad {
   template <typename T> int64_t DatabaseIO::write_meta_data_container(const T &entity_blocks)
   {
     int64_t count = 0;
-    for (auto entity_block : entity_blocks) {
+    for (auto &entity_block : entity_blocks) {
       count += entity_block->entity_count();
       std::string entity_type  = entity_block->type_string();
       std::string entity_name  = entity_block->name();
@@ -159,7 +133,7 @@ namespace Ioad {
   int64_t DatabaseIO::write_meta_data_container<Ioss::CommSetContainer>(
       const Ioss::CommSetContainer &entity_blocks)
   {
-    for (auto entity_block : entity_blocks) {
+    for (auto &entity_block : entity_blocks) {
       std::string entity_type  = entity_block->type_string();
       std::string entity_name  = entity_block->name();
       std::string encoded_name = encode_field_name({entity_type, entity_name});
@@ -174,7 +148,7 @@ namespace Ioad {
     int64_t count    = 0;
     int64_t df_count = 0;
 
-    for (auto entity_block : entity_blocks) {
+    for (auto &entity_block : entity_blocks) {
       count += entity_block->entity_count();
       df_count += entity_block->get_property("distribution_factor_count").get_int();
       std::string entity_type  = entity_block->type_string();
@@ -232,7 +206,7 @@ namespace Ioad {
       const Ioss::CoordinateFrameContainer &coordinate_frames)
   {
     int64_t count = 0;
-    for (auto coordinate_frame : coordinate_frames) {
+    for (auto &coordinate_frame : coordinate_frames) {
       std::string encoded_name = encoded_coordinate_frame_name(coordinate_frame);
       adios_wrapper.InquireAndPut<double>(encoded_name, coordinate_frame.coordinates());
     }
@@ -413,7 +387,7 @@ namespace Ioad {
                                      const std::string &               encoded_entity_name)
   {
     std::vector<std::string> property_list = properties_to_save(entity_block);
-    for (auto property_name : property_list) {
+    for (auto &property_name : property_list) {
       Ioss::Property property      = entity_block->get_property(property_name);
       std::string    variable_name = get_property_variable_name(property_name);
       switch (property.get_type()) {
@@ -439,7 +413,7 @@ namespace Ioad {
   void DatabaseIO::define_entity_internal(const T &entity_blocks, Ioss::Field::RoleType *role)
   {
     using cv_removed_value_type = typename std::remove_pointer<typename T::value_type>::type;
-    for (auto entity_block : entity_blocks) {
+    for (auto &entity_block : entity_blocks) {
       std::string entity_type = entity_block->type_string();
       std::string entity_name = entity_block->name();
       if (!role) {
@@ -450,7 +424,7 @@ namespace Ioad {
       }
       Ioss::NameList field_names;
       entity_block->field_describe(&field_names);
-      for (auto field_name : field_names) {
+      for (auto &field_name : field_names) {
         // Skip ignored fields
         if (find_field_in_mapset(entity_type, field_name, Ignore_fields)) {
           continue;
@@ -506,7 +480,7 @@ namespace Ioad {
   void DatabaseIO::define_coordinate_frames_internal(
       const Ioss::CoordinateFrameContainer &coordinate_frames)
   {
-    for (auto coordinate_frame : coordinate_frames) {
+    for (auto &coordinate_frame : coordinate_frames) {
       std::string encoded_name = encoded_coordinate_frame_name(coordinate_frame);
       adios_wrapper.DefineVariable<double>(encoded_name, {number_proc, 9, 1}, {rank, 0, 0},
                                            {1, 9, 1});
@@ -1328,7 +1302,7 @@ namespace Ioad {
     // // Also defines member variables of this class...
 
     if (nodeCount == 0) {
-      IOSS_WARNING << "No nodes were found in the model, file '" << decoded_filename() << "'\n";
+      Ioss::WARNING() << "No nodes were found in the model, file '" << decoded_filename() << "'\n";
     }
     else if (nodeCount < 0) {
       // NOTE: Code will not continue past this call...
@@ -1339,7 +1313,8 @@ namespace Ioad {
     }
 
     if (elementCount == 0) {
-      IOSS_WARNING << "No elements were found in the model, file: '" << decoded_filename() << "'\n";
+      Ioss::WARNING() << "No elements were found in the model, file: '" << decoded_filename()
+                      << "'\n";
     }
 
     if (elementCount < 0) {
@@ -1427,19 +1402,19 @@ namespace Ioad {
       IOSS_ERROR(errmsg);
     }
     else if (number_proc > number_proc_read) {
-      IOSS_WARNING << "This file was originally written on " << number_proc_read
-                   << " processors, but is now being read using " << number_proc
-                   << " processors.\n";
+      Ioss::WARNING() << "This file was originally written on " << number_proc_read
+                      << " processors, but is now being read using " << number_proc
+                      << " processors.\n";
     }
     if (rank < number_proc_read) {
       // Only get info for processors that actually have an id.
       unsigned long processor_id;
       get_data<unsigned long>(static_cast<void *>(&processor_id), Processor_id_meta);
       if (rank != processor_id) {
-        IOSS_WARNING << "This file was originally written on processor " << processor_id
-                     << ", but is now being read on processor " << rank
-                     << ". This may cause problems if there is any processor-dependent data on "
-                        "the file.\n";
+        Ioss::WARNING() << "This file was originally written on processor " << processor_id
+                        << ", but is now being read on processor " << rank
+                        << ". This may cause problems if there is any processor-dependent data on "
+                           "the file.\n";
       }
     }
   }
@@ -1548,10 +1523,10 @@ namespace Ioad {
 
       // Check if field name has changed. Rely on property `original_name` if
       // it exists.
-      const std::string entity_name = entity->property_exists(original_name)
-                                          ? entity->get_property(original_name).get_string()
-                                          : entity->name();
-      const std::string &field_name = field.get_name();
+      const std::string  entity_name = entity->property_exists(original_name)
+                                           ? entity->get_property(original_name).get_string()
+                                           : entity->name();
+      const std::string &field_name  = field.get_name();
 
       if (find_field_in_mapset(entity_type, field_name, Ignore_fields)) {
         return num_to_get;
@@ -1621,7 +1596,7 @@ namespace Ioad {
         IOSS_ERROR(errmsg);
       }
       else {
-        IOSS_WARNING << "WARNING: The variable `" << encoded_name << "` was not found.\n";
+        Ioss::WARNING() << "The variable `" << encoded_name << "` was not found.\n";
       }
     }
   }

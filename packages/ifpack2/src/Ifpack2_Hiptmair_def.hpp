@@ -46,6 +46,7 @@
 #include "Ifpack2_Details_OneLevelFactory.hpp"
 #include "Ifpack2_Parameters.hpp"
 #include "Teuchos_TimeMonitor.hpp"
+#include "Tpetra_MultiVector.hpp"
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -77,6 +78,31 @@ Hiptmair (const Teuchos::RCP<const row_matrix_type>& A,
 {}
 
 
+
+
+template <class MatrixType>
+Hiptmair<MatrixType>::
+Hiptmair (const Teuchos::RCP<const row_matrix_type>& A):
+  A_ (A),
+  PtAP_ (),
+  P_ (),
+  // Default values
+  precType1_ ("CHEBYSHEV"),
+  precType2_ ("CHEBYSHEV"),
+  preOrPost_ ("both"),
+  ZeroStartingSolution_ (true),
+  // General
+  IsInitialized_ (false),
+  IsComputed_ (false),
+  NumInitialize_ (0),
+  NumCompute_ (0),
+  NumApply_ (0),
+  InitializeTime_ (0.0),
+  ComputeTime_ (0.0),
+  ApplyTime_ (0.0)
+{}
+
+
 template <class MatrixType>
 Hiptmair<MatrixType>::~Hiptmair() {}
 
@@ -84,6 +110,7 @@ template <class MatrixType>
 void Hiptmair<MatrixType>::setParameters (const Teuchos::ParameterList& plist)
 {
   using Teuchos::as;
+  using Teuchos::RCP;
   using Teuchos::ParameterList;
   using Teuchos::Exceptions::InvalidParameterName;
   using Teuchos::Exceptions::InvalidParameterType;
@@ -109,6 +136,14 @@ void Hiptmair<MatrixType>::setParameters (const Teuchos::ParameterList& plist)
   preOrPost = params.get("hiptmair: pre or post",     preOrPost);
   zeroStartingSolution = params.get("hiptmair: zero starting solution",
                                     zeroStartingSolution);
+
+  // Grab the matrices off of the parameter list if we need them
+  // This will intentionally throw if they're not there and we need them
+  if(PtAP_.is_null()) 
+    PtAP_ = params.get<RCP<row_matrix_type> >("PtAP");
+  if(P_.is_null()) 
+    P_ = params.get<RCP<row_matrix_type> >("P");
+
 
   // "Commit" the new values to the instance data.
   precType1_ = precType1;
@@ -223,6 +258,7 @@ void Hiptmair<MatrixType>::initialize ()
   IsComputed_ = false;
 
   Teuchos::Time timer ("initialize");
+  double startTime = timer.wallTime();
   { // The body of code to time
     Teuchos::TimeMonitor timeMon (timer);
 
@@ -239,7 +275,7 @@ void Hiptmair<MatrixType>::initialize ()
   }
   IsInitialized_ = true;
   ++NumInitialize_;
-  InitializeTime_ += timer.totalElapsedTime ();
+  InitializeTime_ += (timer.wallTime() - startTime);
 }
 
 
@@ -257,6 +293,7 @@ void Hiptmair<MatrixType>::compute ()
   }
 
   Teuchos::Time timer ("compute");
+  double startTime = timer.wallTime();
   { // The body of code to time
     Teuchos::TimeMonitor timeMon (timer);
     ifpack2_prec1_->compute();
@@ -264,7 +301,7 @@ void Hiptmair<MatrixType>::compute ()
   }
   IsComputed_ = true;
   ++NumCompute_;
-  ComputeTime_ += timer.totalElapsedTime ();
+  ComputeTime_ += (timer.wallTime() - startTime);
 }
 
 
@@ -308,6 +345,7 @@ apply (const Tpetra::MultiVector<typename MatrixType::scalar_type,
     "Ifpack2::Hiptmair::apply: mode != Teuchos::NO_TRANS has not been implemented.");
 
   Teuchos::Time timer ("apply");
+  double startTime = timer.wallTime();
   { // The body of code to time
     Teuchos::TimeMonitor timeMon (timer);
 
@@ -315,10 +353,7 @@ apply (const Tpetra::MultiVector<typename MatrixType::scalar_type,
     // we need to create an auxiliary vector, Xcopy
     RCP<const MV> Xcopy;
     {
-      auto X_lcl_host = X.getLocalViewHost ();
-      auto Y_lcl_host = Y.getLocalViewHost ();
-
-      if (X_lcl_host.data () == Y_lcl_host.data ()) {
+      if (X.aliases(Y)) {
         Xcopy = rcp (new MV (X, Teuchos::Copy));
       } else {
         Xcopy = rcpFromRef (X);
@@ -335,7 +370,7 @@ apply (const Tpetra::MultiVector<typename MatrixType::scalar_type,
 
   }
   ++NumApply_;
-  ApplyTime_ += timer.totalElapsedTime ();
+  ApplyTime_ += (timer.wallTime() - startTime);
 }
 
 template <class MatrixType>

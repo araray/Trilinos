@@ -9,25 +9,25 @@
 #ifndef Tempus_StepperStaggeredForwardSensitivity_impl_hpp
 #define Tempus_StepperStaggeredForwardSensitivity_impl_hpp
 
-#include "Tempus_config.hpp"
-#include "Tempus_StepperFactory.hpp"
-#include "Tempus_WrapStaggeredFSAModelEvaluator.hpp"
-#include "Tempus_WrapCombinedFSAModelEvaluator.hpp"
-#include "Teuchos_VerboseObjectParameterListHelpers.hpp"
-
+#include "Thyra_VectorStdOps.hpp"
+#include "Thyra_MultiVectorStdOps.hpp"
 #include "Thyra_DefaultMultiVectorProductVectorSpace.hpp"
 #include "Thyra_DefaultMultiVectorProductVector.hpp"
 
-namespace Tempus {
+#include "Tempus_StepperFactory.hpp"
+#include "Tempus_WrapStaggeredFSAModelEvaluator.hpp"
+#include "Tempus_WrapCombinedFSAModelEvaluator.hpp"
 
-// Forward Declaration for recursive includes (this Stepper <--> StepperFactory)
-template<class Scalar> class StepperFactory;
+
+namespace Tempus {
 
 
 template<class Scalar>
 StepperStaggeredForwardSensitivity<Scalar>::
 StepperStaggeredForwardSensitivity()
 {
+  this->setStepperName(        "StaggeredForwardSensitivity");
+  this->setStepperType(        "StaggeredForwardSensitivity");
   this->setParams(Teuchos::null, Teuchos::null);
 }
 
@@ -40,6 +40,8 @@ StepperStaggeredForwardSensitivity(
   const Teuchos::RCP<Teuchos::ParameterList>& sens_pList)
 {
   // Set all the input parameters and call initialize
+  this->setStepperName(        "StaggeredForwardSensitivity");
+  this->setStepperType(        "StaggeredForwardSensitivity");
   this->setParams(pList, sens_pList);
   this->setModel(appModel);
   this->initialize();
@@ -79,22 +81,15 @@ setModel(
     sensitivityStepper_ = sf->createStepper(stepperPL_, fsa_model_);
   else
     sensitivityStepper_->setModel(fsa_model_);
-}
 
-
-template<class Scalar>
-void StepperStaggeredForwardSensitivity<Scalar>::
-setNonConstModel(
-  const Teuchos::RCP<Thyra::ModelEvaluator<Scalar> >& appModel)
-{
-  this->setModel(appModel);
+  this->isInitialized_ = false;
 }
 
 
 template<class Scalar>
 Teuchos::RCP<const Thyra::ModelEvaluator<Scalar> >
 StepperStaggeredForwardSensitivity<Scalar>::
-getModel()
+getModel() const
 {
   return combined_fsa_model_;
 }
@@ -107,13 +102,8 @@ setSolver(
 {
   stateStepper_->setSolver(solver);
   sensitivityStepper_->setSolver(solver);
-}
 
-
-template<class Scalar>
-void StepperStaggeredForwardSensitivity<Scalar>::
-initialize()
-{
+  this->isInitialized_ = false;
 }
 
 
@@ -122,6 +112,8 @@ void StepperStaggeredForwardSensitivity<Scalar>::
 takeStep(
   const Teuchos::RCP<SolutionHistory<Scalar> >& solutionHistory)
 {
+  this->checkInitialized();
+
   using Teuchos::RCP;
   using Teuchos::rcp;
   using Teuchos::rcp_dynamic_cast;
@@ -146,6 +138,7 @@ takeStep(
     RCP<SolutionState<Scalar> > state = solutionHistory->getCurrentState();
     RCP<DMVPV> X, XDot, XDotDot;
     X = rcp_dynamic_cast<DMVPV>(state->getX(),true);
+
     XDot = rcp_dynamic_cast<DMVPV>(state->getXDot(),true);
     if (state->getXDotDot() != Teuchos::null)
       XDotDot = rcp_dynamic_cast<DMVPV>(state->getXDotDot(),true);
@@ -159,11 +152,11 @@ takeStep(
       xdotdot = XDotDot->getNonconstMultiVector()->col(0);
 
     // Create state solution history
-    RCP<SolutionState<Scalar> > state_state =
-      rcp(new SolutionState<Scalar>(state->getMetaData()->clone(),
-                                    x, xdot, xdotdot,
-                                    state->getStepperState()->clone()));
-    stateSolutionHistory_ = rcp(new SolutionHistory<Scalar>(shPL));
+    RCP<SolutionState<Scalar> > state_state = state->clone();
+    state_state->setX(x);
+    state_state->setXDot(xdot);
+    state_state->setXDotDot(xdotdot);
+    stateSolutionHistory_ = createSolutionHistoryPL<Scalar>(shPL);
     stateSolutionHistory_->addState(state_state);
 
     const int num_param = X->getMultiVector()->domain()->dim()-1;
@@ -187,11 +180,11 @@ takeStep(
       dxdotdotdp_vec = multiVectorProductVector(prod_space, dxdotdotdp);
 
     // Create sensitivity solution history
-    RCP<SolutionState<Scalar> > sens_state =
-      rcp(new SolutionState<Scalar>(state->getMetaData()->clone(),
-                                    dxdp_vec, dxdotdp_vec, dxdotdotdp_vec,
-                                    state->getStepperState()->clone()));
-    sensSolutionHistory_ = rcp(new SolutionHistory<Scalar>(shPL));
+    RCP<SolutionState<Scalar> > sens_state = state->clone();
+    sens_state->setX(dxdp_vec);
+    sens_state->setXDot(dxdotdp_vec);
+    sens_state->setXDotDot(dxdotdotdp_vec);
+    sensSolutionHistory_ = createSolutionHistoryPL<Scalar>(shPL);
     sensSolutionHistory_->addState(sens_state);
   }
 
@@ -282,10 +275,55 @@ describe(
    Teuchos::FancyOStream               &out,
    const Teuchos::EVerbosityLevel      verbLevel) const
 {
+  out.setOutputToRootOnly(0);
+  out << std::endl;
+  Stepper<Scalar>::describe(out, verbLevel);
+
+  out << "--- StepperStaggeredForwardSensitivity ---\n";
+  out << "  stateStepper_         = " << stateStepper_ <<std::endl;
+  out << "  sensitivityStepper_   = " << sensitivityStepper_ <<std::endl;
+  out << "  combined_fsa_model_   = " << combined_fsa_model_ <<std::endl;
+  out << "  fsa_model_            = " << fsa_model_ <<std::endl;
+  out << "  stateSolutionHistory_ = " << stateSolutionHistory_ <<std::endl;
+  out << "  sensSolutionHistory_  = " << sensSolutionHistory_ <<std::endl;
+  out << "------------------------------------------" << std::endl;
+
   out << description() << "::describe:" << std::endl;
   stateStepper_->describe(out, verbLevel);
   out << std::endl;
   sensitivityStepper_->describe(out, verbLevel);
+}
+
+
+template<class Scalar>
+bool StepperStaggeredForwardSensitivity<Scalar>::isValidSetup(Teuchos::FancyOStream & out) const
+{
+  out.setOutputToRootOnly(0);
+  bool isValidSetup = true;
+
+  if ( !Stepper<Scalar>::isValidSetup(out) ) isValidSetup = false;
+
+  if (stateStepper_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The state stepper is not set!\n";
+  }
+
+  if (sensitivityStepper_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The sensitivity stepper is not set!\n";
+  }
+
+  if (combined_fsa_model_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The combined FSA model is not set!\n";
+  }
+
+  if (fsa_model_ == Teuchos::null) {
+    isValidSetup = false;
+    out << "The FSA model is not set!\n";
+  }
+
+  return isValidSetup;
 }
 
 

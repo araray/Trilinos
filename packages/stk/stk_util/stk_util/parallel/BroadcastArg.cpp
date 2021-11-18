@@ -32,11 +32,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <stk_util/parallel/BroadcastArg.hpp>
-#include <stddef.h>                     // for size_t
-#include <algorithm>                    // for copy
-#include <string>                       // for basic_string, string
-#include "stk_util/parallel/Parallel.hpp"  // for parallel_machine_rank, etc
+#include "stk_util/parallel/BroadcastArg.hpp"
+#include "stk_util/parallel/Parallel.hpp"  // for MPI_Bcast, parallel_machine_rank, MPI_BYTE
+#include "stk_util/stk_config.h"           // for STK_HAS_MPI
+#include <cstddef>                         // for size_t
+#include <algorithm>                       // for copy
+#include <string>                          // for string, basic_string
 
 
 namespace stk {
@@ -66,9 +67,8 @@ BroadcastArg::BroadcastArg(
     buffer_length = s.size();
     if(buffer_length > 0) {
         buffer = new char[buffer_length];
+        std::copy(s.begin(), s.end(), buffer);
     }
-    
-    std::copy(s.begin(), s.end(), buffer);
   }
 
 // if STK_HAS_MPI, broadcast m_argc, buffer and buffer_length to processors

@@ -100,14 +100,8 @@ RCP<crs_matrix_type>
 createTestMatrix (RCP<const Comm<int>> comm, const LO lclNumRows)
 {
   RCP<crs_matrix_type> A;
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  A = rcp (new crs_matrix_type (makeRowMap (comm, lclNumRows),
-                                makeColumnMap (comm), size_t (1),
-                                Tpetra::StaticProfile));
-#else
   A = rcp (new crs_matrix_type (makeRowMap (comm, lclNumRows),
                                 makeColumnMap (comm), size_t (1)));
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
   constexpr LO numEnt = 1;
   std::array<LO, 1> lclCols {{ 0 }};
@@ -234,8 +228,8 @@ testTranspose (bool& success,
       std::vector<LO> lclColIndsBuf;
       std::vector<ST> valsBuf;
       for (LO lclRow = 0; lclRow < lclNumRows_at; ++lclRow) {
-        Teuchos::ArrayView<const LO> lclColInds;
-        Teuchos::ArrayView<const ST> vals;
+        typename crs_matrix_type::local_inds_host_view_type lclColInds;
+        typename crs_matrix_type::values_host_view_type vals;
         AT_unsorted->getLocalRowView (lclRow, lclColInds, vals);
 
         const GO gblNumRows = GO (lclNumRows) * GO (comm->getSize ());
@@ -246,9 +240,9 @@ testTranspose (bool& success,
           // Result's rows may not be sorted.
           lclColIndsBuf.resize (lclColInds.size ());
           valsBuf.resize (vals.size ());
-          std::copy (lclColInds.begin (), lclColInds.end (),
+          std::copy (lclColInds.data(), lclColInds.data()+lclColInds.extent(0),
                      lclColIndsBuf.begin ());
-          std::copy (vals.begin (), vals.end (), valsBuf.begin ());
+          std::copy (vals.data(), vals.data()+vals.extent(0), valsBuf.begin ());
           Tpetra::sort2 (lclColIndsBuf.begin (), lclColIndsBuf.end (),
                          valsBuf.begin ());
 
@@ -304,8 +298,8 @@ testTranspose (bool& success,
     const LO lclNumRows_at (rowMap_at->getNodeNumElements ());
     if (lclNumRows_at != 0) {
       for (LO lclRow = 0; lclRow < lclNumRows_at; ++lclRow) {
-        Teuchos::ArrayView<const LO> lclColInds;
-        Teuchos::ArrayView<const ST> vals;
+        typename crs_matrix_type::local_inds_host_view_type lclColInds;
+        typename crs_matrix_type::values_host_view_type vals;
         AT_sorted->getLocalRowView (lclRow, lclColInds, vals);
 
         const GO gblNumRows = GO (lclNumRows) * GO (comm->getSize ());

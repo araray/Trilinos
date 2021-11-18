@@ -41,10 +41,12 @@ project votd
   : requirements
     $(sierra-warnings)
     <include>$(stk_performance_tests-root)
+    <include>$(stk_performance_tests-root)/..
     <define>STK_BUILT_IN_SIERRA
     <define>STK_HIDE_DEPRECATED_CODE
   : usage-requirements
     <include>$(stk_performance_tests-root)
+    <include>$(stk_performance_tests-root)/..
   : build-dir $(stk_performance_tests-builddir)
   ;
 #
@@ -126,7 +128,6 @@ exe stk_mesh_performance_tests
     /sierra/stk_unit_test_utils//stk_unit_main
     /sierra/stk_balance//stk_balance_lib
     /sierra/stk_io//stk_io_util
-    /sierra/stk_util//stk_util_unit_test_support
     /sierra/stk_mesh//stk_mesh_utest
     /sierra/stk_unit_test_utils//stk_mesh_fixtures
   : <tag>@sierra-exec-tag

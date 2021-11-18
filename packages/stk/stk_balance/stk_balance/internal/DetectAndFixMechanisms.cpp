@@ -33,7 +33,7 @@ bool detectAndFixMechanisms(const stk::balance::BalanceSettings& graphSettings, 
     stk::mesh::impl::LocalIdMapper localIds(bulk, stk::topology::ELEM_RANK);
 
     Zoltan2ParallelGraph zoltan2Graph;
-    fill_zoltan2_parallel_graph(bulk, graphSettings, localIds, zoltan2Graph);
+    fill_zoltan2_parallel_graph(bulk, graphSettings, zoltan2Graph);
 
     std::vector<BalanceLocalNumber> tmpOffsets;
     std::vector<BalanceGlobalNumber> tmpAdj;
@@ -65,11 +65,12 @@ bool detectAndFixMechanisms(const stk::balance::BalanceSettings& graphSettings, 
 }
 
 
-void fill_zoltan2_parallel_graph(stk::mesh::BulkData& bulk, const stk::balance::BalanceSettings& graphSettings, const stk::mesh::impl::LocalIdMapper& localIds, Zoltan2ParallelGraph &zoltan2Graph)
+void fill_zoltan2_parallel_graph(stk::mesh::BulkData& bulk, const stk::balance::BalanceSettings& graphSettings,
+                                 Zoltan2ParallelGraph &zoltan2Graph)
 {
-    stk::mesh::Selector sel = bulk.mesh_meta_data().locally_owned_part();
+    stk::mesh::Selector sel = bulk.mesh_meta_data().universal_part();
     zoltan2Graph.setMechanismCheckFlag();
-    stk::balance::internal::createZoltanParallelGraph(graphSettings, bulk, std::vector<stk::mesh::Selector>{sel}, localIds, zoltan2Graph);
+    stk::balance::internal::createZoltanParallelGraph(bulk, sel, bulk.parallel(), graphSettings, zoltan2Graph);
 }
 
 size_t one_based(size_t input)
@@ -128,8 +129,9 @@ std::vector<stk::mesh::EntityVector> get_elements_per_component(const stk::mesh:
 
     std::vector<stk::mesh::EntityVector> elementsPerComponent(num_dsd);
 
+    const bool sortById = true;
     stk::mesh::EntityVector elements;
-    stk::mesh::get_selected_entities(bulk.mesh_meta_data().locally_owned_part(), bulk.buckets(stk::topology::ELEM_RANK), elements);
+    stk::mesh::get_entities(bulk, stk::topology::ELEM_RANK, bulk.mesh_meta_data().locally_owned_part(), elements, sortById);
 
     for(size_t i=0;i<list_ptr.size()-1;++i)
     {
@@ -160,15 +162,26 @@ size_t get_max_component_index(const std::vector<stk::mesh::EntityVector> &eleme
     return max_component_index;
 }
 
-stk::mesh::EntityVector get_shared_nodes_between_components(const std::set<stk::mesh::Entity>& nodesOfHomeComponent, const std::set<stk::mesh::Entity>& nodesOfThisComponent)
+void get_shared_nodes_between_components(
+         const stk::mesh::BulkData& bulk,
+         const std::set<stk::mesh::Entity>& nodesOfHomeComponent,
+         const stk::mesh::EntityVector& thisComponent,
+         stk::mesh::EntityVector& result)
 {
-    std::vector<stk::mesh::Entity> result(std::max(nodesOfHomeComponent.size(), nodesOfThisComponent.size()));
-    std::vector<stk::mesh::Entity>::iterator iter=std::set_intersection(nodesOfHomeComponent.begin(), nodesOfHomeComponent.end(),
-                                                                        nodesOfThisComponent.begin(), nodesOfThisComponent.end(),
-                                                                        result.begin());
+    result.clear();
+    for(size_t i=0;i<thisComponent.size();++i)
+    {
+        stk::mesh::Entity element = thisComponent[i];
+        const stk::mesh::Entity* elemNodes = bulk.begin_nodes(element);
+        const unsigned numNodes = bulk.num_nodes(element);
+        for(unsigned n=0; n<numNodes; ++n) {
+            if (nodesOfHomeComponent.find(elemNodes[n]) != nodesOfHomeComponent.end()) {
+                result.push_back(elemNodes[n]);
+            }
+        }
+    }
 
-    result.resize(iter-result.begin());
-    return result;
+    stk::util::sort_and_unique(result);
 }
 
 std::vector<int> get_components_to_move(const stk::mesh::BulkData& bulk, const std::vector<stk::mesh::EntityVector>& elementsPerComponent)
@@ -181,12 +194,13 @@ std::vector<int> get_components_to_move(const stk::mesh::BulkData& bulk, const s
     std::ostringstream os;
     os << "Proc " << bulk.parallel_rank() << std::endl;
 
+    stk::mesh::EntityVector sharedNodesBetweenComponents;
     for(size_t i=0;i<elementsPerComponent.size();++i)
     {
         if(i!=maxComponent)
         {
             std::set<stk::mesh::Entity> nodesOfThisComponent = getNodesOfComponent(bulk, elementsPerComponent[i]);
-            stk::mesh::EntityVector sharedNodesBetweenComponents = get_shared_nodes_between_components(nodesOfHomeComponent, nodesOfThisComponent);
+            get_shared_nodes_between_components(bulk, nodesOfHomeComponent, elementsPerComponent[i], sharedNodesBetweenComponents);
 
             if(sharedNodesBetweenComponents.size()>0)
             {

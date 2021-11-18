@@ -609,7 +609,9 @@ namespace Intrepid2 {
             
                 rst::subtract(interpolant, exact_solution);
 
-                ValueType relNorm = rst::Serial::vectorNorm(interpolant, NORM_TWO);
+                auto interpolant_h = Kokkos::create_mirror_view(interpolant);
+                Kokkos::deep_copy(interpolant_h, interpolant);
+                ValueType relNorm = rst::Serial::vectorNorm(interpolant_h, NORM_TWO);
                               
                 *outStream << "\nRelative norm-2 error between exact solution polynomial of order ("
                            << x_order << ", " << y_order << ", " << z_order
@@ -628,7 +630,7 @@ namespace Intrepid2 {
 
       }
       // Catch unexpected errors
-      catch (std::logic_error err) {
+      catch (std::logic_error &err) {
             *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << "\n\n";
             *outStream << "-------------------------------------------------------------------------------" << "\n";

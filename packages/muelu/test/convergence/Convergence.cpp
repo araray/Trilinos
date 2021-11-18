@@ -157,10 +157,10 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib lib, int arg
     Xpetra::Parameters xpetraParameters(clp);
 
     switch (clp.parse(argc,argv)) {
-      case Teuchos::CommandLineProcessor::PARSE_HELP_PRINTED:        return EXIT_SUCCESS; break;
+      case Teuchos::CommandLineProcessor::PARSE_HELP_PRINTED:        return EXIT_SUCCESS;
       case Teuchos::CommandLineProcessor::PARSE_ERROR:
-      case Teuchos::CommandLineProcessor::PARSE_UNRECOGNIZED_OPTION: return EXIT_FAILURE; break;
-      case Teuchos::CommandLineProcessor::PARSE_SUCCESSFUL:                               break;
+      case Teuchos::CommandLineProcessor::PARSE_UNRECOGNIZED_OPTION: return EXIT_FAILURE;
+      case Teuchos::CommandLineProcessor::PARSE_SUCCESSFUL:          break;
     }
 
     const int numLists = 1;
@@ -170,7 +170,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib lib, int arg
     bool failed = false;
     for (int k = 0; k < numLists; k++) {
       const std::string& dirName = dirList[k];
-      std::string problemFile = dirName + "problem_" + typeid(GlobalOrdinal).name() + ".xml";
+      std::string problemFile = dirName + "problem.xml";
 
       Teuchos::ParameterList galeriParameters;
       Teuchos::updateParametersFromXmlFileAndBroadcast(problemFile, Teuchos::Ptr<Teuchos::ParameterList>(&galeriParameters), *comm);
@@ -255,7 +255,8 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib lib, int arg
       for (int i = 0; i < fileList.size(); i++) {
         if (fileList[i] == "problem_i.xml" ||
             fileList[i] == "problem_l.xml" ||
-            fileList[i] == "problem_x.xml")
+            fileList[i] == "problem_x.xml" ||
+            fileList[i] == "problem.xml")
           continue;
 
         std::string xmlFile = dirName + fileList[i];
@@ -340,21 +341,21 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib lib, int arg
 
         H->IsPreconditioner(isPrec);
         if (isPrec == false) {
-          MueLu::ReturnType ret = H->Iterate(*B, *X, std::pair<LO,MagnitudeType>(maxIts, tol));
+          MueLu::ConvergenceStatus ret = H->Iterate(*B, *X, std::pair<LO,MagnitudeType>(maxIts, tol));
 
           double rate = H->GetRate();
 
-          if (abs(rate-goldRate) < 0.02) {
+          if (std::abs(rate-goldRate) < 0.02) {
             out << xmlFile << ": passed (" <<
-                (ret == MueLu::Converged ? "converged, " : "unconverged, ") <<
+                (ret == MueLu::ConvergenceStatus::Converged ? "converged, " : "unconverged, ") <<
                 "expected rate = " << goldRate << ", real rate = " << rate <<
-                (ret == MueLu::Converged ? "" : " (after " + Teuchos::toString(maxIts) + " iterations)")
+                (ret == MueLu::ConvergenceStatus::Converged ? "" : " (after " + Teuchos::toString(maxIts) + " iterations)")
                 << ")" << std::endl;
           } else {
             out << xmlFile << ": failed (" <<
-                (ret == MueLu::Converged ? "converged, " : "unconverged, ") <<
+                (ret == MueLu::ConvergenceStatus::Converged ? "converged, " : "unconverged, ") <<
                 "expected rate = " << goldRate << ", real rate = " << rate <<
-                (ret == MueLu::Converged ? "" : " (after " + Teuchos::toString(maxIts) + " iterations)")
+                (ret == MueLu::ConvergenceStatus::Converged ? "" : " (after " + Teuchos::toString(maxIts) + " iterations)")
                 << ")" << std::endl;
             // ap: we need to understand what's going on with the convergence rate
             // At the moment, disable failure state, so that the test passes as long
@@ -412,7 +413,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib lib, int arg
 
             double rate = status->rate();
 
-            if (abs(rate-goldRate) < 0.02) {
+            if (std::abs(rate-goldRate) < 0.02) {
               out << xmlFile << ": passed (" <<
                   (ret == Belos::Converged ? "converged, " : "unconverged, ") <<
                   "expected rate = " << goldRate << ", real rate = " << rate <<

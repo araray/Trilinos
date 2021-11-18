@@ -32,9 +32,11 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <gtest/gtest.h>
-#include <stk_topology/topology.hpp>
-#include <vector>
+#include "gtest/gtest.h"              // for AssertionResult, Message, TestPartResult, Test, EXP...
+#include "stk_topology/topology.hpp"  // for topology, create_superelement_topology, topology::Q...
+#include <cstddef>                    // for size_t
+#include <memory>                     // for allocator_traits<>::value_type
+#include <vector>                     // for vector
 
 namespace {
 
@@ -60,6 +62,8 @@ TEST(stk_topology_how_to, map_topologies_to_ranks )
     face_rank_topologies.push_back(stk::topology::TRIANGLE_6);
     face_rank_topologies.push_back(stk::topology::QUAD_4);
     face_rank_topologies.push_back(stk::topology::QUADRILATERAL_4);
+    face_rank_topologies.push_back(stk::topology::QUAD_6);
+    face_rank_topologies.push_back(stk::topology::QUADRILATERAL_6);
     face_rank_topologies.push_back(stk::topology::QUAD_8);
     face_rank_topologies.push_back(stk::topology::QUADRILATERAL_8);
     face_rank_topologies.push_back(stk::topology::QUAD_9);
@@ -116,6 +120,7 @@ TEST(stk_topology_how_to, map_topologies_to_ranks )
     element_rank_topologies.push_back(stk::topology::PYRAMID_13);
     element_rank_topologies.push_back(stk::topology::PYRAMID_14);
     element_rank_topologies.push_back(stk::topology::WEDGE_6);
+    element_rank_topologies.push_back(stk::topology::WEDGE_12);
     element_rank_topologies.push_back(stk::topology::WEDGE_15);
     element_rank_topologies.push_back(stk::topology::WEDGE_18);
     element_rank_topologies.push_back(stk::topology::QUADRILATERAL_9_2D);
@@ -140,8 +145,8 @@ TEST(stk_topology_how_to, map_topologies_to_ranks )
 
     ASSERT_EQ(1u, node_rank_topologies.size());
     ASSERT_EQ(2u, edge_rank_topologies.size());
-    ASSERT_EQ(12u, face_rank_topologies.size());
-    ASSERT_EQ(57u, element_rank_topologies.size());
+    ASSERT_EQ(14u, face_rank_topologies.size());
+    ASSERT_EQ(58u, element_rank_topologies.size());
 
     for (size_t i=0;i<node_rank_topologies.size();i++)
     {

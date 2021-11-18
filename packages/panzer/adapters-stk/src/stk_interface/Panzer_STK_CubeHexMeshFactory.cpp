@@ -43,7 +43,7 @@
 #include <Panzer_STK_CubeHexMeshFactory.hpp>
 #include <Teuchos_TimeMonitor.hpp>
 #include <PanzerAdaptersSTK_config.hpp>
-#include <FEMHelpers.hpp>
+#include <stk_mesh/base/FEMHelpers.hpp>
 
 using Teuchos::RCP;
 using Teuchos::rcp;
@@ -171,10 +171,26 @@ void CubeHexMeshFactory::completeMeshConstruction(STK_Interface & mesh,stk::Para
    }
 
    mesh.buildLocalElementIDs();
+   if(createEdgeBlocks_) {
+      mesh.buildLocalEdgeIDs();
+   }
+   if(createFaceBlocks_) {
+      mesh.buildLocalFaceIDs();
+   }
+   
+   mesh.beginModification();
 
    // now that edges are built, side and node sets can be added
    addSideSets(mesh);
    addNodeSets(mesh);
+   if(createEdgeBlocks_) {
+      addEdgeBlocks(mesh);
+   }
+   if(createFaceBlocks_) {
+      addFaceBlocks(mesh);
+   }
+   
+   mesh.endModification();
 
    // calls Stk_MeshFactory::rebalance
    this->rebalance(mesh);
@@ -210,6 +226,25 @@ void CubeHexMeshFactory::setParameterList(const Teuchos::RCP<Teuchos::ParameterL
    buildInterfaceSidesets_ = paramList->get<bool>("Build Interface Sidesets");
 
    buildSubcells_ = paramList->get<bool>("Build Subcells");
+
+   createEdgeBlocks_ = paramList->get<bool>("Create Edge Blocks");
+   createFaceBlocks_ = paramList->get<bool>("Create Face Blocks");
+   if (not buildSubcells_ && createEdgeBlocks_) {
+      Teuchos::FancyOStream out(Teuchos::rcpFromRef(std::cout));
+      out.setOutputToRootOnly(0);
+      out.setShowProcRank(true);
+
+      out << "CubeHexMesh: NOT creating edge blocks because building sub cells disabled" << std::endl;
+      createEdgeBlocks_ = false;
+   }
+   if (not buildSubcells_ && createFaceBlocks_) {
+      Teuchos::FancyOStream out(Teuchos::rcpFromRef(std::cout));
+      out.setOutputToRootOnly(0);
+      out.setShowProcRank(true);
+
+      out << "CubeHexMesh: NOT creating face blocks because building sub cells disabled" << std::endl;
+      createFaceBlocks_ = false;
+   }
 
    // read in periodic boundary conditions
    parsePeriodicBCList(Teuchos::rcpFromRef(paramList->sublist("Periodic BCs")),periodicBCVec_);
@@ -247,6 +282,10 @@ Teuchos::RCP<const Teuchos::ParameterList> CubeHexMeshFactory::getValidParameter
       defaultParams->set<bool>("Build Interface Sidesets",false);
 
       defaultParams->set<bool>("Build Subcells",true);
+
+      // default to false for backward compatibility
+      defaultParams->set<bool>("Create Edge Blocks",false,"Create edge blocks in the mesh");
+      defaultParams->set<bool>("Create Face Blocks",false,"Create face blocks in the mesh");
 
       Teuchos::ParameterList & bcs = defaultParams->sublist("Periodic BCs");
       bcs.set<int>("Count",0); // no default periodic boundary conditions
@@ -313,6 +352,15 @@ void CubeHexMeshFactory::buildMetaData(stk::ParallelMachine /* parallelMach */, 
 
    // add nodesets
    mesh.addNodeset("origin");
+
+   if(createEdgeBlocks_) {
+      const CellTopologyData * edge_ctd = shards::CellTopology(ctd).getBaseCellTopologyData(1,0);
+      mesh.addEdgeBlock(panzer_stk::STK_Interface::edgeBlockString, edge_ctd);
+   }
+   if(createFaceBlocks_) {
+      const CellTopologyData * face_ctd = shards::CellTopology(ctd).getBaseCellTopologyData(2,0);
+      mesh.addFaceBlock(panzer_stk::STK_Interface::faceBlockString, face_ctd);
+   }
 }
 
 void CubeHexMeshFactory::buildElements(stk::ParallelMachine parallelMach,STK_Interface & mesh) const
@@ -533,9 +581,10 @@ void CubeHexMeshFactory::addSides(STK_Interface & mesh) const
    mesh.endModification();
 }
 
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
 void CubeHexMeshFactory::addSideSets(STK_Interface & mesh) const
 {
-   mesh.beginModification();
    const stk::mesh::EntityRank side_rank = mesh.getSideRank();
 
    std::size_t totalXElems = nXElems_*xBlocks_;
@@ -682,14 +731,12 @@ void CubeHexMeshFactory::addSideSets(STK_Interface & mesh) const
 	 }
       }
    }
-
-   mesh.endModification();
 }
 
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
 void CubeHexMeshFactory::addNodeSets(STK_Interface & mesh) const
 {
-   mesh.beginModification();
-
    // get all part vectors
    stk::mesh::Part * origin = mesh.getNodeset("origin");
 
@@ -700,8 +747,34 @@ void CubeHexMeshFactory::addNodeSets(STK_Interface & mesh) const
       stk::mesh::Entity node = bulkData->get_entity(mesh.getNodeRank(),1);
       mesh.addEntityToNodeset(node,origin);
    }
+}
 
-   mesh.endModification();
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
+void CubeHexMeshFactory::addEdgeBlocks(STK_Interface & mesh) const
+{
+   stk::mesh::Part * edge_block = mesh.getEdgeBlock(panzer_stk::STK_Interface::edgeBlockString);
+
+   Teuchos::RCP<stk::mesh::BulkData> bulkData = mesh.getBulkData();
+   Teuchos::RCP<stk::mesh::MetaData> metaData = mesh.getMetaData();
+
+   std::vector<stk::mesh::Entity> edges;
+   bulkData->get_entities(mesh.getEdgeRank(),metaData->locally_owned_part(),edges);
+   mesh.addEntitiesToEdgeBlock(edges, edge_block);
+}
+
+// Pre-Condition: call beginModification() before entry
+// Post-Condition: call endModification() after exit
+void CubeHexMeshFactory::addFaceBlocks(STK_Interface & mesh) const
+{
+   stk::mesh::Part * face_block = mesh.getFaceBlock(panzer_stk::STK_Interface::faceBlockString);
+
+   Teuchos::RCP<stk::mesh::BulkData> bulkData = mesh.getBulkData();
+   Teuchos::RCP<stk::mesh::MetaData> metaData = mesh.getMetaData();
+
+   std::vector<stk::mesh::Entity> faces;
+   bulkData->get_entities(mesh.getFaceRank(),metaData->locally_owned_part(),faces);
+   mesh.addEntitiesToFaceBlock(faces, face_block);
 }
 
 //! Convert processor rank to a tuple

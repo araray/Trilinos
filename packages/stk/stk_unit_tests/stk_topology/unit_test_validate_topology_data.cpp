@@ -32,12 +32,13 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-#include <gtest/gtest.h>
-#include <stk_topology/topology.hpp>
+#include "gtest/gtest.h"              // for AssertionResult, Message, TestPartResult, EXPECT_TRUE
+#include "stk_topology/topology.hpp"  // for topology, topology::topology_t, topology_data, oper...
+#include <map>                        // for map, _Rb_tree_const_iterator, map<>::const_iterator
+#include <type_traits>                // for enable_if
+#include <utility>                    // for pair
+#include <vector>                     // for vector, operator<, operator==
 
-#include <map>
-#include <vector>
-#include <type_traits>
 
 using namespace stk;
 using namespace stk::topology_detail;
@@ -55,7 +56,7 @@ typename std::enable_if<(topology_data<Topology>::num_edges > 0), bool>::type ch
   edge_node_ordinals &= (0 == TopologyData::edge_node_ordinals_offsets[0]);
 
   for (unsigned edge = 0; edge < TopologyData::num_edges; ++edge) {
-    stk::topology edgeTopo = stk::topology(Topology).edge_topology();
+    stk::topology edgeTopo = stk::topology(Topology).edge_topology(edge);
     unsigned numEdgeNodes = edgeTopo.num_nodes();
     totalEdgeNodeOffset += numEdgeNodes;
 
@@ -171,6 +172,7 @@ TEST( stk_topology, validate_topology)
   EXPECT_TRUE( validate_topology_data< topology::TRI_4         >() );
   EXPECT_TRUE( validate_topology_data< topology::TRI_6         >() );
   EXPECT_TRUE( validate_topology_data< topology::QUAD_4        >() );
+  EXPECT_TRUE( validate_topology_data< topology::QUAD_6        >() );
   EXPECT_TRUE( validate_topology_data< topology::QUAD_8        >() );
   EXPECT_TRUE( validate_topology_data< topology::QUAD_9        >() );
   EXPECT_TRUE( validate_topology_data< topology::PARTICLE      >() );
@@ -202,6 +204,7 @@ TEST( stk_topology, validate_topology)
   EXPECT_TRUE( validate_topology_data< topology::PYRAMID_13    >() );
   EXPECT_TRUE( validate_topology_data< topology::PYRAMID_14    >() );
   EXPECT_TRUE( validate_topology_data< topology::WEDGE_6       >() );
+  EXPECT_TRUE( validate_topology_data< topology::WEDGE_12      >() );
   EXPECT_TRUE( validate_topology_data< topology::WEDGE_15      >() );
   EXPECT_TRUE( validate_topology_data< topology::WEDGE_18      >() );
   EXPECT_TRUE( validate_topology_data< topology::HEX_8         >() );
@@ -210,6 +213,8 @@ TEST( stk_topology, validate_topology)
 
   // check that the permutations define the same sides
   for (stk::topology topo = stk::topology::BEGIN_TOPOLOGY; topo < stk::topology::END_TOPOLOGY; ++topo) {
+
+    if(topo == stk::topology::QUAD_6 || topo == stk::topology::WEDGE_12) { continue; }
 
     if (topo.num_permutations() > 1u && topo.side_rank() > stk::topology::NODE_RANK ) {
       const unsigned num_permutations = topo.num_permutations();
@@ -270,8 +275,8 @@ TEST( stk_topology, verify_3D_topology)
     std::vector<stk::topology::topology_t> goldValues = {stk::topology::TET_4, stk::topology::TET_8, stk::topology::TET_10,
                                                          stk::topology::TET_11, stk::topology::PYRAMID_5,
                                                          stk::topology::PYRAMID_13, stk::topology::PYRAMID_14,
-                                                         stk::topology::WEDGE_6, stk::topology::WEDGE_15, stk::topology::WEDGE_18,
-                                                         stk::topology::HEX_8, stk::topology::HEX_20, stk::topology::HEX_27};
+                                                         stk::topology::WEDGE_6, stk::topology::WEDGE_12, stk::topology::WEDGE_15, 
+                                                         stk::topology::WEDGE_18, stk::topology::HEX_8, stk::topology::HEX_20, stk::topology::HEX_27};
 
     std::vector<stk::topology::topology_t> results;
     for(stk::topology::topology_t i = stk::topology::BEGIN_TOPOLOGY; i < stk::topology::END_TOPOLOGY; ++i)

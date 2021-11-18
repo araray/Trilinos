@@ -43,6 +43,8 @@
 #ifndef IFPACK2_DETAILS_ONELEVELFACTORY_DEF_HPP
 #define IFPACK2_DETAILS_ONELEVELFACTORY_DEF_HPP
 
+#include "Ifpack2_Factory.hpp"
+#include "Ifpack2_Utilities.hpp"
 #include "Ifpack2_Chebyshev.hpp"
 #include "Ifpack2_Details_DenseSolver.hpp"
 #include "Ifpack2_Diagonal.hpp"
@@ -57,6 +59,7 @@
 #include "Ifpack2_SparseContainer.hpp"
 #include "Ifpack2_TriDiContainer.hpp"
 #include "Ifpack2_LocalSparseTriangularSolver.hpp"
+#include "Ifpack2_Hiptmair.hpp"
 
 #ifdef HAVE_IFPACK2_SHYLU_NODEFASTILU
 #include "Ifpack2_Details_Fic.hpp"
@@ -67,6 +70,11 @@
 #ifdef HAVE_IFPACK2_AMESOS2
 #  include "Ifpack2_Details_Amesos2Wrapper.hpp"
 #endif // HAVE_IFPACK2_AMESOS2
+
+#ifdef HAVE_IFPACK2_HYPRE
+#  include "Ifpack2_Hypre.hpp"
+#endif // HAVE_IFPACK2_HYPRE
+
 
 namespace Ifpack2 {
 namespace Details {
@@ -82,13 +90,7 @@ OneLevelFactory<MatrixType>::create (const std::string& precType,
   RCP<prec_type> prec;
 
   // precTypeUpper is the upper-case version of precType.
-  std::string precTypeUpper (precType);
-  if (precTypeUpper.size () > 0) {
-    std::locale locale;
-    for (size_t k = 0; k < precTypeUpper.size (); ++k) {
-      precTypeUpper[k] = std::toupper<char> (precTypeUpper[k], locale);
-    }
-  }
+  std::string precTypeUpper = canonicalize(precType);
 
   if (precTypeUpper == "CHEBYSHEV") {
     // We have to distinguish Ifpack2::Chebyshev from its
@@ -211,6 +213,14 @@ OneLevelFactory<MatrixType>::create (const std::string& precType,
            precTypeUpper == "SPARSETRIANGULARSOLVER") {
     prec = rcp (new LocalSparseTriangularSolver<row_matrix_type> (matrix));
   }
+  else if(precTypeUpper == "HIPTMAIR") {
+    prec = rcp (new Hiptmair<row_matrix_type> (matrix));
+  }
+#ifdef HAVE_IFPACK2_HYPRE
+  else if (precTypeUpper == "HYPRE") {
+    prec = rcp (new Hypre<row_matrix_type> (matrix));
+  }
+#endif
   else {
     TEUCHOS_TEST_FOR_EXCEPTION(
       true, std::invalid_argument, "Ifpack2::Details::OneLevelFactory::create: "
@@ -222,6 +232,40 @@ OneLevelFactory<MatrixType>::create (const std::string& precType,
     "create: Return value is null right before return.  This should never "
     "happen.  Please report this bug to the Ifpack2 developers.");
   return prec;
+}
+
+template<class MatrixType>
+bool
+OneLevelFactory<MatrixType>::isSupported (const std::string& precType) const
+{
+  // precTypeUpper is the upper-case version of precType.
+  std::string precTypeUpper = canonicalize(precType);
+  std::vector<std::string> supportedNames = {
+    "CHEBYSHEV", "DENSE", "LAPACK",
+#ifdef HAVE_IFPACK2_AMESOS2
+    "AMESOS2",
+#endif
+    "DIAGONAL", "ILUT", "RELAXATION", "RILUK", "RBILUK",
+#ifdef HAVE_IFPACK2_SHYLU_NODEFASTILU
+    "FAST_IC", "FAST_ILU", "FAST_ILDL",
+#endif
+    "BLOCK_RELAXATION", "BLOCK RELAXATION", "BLOCKRELAXATION", "DENSE_BLOCK_RELAXATION", "DENSE BLOCK RELAXATION", "DENSEBLOCKRELAXATION",
+#ifdef HAVE_IFPACK2_AMESOS2
+    "SPARSE_BLOCK_RELAXATION", "SPARSE BLOCK RELAXATION", "SPARSEBLOCKRELAXATION",
+#endif
+    #ifdef HAVE_IFPACK2_HYPRE
+    "HYPRE",
+#endif
+    "TRIDI_RELAXATION", "TRIDI RELAXATION", "TRIDIRELAXATION", "TRIDIAGONAL_RELAXATION", "TRIDIAGONAL RELAXATION", "TRIDIAGONALRELAXATION",
+    "BANDED_RELAXATION", "BANDED RELAXATION", "BANDEDRELAXATION",
+    "IDENTITY", "IDENTITY_SOLVER",
+    "LOCAL SPARSE TRIANGULAR SOLVER", "LOCAL_SPARSE_TRIANGULAR_SOLVER", "LOCALSPARSETRIANGULARSOLVER", "SPARSE TRIANGULAR SOLVER", "SPARSE_TRIANGULAR_SOLVER", "SPARSETRIANGULARSOLVER",
+    "HIPTMAIR"
+  };
+  // const size_t numSupportedNames = supportedNames.size();
+  // const auto end = supportedNames + numSupportedNames;
+  auto it = std::find(std::begin(supportedNames), std::end(supportedNames), precTypeUpper);
+  return it != std::end(supportedNames);
 }
 
 } // namespace Details

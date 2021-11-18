@@ -74,12 +74,19 @@ inline unsigned get_index(const int second_dim, const int third_dim, const int f
 
 void fillEntityCentroid(const stk::mesh::BulkData &stkMeshBulkData,  const stk::mesh::FieldBase* coord, stk::mesh::Entity entityOfConcern, double *elementCentroid);
 
-void addBoxForFace(stk::mesh::BulkData &stkMeshBulkData, stk::mesh::Entity face, const double eps, BoxVectorWithStkId &faceBoxes, const stk::mesh::FieldBase* coord);
+void addBoxForFace(stk::mesh::BulkData &stkMeshBulkData, stk::mesh::Entity face, const double eps, SearchBoxIdentProcs &faceBoxes, const stk::mesh::FieldBase* coord);
 
-void createGraphEdgesUsingBBSearch(stk::mesh::BulkData& stkMeshBulkData, const BalanceSettings &balanceSettings,
-                                   std::vector<GraphEdge>& graphEdges, const stk::mesh::Selector& searchSelector);
+void addGraphEdgesUsingBBSearch(stk::mesh::BulkData& stkMeshBulkData,
+                                const BalanceSettings &balanceSettings,
+                                std::vector<GraphEdge>& graphEdges,
+                                const stk::mesh::Selector& searchSelector);
 
-void calculateGeometricOrGraphBasedDecomp(const BalanceSettings& balanceSettings, const int num_procs_decomp, stk::mesh::EntityProcVec &decomp, stk::mesh::BulkData& stkMeshBulkData, const std::vector<stk::mesh::Selector>& selectors);
+void calculateGeometricOrGraphBasedDecomp(stk::mesh::BulkData & stkMeshBulkData,
+                                          const std::vector<stk::mesh::Selector> & selectors,
+                                          const stk::ParallelMachine & decompCommunicator,
+                                          const int numSubdomainsToCreate,
+                                          const BalanceSettings & balanceSettings,
+                                          stk::mesh::EntityProcVec & decomp);
 
 void rebalance(stk::mesh::BulkData& stkMeshBulkData, const stk::mesh::EntityProcVec& mockDecomposition);
 void rebalance(stk::mesh::BulkData& stkMeshBulkData, const std::vector<unsigned>& mappings, const stk::mesh::EntityProcVec& mockDecomposition);
@@ -95,21 +102,21 @@ bool shouldOmitSpiderElement(const stk::mesh::BulkData & stkMeshBulkData,
                              const stk::balance::BalanceSettings & balanceSettings,
                              stk::mesh::Entity elem);
 
+void fill_spider_connectivity_count_fields(stk::mesh::BulkData & bulk, const BalanceSettings & balanceSettings);
 void keep_spiders_on_original_proc(stk::mesh::BulkData &bulk, const stk::balance::BalanceSettings & balanceSettings, DecompositionChangeList &changeList);
 void fix_spider_elements(const BalanceSettings & balanceSettings, stk::mesh::BulkData & stkMeshBulkData);
 
-void createZoltanParallelGraph(const BalanceSettings& balanceSettings, stk::mesh::BulkData& stkMeshBulkData,
-                               const std::vector<stk::mesh::Selector>& selectors, const stk::mesh::impl::LocalIdMapper& localIds,
-                               Zoltan2ParallelGraph& zoltan2Graph);
+void createZoltanParallelGraph(stk::mesh::BulkData & stkMeshBulkData,
+                               const stk::mesh::Selector & selector,
+                               const stk::ParallelMachine & decompCommunicator,
+                               const BalanceSettings & balanceSettings,
+                               Zoltan2ParallelGraph & zoltan2Graph);
 
 void add_connected_entities_of_rank(stk::mesh::BulkData& stkMeshBulkData, stk::mesh::Entity element, int newOwningProc, stk::mesh::EntityRank rank, std::vector<std::pair<stk::mesh::Entity, int> > &entityProcPairs);
 
 unsigned get_local_id(const stk::mesh::impl::LocalIdMapper& localIds, stk::mesh::Entity entity);
 
-bool is_geometric_method(const std::string method);
-
-const stk::mesh::FieldBase * get_coordinate_field(const stk::mesh::MetaData& meta_data,
-                                                  const std::string& coordinateFieldName);
+bool is_geometric_method(const std::string& method);
 
 stk::mesh::EntityVector get_entities_to_balance(stk::mesh::Selector selector, stk::mesh::EntityRank primaryRank, const stk::mesh::BulkData& bulkData);
 

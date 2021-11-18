@@ -96,9 +96,10 @@ class DirichletResidual_EdgeBasis
   Teuchos::RCP<const panzer::PointRule> pointRule; 
 
   PointValues2<double> pointValues;
-  PHX::MDField<const double,Cell,IP,Dim,Dim> constJac_;
 
   Teuchos::RCP<const std::vector<Intrepid2::Orientation> > orientations;
+  Intrepid2::RefSubcellParametrization<Kokkos::HostSpace>::ConstViewType edgeParam; //edge parametrization
+  Intrepid2::RefSubcellParametrization<Kokkos::HostSpace>::ConstViewType faceParam; //face parametrization
 
 }; // end of class DirichletResidual_EdgeBasis
 

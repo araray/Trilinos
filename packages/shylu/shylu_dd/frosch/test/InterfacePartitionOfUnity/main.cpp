@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
     My_CLP.recogniseAllOptions(true);
     My_CLP.throwExceptions(false);
     CommandLineProcessor::EParseCommandLineReturn parseReturn = My_CLP.parse(argc,argv);
-    if(parseReturn == CommandLineProcessor::PARSE_HELP_PRINTED) {
+    if (parseReturn == CommandLineProcessor::PARSE_HELP_PRINTED) {
         return(EXIT_SUCCESS);
     }
 
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
         RCP<const Comm<int> > SerialComm = createSerialComm<int>();
 
         RCP<ParameterList> parameterList = getParametersFromXmlFile("ParametersIPOU.xml");
-        RCP<InterfacePartitionOfUnity<SC,LO,GO,NO> > IPOU(new GDSWInterfacePartitionOfUnity<SC,LO,GO,NO>(RepeatedMap->getComm(),SerialComm,Dimension,1,RepeatedNodesMap,RepeatedDofMaps,parameterList,All,UN(1)));
+        RCP<InterfacePartitionOfUnity<SC,LO,GO,NO> > IPOU(new GDSWInterfacePartitionOfUnity<SC,LO,GO,NO>(RepeatedMap->getComm(),SerialComm,Dimension,1,RepeatedNodesMap,RepeatedDofMaps,sublist(parameterList,"GDSW"),All,UN(1)));
         IPOU->sortInterface(K);
         IPOU->computePartitionOfUnity();
 

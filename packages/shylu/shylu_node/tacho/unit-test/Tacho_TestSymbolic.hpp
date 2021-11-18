@@ -13,6 +13,8 @@
 #include "Tacho_Graph.hpp"
 #include "Tacho_SymbolicTools.hpp"
 
+#include "Tacho_GraphTools.hpp"
+
 #if defined(TACHO_HAVE_SCOTCH)
 #include "Tacho_GraphTools_Scotch.hpp"
 #endif
@@ -21,14 +23,12 @@
 #include "Tacho_GraphTools_Metis.hpp"
 #endif
 
-#include "Tacho_GraphTools_CAMD.hpp"
-
 using namespace Tacho;
 
-typedef CrsMatrixBase<ValueType,HostSpaceType>   CrsMatrixBaseHostType;
+typedef CrsMatrixBase<ValueType,HostDeviceType>   CrsMatrixBaseHostType;
 
 // we do not test for device space
-//typedef CrsMatrixBase<ValueType,DeviceSpaceType> CrsMatrixBaseDeviceType;
+//typedef CrsMatrixBase<ValueType,DeviceType> CrsMatrixBaseDeviceType;
 
 TEST( Symbolic, constructor ) {
   TEST_BEGIN;
@@ -49,7 +49,7 @@ TEST( Symbolic, constructor ) {
     A.RowPtrEnd(i) = cnt;
   }
 
-  typedef Kokkos::View<ordinal_type*,HostSpaceType> ordinal_type_array;
+  typedef Kokkos::View<ordinal_type*,HostDeviceType> ordinal_type_array;
 
   ordinal_type_array idx("idx", m);
   for (ordinal_type i=0;i<m;++i) idx(i) = i;
@@ -74,12 +74,12 @@ TEST( Symbolic, functions ) {
 #elif defined(TACHO_HAVE_SCOTCH)
   GraphTools_Scotch T(G);
 #else
-  GraphTools_CAMD T(G);
+  GraphTools T(G);
 #endif
   T.reorder();
 
-  typedef Kokkos::View<ordinal_type*,HostSpaceType> ordinal_type_array;
-  typedef Kokkos::View<size_type*,HostSpaceType> size_type_array;
+  typedef Kokkos::View<ordinal_type*,HostDeviceType> ordinal_type_array;
+  typedef Kokkos::View<size_type*,HostDeviceType> size_type_array;
 
   ordinal_type m = A.NumRows();
   size_type_array ap = A.RowPtr();
@@ -117,9 +117,10 @@ TEST( Symbolic, functions ) {
                                     blk_super_panel_colidx);
 
   size_type_array stree_ptr;
-  ordinal_type_array stree_parent, stree_children, stree_roots;
+  ordinal_type_array stree_level, stree_parent, stree_children, stree_roots;
   SymbolicTools::computeSupernodesAssemblyTree(parent,
                                                supernodes,
+                                               stree_level,
                                                stree_parent,
                                                stree_ptr,
                                                stree_children,
@@ -161,7 +162,7 @@ TEST( Symbolic, interface ) {
 #elif defined(TACHO_HAVE_SCOTCH)
   GraphTools_Scotch T(G);
 #else
-  GraphTools_CAMD T(G);
+  GraphTools T(G);  
 #endif
   T.reorder();
 

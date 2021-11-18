@@ -1,36 +1,9 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions of
- * Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 #define DEBUG_SORT 1
@@ -69,8 +42,7 @@ namespace {
 
   template <typename INT> INT gds_imedian3(INT v[], INT iv[], size_t left, size_t right)
   {
-    size_t center;
-    center = (left + right) / 2;
+    size_t center = (left + right) / 2;
 
     if (v[iv[left]] > v[iv[center]]) {
       GDS_SWAP(iv, left, center);
@@ -88,13 +60,10 @@ namespace {
 
   template <typename INT> void gds_iqsort(INT v[], INT iv[], size_t left, size_t right)
   {
-    size_t pivot;
-    size_t i, j;
-
     if (left + GDS_QSORT_CUTOFF <= right) {
-      pivot = gds_imedian3(v, iv, left, right);
-      i     = left;
-      j     = right - 1;
+      size_t pivot = gds_imedian3(v, iv, left, right);
+      size_t i     = left;
+      size_t j     = right - 1;
 
       for (;;) {
         while (v[iv[++i]] < v[pivot]) {
@@ -119,16 +88,13 @@ namespace {
 
   template <typename INT> void gds_iisort(INT v[], INT iv[], size_t N)
   {
-    size_t i, j;
-    size_t ndx = 0;
-    INT    low;
-    INT    tmp;
-
     if (N == 0) {
       return;
     }
-    low = v[iv[0]];
-    for (i = 1; i < N; i++) {
+
+    size_t ndx = 0;
+    INT    low = v[iv[0]];
+    for (size_t i = 1; i < N; i++) {
       if (v[iv[i]] < low) {
         low = v[iv[i]];
         ndx = i;
@@ -137,8 +103,9 @@ namespace {
     /* Put lowest value in slot 0 */
     GDS_SWAP(iv, 0, ndx);
 
-    for (i = 1; i < N; i++) {
-      tmp = iv[i];
+    for (size_t i = 1; i < N; i++) {
+      INT    tmp = iv[i];
+      size_t j;
       for (j = i; v[tmp] < v[iv[j - 1]]; j--) {
         iv[j] = iv[j - 1];
       }
@@ -156,8 +123,7 @@ namespace {
 
   template <typename INT> size_t gds_median3(INT v[], size_t left, size_t right)
   {
-    size_t center;
-    center = (left + right) / 2;
+    size_t center = (left + right) / 2;
 
     if (v[left] > v[center]) {
       GDS_SWAP(v, left, center);
@@ -203,16 +169,13 @@ namespace {
 
   template <typename INT> void gds_isort(INT v[], size_t N)
   {
-    size_t i, j;
-    size_t ndx = 0;
-    INT    low;
-    INT    tmp;
-
     if (N <= 1) {
       return;
     }
-    low = v[0];
-    for (i = 1; i < N; i++) {
+    INT    low = v[0];
+    size_t ndx = 0;
+
+    for (size_t i = 1; i < N; i++) {
       if (v[i] < low) {
         low = v[i];
         ndx = i;
@@ -221,8 +184,9 @@ namespace {
     /* Put lowest value in slot 0 */
     GDS_SWAP(v, 0, ndx);
 
-    for (i = 1; i < N; i++) {
-      tmp = v[i];
+    for (size_t i = 1; i < N; i++) {
+      INT    tmp = v[i];
+      size_t j;
       for (j = i; tmp < v[j - 1]; j--) {
         v[j] = v[j - 1];
       }
@@ -256,25 +220,23 @@ namespace {
 
 template <typename INT> void indexed_sort(INT v[], INT iv[], size_t N)
 {
-  int64_t start, end;
-  int64_t count = N;
-
   if (N <= 1) {
     return;
   }
 
   /* heapify */
-  for (start = (count - 2) / 2; start >= 0; start--) {
+  int64_t count = N;
+  for (int64_t start = (count - 2) / 2; start >= 0; start--) {
     siftDown(v, iv, start, count);
   }
 
-  for (end = count - 1; end > 0; end--) {
+  for (int64_t end = count - 1; end > 0; end--) {
     GDS_SWAP(iv, end, 0);
     siftDown(v, iv, 0, end);
   }
 
 #if DEBUG_SORT
-  fmt::print(stderr, "Checking sort of {:n} values\n", count + 1);
+  fmt::print(stderr, "Checking sort of {:L} values\n", count + 1);
   for (size_t i = 1; i < N; i++) {
     assert(v[iv[i - 1]] <= v[iv[i]]);
   }
@@ -290,7 +252,7 @@ template <typename INT> void gds_iqsort(INT v[], INT iv[], size_t N)
   gds_iisort(v, iv, N);
 
 #if defined(DEBUG_QSORT)
-  fmt::print(stderr, "Checking sort of {:n} values\n", N + 1);
+  fmt::print(stderr, "Checking sort of {:L} values\n", N + 1);
   size_t i;
   for (i = 1; i < N; i++) {
     assert(v[iv[i - 1]] <= v[iv[i]]);
@@ -307,7 +269,7 @@ template <typename INT> void gds_qsort(INT v[], size_t N)
   gds_isort(v, N);
 
 #if defined(DEBUG_QSORT)
-  fmt::print(stderr, "Checking sort of {:n} values\n", N + 1);
+  fmt::print(stderr, "Checking sort of {:L} values\n", N + 1);
   for (size_t i = 1; i < N; i++) {
     assert(v[i - 1] <= v[i]);
   }

@@ -51,22 +51,9 @@
 #include "Thyra_ModelEvaluatorDefaultBase.hpp"
 #include "Piro_config.hpp"
 
-#ifdef ALBANY_BUILD
-#include "Kokkos_DefaultNode.hpp"
-#endif
-
-#include "Tpetra_Map.hpp"
-using default_lo = Tpetra::Map<>::local_ordinal_type;
-using default_go = Tpetra::Map<>::global_ordinal_type;
-
 namespace Piro {
 
-#ifdef ALBANY_BUILD
-template <typename Scalar, typename LocalOrdinal = default_lo, typename GlobalOrdinal = default_go,
-          typename Node = KokkosClassic::DefaultNode::DefaultNodeType>
-#else
 template<typename Scalar>
-#endif
 class InvertMassMatrixDecorator
     : public Thyra::ModelEvaluatorDefaultBase<Scalar>
 {
@@ -95,6 +82,8 @@ class InvertMassMatrixDecorator
 
   Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > get_g_space(int j) const;
 
+  Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > get_g_multiplier_space(int j) const;
+
   Teuchos::ArrayView<const std::string> get_g_names(int j) const;
 
   /** \brief . */
@@ -102,6 +91,8 @@ class InvertMassMatrixDecorator
   Thyra::ModelEvaluatorBase::InArgs<Scalar> getNominalValues() const;
   /** \brief . */
   Teuchos::RCP< Thyra::LinearOpBase< Scalar > > create_W_op () const;
+  /** \brief . */
+  Teuchos::RCP<Thyra::LinearOpWithSolveBase<Scalar> > create_W() const;
   /** \brief . */
   Teuchos::RCP<const Thyra::LinearOpWithSolveFactoryBase<Scalar> > get_W_factory() const;
 
@@ -126,6 +117,8 @@ class InvertMassMatrixDecorator
   /** \brief . */
   Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > get_f_space() const;
   /** \brief . */
+  Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > get_f_multiplier_space() const;
+  /** \brief . */
   //Teuchos::RCP<const Epetra_Vector> get_x_init() const;
   /** \brief . */
   //Teuchos::RCP<const Epetra_Vector> get_x_dot_init() const;
@@ -138,6 +131,12 @@ class InvertMassMatrixDecorator
   Thyra::ModelEvaluatorBase::InArgs<Scalar> getLowerBounds() const;
 
   Thyra::ModelEvaluatorBase::InArgs<Scalar> getUpperBounds() const;
+
+   //! Operator form of df/dp for distributed parameters - for transient adjoint sensitivities
+  Teuchos::RCP<Thyra::LinearOpBase<Scalar>> create_DfDp_op_impl(int j) const
+  {
+    return model->create_DfDp_op(j); 
+  }
 
 
   //@}
@@ -159,7 +158,6 @@ class InvertMassMatrixDecorator
    // The following get modified in evalModel and so are mutable
    mutable Teuchos::RCP<Thyra::LinearOpWithSolveBase<double> > lows;
    mutable bool calcMassMatrix; //Internal flag
-   mutable Teuchos::RCP<const Thyra::LinearOpBase<double> > A;
 };
 }
 /** \class Piro::RythmosSolver

@@ -53,6 +53,7 @@
 #include "BelosLinearProblem.hpp"
 #include "BelosOutputManager.hpp"
 #include "BelosStatusTest.hpp"
+#include "BelosStatusTestGenResNorm.hpp"
 #include "BelosOperatorTraits.hpp"
 #include "BelosMultiVecTraits.hpp"
 
@@ -98,6 +99,7 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
   CGIter( const Teuchos::RCP<LinearProblem<ScalarType,MV,OP> > &problem, 
 		  const Teuchos::RCP<OutputManager<ScalarType> > &printer,
 		  const Teuchos::RCP<StatusTest<ScalarType,MV,OP> > &tester,
+                  const Teuchos::RCP<StatusTestGenResNorm<ScalarType,MV,OP> > &convTester,
 		  Teuchos::ParameterList &params );
 
   //! Destructor.
@@ -176,7 +178,13 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
 
   //! Get the norms of the residuals native to the solver.
   //! \return A std::vector of length blockSize containing the native residuals.
-  Teuchos::RCP<const MV> getNativeResiduals( std::vector<MagnitudeType> * /* norms */ ) const { return R_; }
+  Teuchos::RCP<const MV> getNativeResiduals( std::vector<MagnitudeType> * norms ) const {
+    if (foldConvergenceDetectionIntoAllreduce_ && convTest_->getResNormType() == Belos::TwoNorm) {
+      (*norms)[0] = std::sqrt(Teuchos::ScalarTraits<ScalarType>::magnitude(rHr_));
+      return Teuchos::null;
+    } else
+      return R_;
+  }
 
   //! Get the current update to the linear system.
   /*! \note This method returns a null pointer because the linear problem is current.
@@ -253,6 +261,7 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
   const Teuchos::RCP<LinearProblem<ScalarType,MV,OP> >    lp_;
   const Teuchos::RCP<OutputManager<ScalarType> >          om_;
   const Teuchos::RCP<StatusTest<ScalarType,MV,OP> >       stest_;
+  const Teuchos::RCP<StatusTestGenResNorm<ScalarType,MV,OP> >       convTest_;
 
   //  
   // Current solver state
@@ -269,6 +278,12 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
 
   // Current number of iterations performed.
   int iter_;
+
+  // Should the allreduce for convergence detection be merged with one of the inner products?
+  bool foldConvergenceDetectionIntoAllreduce_;
+
+  // <r,r>
+  ScalarType rHr_;
 
   // Assert that the matrix is positive definite
   bool assertPositiveDefiniteness_;
@@ -295,6 +310,8 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
   // Operator applied to direction vector
   Teuchos::RCP<MV> AP_;
 
+  Teuchos::RCP<MV> S_;
+
 };
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -303,10 +320,12 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
   CGIter<ScalarType,MV,OP>::CGIter(const Teuchos::RCP<LinearProblem<ScalarType,MV,OP> > &problem, 
 						   const Teuchos::RCP<OutputManager<ScalarType> > &printer,
 						   const Teuchos::RCP<StatusTest<ScalarType,MV,OP> > &tester,
+                                                   const Teuchos::RCP<StatusTestGenResNorm<ScalarType,MV,OP> > &convTester,
 						   Teuchos::ParameterList &params ):
     lp_(problem),
     om_(printer),
     stest_(tester),
+    convTest_(convTester),
     initialized_(false),
     stateStorageInitialized_(false),
     iter_(0),
@@ -314,6 +333,7 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
     numEntriesForCondEst_(params.get("Max Size For Condest",0) ),
     doCondEst_(false)
   {
+    foldConvergenceDetectionIntoAllreduce_ = params.get<bool>("Fold Convergence Detection Into Allreduce",false);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -339,11 +359,16 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
 	  Teuchos::RCP<const MV> tmp = ( (rhsMV!=Teuchos::null)? rhsMV: lhsMV );
 	  TEUCHOS_TEST_FOR_EXCEPTION(tmp == Teuchos::null,std::invalid_argument,
 			     "Belos::CGIter::setStateSize(): linear problem does not specify multivectors to clone from.");
-	  R_ = MVT::Clone( *tmp, 1 );
-	  Z_ = MVT::Clone( *tmp, 1 );
+          S_ = MVT::Clone( *tmp, 2 );
+          std::vector<int> index(1,0);
+          index[0] = 0;
+          R_ = MVT::CloneViewNonConst( *S_, index );
+          index[0] = 1;
+          Z_ = MVT::CloneViewNonConst( *S_, index );
 	  P_ = MVT::Clone( *tmp, 1 );
 	  AP_ = MVT::Clone( *tmp, 1 );
-	}
+
+        }
 
         // Tracking information for condition number estimation
         if(numEntriesForCondEst_ > 0) {
@@ -374,10 +399,6 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
     //
     std::string errstr("Belos::CGIter::initialize(): Specified multivectors must have a consistent length and width.");
 
-    // Create convenience variables for zero and one.
-    const ScalarType one = Teuchos::ScalarTraits<ScalarType>::one();
-    const ScalarType zero = Teuchos::ScalarTraits<ScalarType>::zero();
-
     if (newstate.R != Teuchos::null) {
 
       TEUCHOS_TEST_FOR_EXCEPTION( MVT::GetGlobalLength(*newstate.R) != MVT::GetGlobalLength(*R_),
@@ -388,7 +409,7 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
       // Copy basis vectors from newstate into V
       if (newstate.R != R_) {
         // copy over the initial residual (unpreconditioned).
-	MVT::MvAddMv( one, *newstate.R, zero, *newstate.R, *R_ );
+	MVT::Assign( *newstate.R, *R_ );
       }
 
       // Compute initial direction vectors
@@ -397,18 +418,17 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
       if ( lp_->getLeftPrec() != Teuchos::null ) {
         lp_->applyLeftPrec( *R_, *Z_ );
         if ( lp_->getRightPrec() != Teuchos::null ) {
-          Teuchos::RCP<MV> tmp = MVT::Clone( *Z_, 1 );
-          lp_->applyRightPrec( *Z_, *tmp );
-          Z_ = tmp;
+          Teuchos::RCP<MV> tmp = MVT::CloneCopy( *Z_ );
+          lp_->applyRightPrec( *tmp, *Z_ );
         }
       }
       else if ( lp_->getRightPrec() != Teuchos::null ) {
         lp_->applyRightPrec( *R_, *Z_ );
       } 
       else {
-        Z_ = R_;
+        MVT::Assign( *R_, *Z_ );
       }
-      MVT::MvAddMv( one, *Z_, zero, *Z_, *P_ );
+      MVT::Assign( *Z_, *P_ );
     }
     else {
 
@@ -434,9 +454,10 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
     }
 
     // Allocate memory for scalars.
-    Teuchos::SerialDenseMatrix<int,ScalarType> alpha( 1, 1 );
-    Teuchos::SerialDenseMatrix<int,ScalarType> beta( 1, 1 );
-    Teuchos::SerialDenseMatrix<int,ScalarType> rHz( 1, 1 ), rHz_old( 1, 1 ), pAp( 1, 1 );
+    std::vector<ScalarType> alpha(1);
+    std::vector<ScalarType> beta(1);
+    std::vector<ScalarType> rHz(1), rHz_old(1), pAp(1);
+    Teuchos::SerialDenseMatrix<int,ScalarType> rHs( 1, 2 );
 
     // Create convenience variables for zero and one.
     const ScalarType one = Teuchos::ScalarTraits<ScalarType>::one();
@@ -453,8 +474,13 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
                         "Belos::CGIter::iterate(): current linear system has more than one vector!" );
 
     // Compute first <r,z> a.k.a. rHz
-    MVT::MvTransMv( one, *R_, *Z_, rHz );
-    
+    if (foldConvergenceDetectionIntoAllreduce_ && convTest_->getResNormType() == Belos::TwoNorm) {
+      MVT::MvTransMv( one, *R_, *S_, rHs );
+      rHr_ = rHs(0,0);
+      rHz[0] = rHs(0,1);
+    } else
+      MVT::MvDot( *R_, *Z_, rHz );
+
     ////////////////////////////////////////////////////////////////
     // Iterate until the status test tells us to stop.
     //
@@ -467,26 +493,26 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
       lp_->applyOp( *P_, *AP_ );
       
       // Compute alpha := <R_,Z_> / <P_,AP_>
-      MVT::MvTransMv( one, *P_, *AP_, pAp );
-      alpha(0,0) = rHz(0,0) / pAp(0,0);
+      MVT::MvDot( *P_, *AP_, pAp );
+      alpha[0] = rHz[0] / pAp[0];
       
       // Check that alpha is a positive number!
       if(assertPositiveDefiniteness_)
-        TEUCHOS_TEST_FOR_EXCEPTION( SCT::real(alpha(0,0)) <= zero, CGIterateFailure,
+        TEUCHOS_TEST_FOR_EXCEPTION( SCT::real(alpha[0]) <= zero, CGIterateFailure,
                                     "Belos::CGIter::iterate(): non-positive value for p^H*A*p encountered!" );
       //
       // Update the solution vector x := x + alpha * P_
       //
-      MVT::MvAddMv( one, *cur_soln_vec, alpha(0,0), *P_, *cur_soln_vec );
+      MVT::MvAddMv( one, *cur_soln_vec, alpha[0], *P_, *cur_soln_vec );
       lp_->updateSolution();
       //
       // Save the denominator of beta before residual is updated [ old <R_, Z_> ]
       //
-      rHz_old(0,0) = rHz(0,0);
+      rHz_old[0] = rHz[0];
       //
       // Compute the new residual R_ := R_ - alpha * AP_
       //
-      MVT::MvAddMv( one, *R_, -alpha(0,0), *AP_, *R_ );
+      MVT::MvAddMv( one, *R_, -alpha[0], *AP_, *R_ );
       //
       // Compute beta := [ new <R_, Z_> ] / [ old <R_, Z_> ], 
       // and the new direction vector p.
@@ -494,36 +520,40 @@ class CGIter : virtual public CGIteration<ScalarType,MV,OP> {
       if ( lp_->getLeftPrec() != Teuchos::null ) {
         lp_->applyLeftPrec( *R_, *Z_ );
         if ( lp_->getRightPrec() != Teuchos::null ) {
-          Teuchos::RCP<MV> tmp = MVT::Clone( *Z_, 1 );
-          lp_->applyRightPrec( *Z_, *tmp );
-          Z_ = tmp;
+          Teuchos::RCP<MV> tmp = MVT::CloneCopy( *Z_);
+          lp_->applyRightPrec( *tmp, *Z_ );
         }
       }
       else if ( lp_->getRightPrec() != Teuchos::null ) {
         lp_->applyRightPrec( *R_, *Z_ );
       } 
       else {
-        Z_ = R_;
+        MVT::Assign( *R_, *Z_ );
       }
       //
-      MVT::MvTransMv( one, *R_, *Z_, rHz );
+      if (foldConvergenceDetectionIntoAllreduce_ && convTest_->getResNormType() == Belos::TwoNorm) {
+        MVT::MvTransMv( one, *R_, *S_, rHs );
+        rHr_ = rHs(0,0);
+        rHz[0] = rHs(0,1);
+      } else
+        MVT::MvDot( *R_, *Z_, rHz );
       //
-      beta(0,0) = rHz(0,0) / rHz_old(0,0);
+      beta[0] = rHz[0] / rHz_old[0];
       //
-      MVT::MvAddMv( one, *Z_, beta(0,0), *P_, *P_ );
+      MVT::MvAddMv( one, *Z_, beta[0], *P_, *P_ );
      
       // Condition estimate (if needed)
       if (doCondEst_) {
         if (iter_ > 1) {
-          diag_[iter_-1]    = Teuchos::ScalarTraits<ScalarType>::real((beta_old * beta_old * pAp_old + pAp(0,0)) / rHz_old(0,0));
-          offdiag_[iter_-2] = -Teuchos::ScalarTraits<ScalarType>::real(beta_old * pAp_old / (sqrt( rHz_old(0,0) * rHz_old2)));
+          diag_[iter_-1]    = Teuchos::ScalarTraits<ScalarType>::real((beta_old * beta_old * pAp_old + pAp[0]) / rHz_old[0]);
+          offdiag_[iter_-2] = -Teuchos::ScalarTraits<ScalarType>::real(beta_old * pAp_old / (sqrt( rHz_old[0] * rHz_old2)));
         }
         else {
-          diag_[iter_-1]    = Teuchos::ScalarTraits<ScalarType>::real(pAp(0,0) / rHz_old(0,0));
+          diag_[iter_-1]    = Teuchos::ScalarTraits<ScalarType>::real(pAp[0] / rHz_old[0]);
         }
-        rHz_old2 = rHz_old(0,0);
-        beta_old = beta(0,0);
-        pAp_old = pAp(0,0);
+        rHz_old2 = rHz_old[0];
+        beta_old = beta[0];
+        pAp_old = pAp[0];
       }
  
     } // end while (sTest_->checkStatus(this) != Passed)

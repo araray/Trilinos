@@ -67,14 +67,14 @@ namespace Test {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     }
 
-template<typename ValueType, typename DeviceSpaceType>
+template<typename ValueType, typename DeviceType>
 int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
 
   Teuchos::RCP<std::ostream> outStream;
@@ -88,6 +88,7 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
   Teuchos::oblackholestream oldFormatState;
   oldFormatState.copyfmt(std::cout);
 
+  using DeviceSpaceType = typename DeviceType::execution_space;
   typedef typename Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType;
 
   *outStream << "DeviceSpace::  ";
@@ -113,7 +114,7 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
   << "|                                                                             |\n"
   << "===============================================================================\n";
 
-  typedef Kokkos::DynRankView<ValueType, DeviceSpaceType> DynRankView;
+  typedef Kokkos::DynRankView<ValueType, DeviceType> DynRankView;
 #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
 
   const ValueType tol = tolerence();
@@ -123,9 +124,9 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
   typedef ValueType outputValueType;
   typedef ValueType pointValueType;
   typedef ValueType weightValueType;
-  typedef Basis_HGRAD_TET_Cn_FEM_ORTH<DeviceSpaceType, outputValueType,
+  typedef Basis_HGRAD_TET_Cn_FEM_ORTH<DeviceType, outputValueType,
       pointValueType> tetBasisType;
-  typedef CubatureDirectTetDefault<DeviceSpaceType, pointValueType,
+  typedef CubatureDirectTetDefault<DeviceType, pointValueType,
       weightValueType> cubatureTetType;
   *outStream << "\n"
       << "===============================================================================\n"
@@ -177,7 +178,7 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
       }
     }
   }
-  catch ( std::exception err) {
+  catch (std::exception &err) {
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   }
@@ -625,7 +626,7 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
       }
     }
     }
-  }  catch ( std::exception err) {
+  }  catch (std::exception &err) {
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   }
@@ -655,7 +656,7 @@ int HGRAD_TET_Cn_FEM_ORTH_Test01(const bool verbose) {
       }
       errorFlag++;
     }
-  } catch (std::logic_error err){
+  } catch (std::logic_error &err){
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";

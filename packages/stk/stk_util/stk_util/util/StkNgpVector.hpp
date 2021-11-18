@@ -34,8 +34,7 @@
 #ifndef PACKAGES_STK_STK_UTIL_STK_UTIL_UTIL_STKVECTOR_HPP_
 #define PACKAGES_STK_STK_UTIL_STK_UTIL_UTIL_STKVECTOR_HPP_
 
-#include <Kokkos_Core.hpp>
-#include <stk_util/stk_kokkos_macros.h>
+#include "Kokkos_Core.hpp"
 
 namespace stk
 {
@@ -43,14 +42,15 @@ namespace stk
 template <typename Datatype>
 class NgpVector
 {
+  using HostSpace = Kokkos::DefaultHostExecutionSpace;
 public:
-    NgpVector(const std::string &n) : mSize(0), deviceVals(n, mSize), hostVals(Kokkos::create_mirror_view(deviceVals))
+    NgpVector(const std::string &n) : NgpVector(n, 0)
     {
     }
     NgpVector() : NgpVector(get_default_name())
     {
     }
-    NgpVector(const std::string &n, size_t s) : mSize(s), deviceVals(n, mSize), hostVals(Kokkos::create_mirror_view(deviceVals))
+    NgpVector(const std::string &n, size_t s) : mSize(s), deviceVals(Kokkos::view_alloc(Kokkos::WithoutInitializing, n), mSize), hostVals(Kokkos::create_mirror_view(HostSpace(), deviceVals, Kokkos::WithoutInitializing))
     {
     }
     NgpVector(size_t s) : NgpVector(get_default_name(), s)
@@ -63,12 +63,12 @@ public:
     NgpVector(size_t s, Datatype init) : NgpVector(get_default_name(), s, init)
     {
     }
-    ~NgpVector() {}
+    KOKKOS_FUNCTION ~NgpVector() {}
 
     std::string name() const { return hostVals.label(); }
 
-    STK_FUNCTION size_t size() const { return mSize; }
-    STK_FUNCTION bool empty() const { return mSize == 0; }
+    KOKKOS_FUNCTION size_t size() const { return mSize; }
+    KOKKOS_FUNCTION bool empty() const { return mSize == 0; }
     size_t capacity() const
     {
         return hostVals.size();
@@ -97,10 +97,38 @@ public:
     {
         return hostVals(i);
     }
-    STK_FUNCTION Datatype & device_get(size_t i) const
+    KOKKOS_FUNCTION Datatype & device_get(size_t i) const
     {
         return deviceVals(i);
     }
+
+protected:
+#ifdef KOKKOS_ENABLE_CUDA
+  using DeviceSpace = Kokkos::CudaSpace;
+#elif defined(KOKKOS_ENABLE_HIP)
+  using DeviceSpace = Kokkos::Experimental::HIPSpace;
+#else
+  using DeviceSpace = Kokkos::HostSpace;
+#endif
+public:
+    template <class Device>
+    KOKKOS_FUNCTION Datatype & get(
+      typename std::enable_if<
+        std::is_same<typename Device::execution_space, DeviceSpace::execution_space>::value,
+        size_t>::type i) const
+    {
+      return deviceVals(i);
+    }
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
+    template <class Device>
+    KOKKOS_FUNCTION Datatype & get(
+      typename std::enable_if<
+        !std::is_same<typename Device::execution_space, DeviceSpace::execution_space>::value,
+        size_t>::type i) const
+    {
+      return hostVals(i);
+    }
+#endif
 
     void push_back(Datatype val)
     {
@@ -120,11 +148,6 @@ public:
     }
 
 protected:
-#ifdef KOKKOS_ENABLE_CUDA
-  using DeviceSpace = Kokkos::CudaSpace;
-#else
-  using DeviceSpace = Kokkos::HostSpace;
-#endif
   typedef Kokkos::View<Datatype *, DeviceSpace> DeviceType;
     typedef typename DeviceType::HostMirror HostType;
 

@@ -96,7 +96,7 @@ initialize()
 
   int numBlocks = zPVector->productSpace()->numBlocks();
 
-  TEUCHOS_TEST_FOR_EXCEPTION( !(0 <= this->numExplicitOnlyBlocks_ and
+  TEUCHOS_TEST_FOR_EXCEPTION( !(0 <= this->numExplicitOnlyBlocks_ &&
                                 this->numExplicitOnlyBlocks_ < numBlocks),
     std::logic_error,
     "Error - WrapperModelEvaluatorPairPartIMEX_StaggeredFSA::initialize()\n"
@@ -409,7 +409,7 @@ evalModelImpl(const Thyra::ModelEvaluatorBase::InArgs<Scalar>  & inArgs,
   fsaImplicitInArgs.set_x_dot(x_dot);
   for (int i=0; i<fsaImplicitModel_->Np(); ++i) {
     // Copy over parameters except for the parameter for explicit-only vector!
-    if ((inArgs.get_p(i) != Teuchos::null) and (i != p_index))
+    if ((inArgs.get_p(i) != Teuchos::null) && (i != p_index))
       fsaImplicitInArgs.set_p(i, inArgs.get_p(i));
   }
 
@@ -528,7 +528,8 @@ buildIMEXStates() const
         forwardModel_->getExplicitOnlyVector(forward_state_->getX()),
         forwardModel_->getExplicitOnlyVector(forward_state_->getXDot()),
         forwardModel_->getExplicitOnlyVector(forward_state_->getXDotDot()),
-        forward_state_->getStepperState()));
+        forward_state_->getStepperState(),
+        Teuchos::null));
   implicit_x_state_ =
     Teuchos::rcp(
       new SolutionState<Scalar>(
@@ -536,7 +537,8 @@ buildIMEXStates() const
         forwardModel_->getIMEXVector(forward_state_->getX()),
         forwardModel_->getIMEXVector(forward_state_->getXDot()),
         forwardModel_->getIMEXVector(forward_state_->getXDotDot()),
-        forward_state_->getStepperState()));
+        forward_state_->getStepperState(),
+        Teuchos::null));
 }
 
 } // namespace Tempus

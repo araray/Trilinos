@@ -1,42 +1,14 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 /* mdcgi - multiple simultaneous devices routines for cgi  */
 #include "mdcgi.h"
 #include "stdtyp.h"
-#include "stdtyp.h" // for anything
-#include <stdio.h>  // for fprintf, stderr, NULL
+#include <stdio.h> // for fprintf, stderr, NULL
 /******************************************************************************/
 /*                                                                            */
 /*      Global variables                                                      */
@@ -80,16 +52,11 @@ void xcoon(anything **surface_id) /* which surface to turn output on for*/
   /* find out which device this surface is on */
   /* rearrange the surface list for that device */
 
-  short     dev;            /* which device to look at now */
-  short     dev_found = 0;  /* which device was it found on */
-  short     surf;           /* which surface on device to look at */
-  short     surf_found = 0; /* which active_surface was found */
-  anything *temp;           /* for swap */
-
   /* search active devices for this surface */
-  dev_found = -1;
-  for (dev = 0; (dev < num_devices) && (dev_found == -1); ++dev) {
-    for (surf = 0; surf < devices[dev].num_active_surfaces; ++surf) {
+  short dev_found  = -1;
+  short surf_found = 0; /* which active_surface was found */
+  for (short dev = 0; (dev < num_devices) && (dev_found == -1); ++dev) {
+    for (short surf = 0; surf < devices[dev].num_active_surfaces; ++surf) {
       if (*surface_id == devices[dev].statelist[surf]) {
         dev_found  = dev;
         surf_found = surf;
@@ -109,7 +76,7 @@ void xcoon(anything **surface_id) /* which surface to turn output on for*/
     ++devices[dev_found].num_on_surfaces;
     /* swap target surface with first off surface if there is one */
     if (devices[dev_found].num_on_surfaces != devices[dev_found].num_active_surfaces) {
-      temp = devices[dev_found].statelist[surf_found];
+      anything *temp = devices[dev_found].statelist[surf_found];
       devices[dev_found].statelist[surf_found] =
           devices[dev_found].statelist[devices[dev_found].num_on_surfaces - 1];
       devices[dev_found].statelist[devices[dev_found].num_on_surfaces - 1] = temp;
@@ -128,15 +95,9 @@ void xcact_(void (*device_fn)(), anything **p_surface_id)
 void xcact(void (*device_fn)(), anything **p_surface_id)
 #endif
 {
-  short     arg1; /* arg passed to device routine */
-  short     i;
-  anything *temp_surface[1]; /* for calling driver */
-  short     which_device;    /* index of this device in devices */
-  short     which_surface;   /* index of surface in devices*/
-
   /* is device already initialized? */
-  which_device = -1;
-  for (i = 0; i < num_devices; ++i) {
+  short which_device = -1;
+  for (short i = 0; i < num_devices; ++i) {
     if (device_fn == devices[i].device_fn) {
       which_device = i;
       break;
@@ -152,8 +113,9 @@ void xcact(void (*device_fn)(), anything **p_surface_id)
   }   /* end if device not initialized */
 
   /* call the device driver with ACTIVATE, so it can allocate a state list */
-  arg1         = ACTIVATE_FN;
+  short arg1   = ACTIVATE_FN;
   in_params[0] = (anything *)&arg1;
+  anything *temp_surface[1]; /* for calling driver */
   (*device_fn)(in_params, 1, temp_surface);
 
   if (temp_surface[0] == NULL) { /* error */
@@ -172,7 +134,7 @@ void xcact(void (*device_fn)(), anything **p_surface_id)
   } /* end if */
 
   /* add new surface to device */
-  which_surface = devices[which_device].num_active_surfaces;
+  short which_surface = devices[which_device].num_active_surfaces;
   ++devices[which_device].num_active_surfaces;
   devices[which_device].statelist[which_surface] = temp_surface[0];
 
@@ -220,15 +182,10 @@ void xcsol(anything **surface_id)
   /* does surface_id point to a valid surface? */
   /* if not, do error action */
   /* set the solicitation surface to surface_id */
-
-  short dev;       /* which device to look at now */
-  short dev_found; /* which device was it found on */
-  short surf;      /* which surface on device to look at */
-
   /* search devices for this surface */
-  dev_found = -1;
-  for (dev = 0; (dev < num_devices) && (dev_found == -1); ++dev) {
-    for (surf = 0; surf < devices[dev].num_active_surfaces; ++surf) {
+  short dev_found = -1;
+  for (short dev = 0; (dev < num_devices) && (dev_found == -1); ++dev) {
+    for (short surf = 0; surf < devices[dev].num_active_surfaces; ++surf) {
       if (*surface_id == devices[dev].statelist[surf]) {
         dev_found = dev;
         break;

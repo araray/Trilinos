@@ -1,34 +1,8 @@
-// Copyright(C) 1999-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// See packages/seacas/LICENSE for details
 
 #ifndef IOSS_Ioss_DatabaseIO_h
 #define IOSS_Ioss_DatabaseIO_h
@@ -52,6 +26,8 @@
 #include <vector>  // for vector
 
 namespace Ioss {
+  class Assembly;
+  class Blob;
   class CommSet;
   class EdgeBlock;
   class EdgeSet;
@@ -83,6 +59,10 @@ namespace Ioss {
   {
   public:
     friend class SerializeIO;
+
+    DatabaseIO()                   = delete;
+    DatabaseIO(const DatabaseIO &) = delete;
+    DatabaseIO &operator=(const DatabaseIO &) = delete;
 
     /** \brief Check to see if database state is OK.
      *
@@ -147,7 +127,7 @@ namespace Ioss {
 
     // Do anything that might be needed to the database prior to it
     // being closed and destructed.
-    virtual void finalize_database() {}
+    virtual void finalize_database() const {}
 
     // Let's save the name on disk after Filename gets modified, e.g: decoded_filename
     void set_pfsname(const std::string &name) const { pfsName = name; }
@@ -224,11 +204,6 @@ namespace Ioss {
     virtual bool needs_shared_node_information() const { return false; }
 
     Ioss::IfDatabaseExistsBehavior open_create_behavior() const;
-
-    //! This function is used to create the path to an output directory (or history, restart, etc.)
-    //  if it does not exist.  Called by all processors. Will throw exception if path does not
-    //  specify a valid directory or if the path cannot be created.
-    void create_path(const std::string &filename) const;
 
     void set_region(Region *region) { region_ = region; }
 
@@ -440,8 +415,10 @@ namespace Ioss {
 
     char get_field_separator() const { return fieldSeparator; }
     bool get_field_recognition() const { return enableFieldRecognition; }
+    bool get_field_strip_trailing_() const { return fieldStripTrailing_; }
     void set_field_separator(char separator);
     void set_field_recognition(bool yes_no) { enableFieldRecognition = yes_no; }
+    void set_field_strip_trailing_(bool yes_no) { fieldStripTrailing_ = yes_no; }
 
     void set_lower_case_variable_names(bool true_false) const
     {
@@ -470,6 +447,7 @@ namespace Ioss {
       return compute_block_membership__(efblock, block_membership);
     }
 
+    AxisAlignedBoundingBox get_bounding_box(const Ioss::NodeBlock *nb) const;
     AxisAlignedBoundingBox get_bounding_box(const Ioss::ElementBlock *eb) const;
     AxisAlignedBoundingBox get_bounding_box(const Ioss::StructuredBlock *sb) const;
 
@@ -652,7 +630,7 @@ namespace Ioss {
     mutable int overlayCount{0};
 
     /*! Scale the time read/written from/to the file by the specified
-      scaleFactor.  If the datbase times are 0.1, 0.2, 0.3 and the
+      scaleFactor.  If the database times are 0.1, 0.2, 0.3 and the
       scaleFactor is 20, then the application will think that the
       times read are 20, 40, 60.
 
@@ -757,68 +735,66 @@ namespace Ioss {
     void verify_and_log(const GroupingEntity *ge, const Field &field, int in_out) const;
 
     virtual int64_t get_field_internal(const Region *reg, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const NodeBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const EdgeBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const FaceBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const ElementBlock *eb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const SideBlock *fb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const NodeSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const EdgeSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const FaceSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const ElementSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const SideSet *fs, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t get_field_internal(const CommSet *cs, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
+    virtual int64_t get_field_internal(const Assembly * /*as*/, const Field & /*field*/,
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
+    virtual int64_t get_field_internal(const Blob * /*bl*/, const Field & /*field*/,
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
     virtual int64_t get_field_internal(const StructuredBlock * /*sb*/, const Field & /*field*/,
-                                       void * /*data*/, size_t /*data_size*/) const
-    {
-      return 0;
-    }
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
 
     virtual int64_t put_field_internal(const Region *reg, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const NodeBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const EdgeBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const FaceBlock *nb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const ElementBlock *eb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const SideBlock *fb, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const NodeSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const EdgeSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const FaceSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const ElementSet *ns, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const SideSet *fs, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
     virtual int64_t put_field_internal(const CommSet *cs, const Field &field, void *data,
-                                       size_t data_size) const = 0;
+                                       size_t data_size) const                      = 0;
+    virtual int64_t put_field_internal(const Assembly * /*as*/, const Field & /*field*/,
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
+    virtual int64_t put_field_internal(const Blob * /*bl*/, const Field & /*field*/,
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
     virtual int64_t put_field_internal(const StructuredBlock * /*sb*/, const Field & /*field*/,
-                                       void * /*data*/, size_t /*data_size*/) const
-    {
-      return 0;
-    }
-
-    DatabaseIO()                   = delete;
-    DatabaseIO(const DatabaseIO &) = delete;
-    DatabaseIO &operator=(const DatabaseIO &) = delete;
+                                       void * /*data*/, size_t /*data_size*/) const = 0;
 
     mutable std::map<std::string, AxisAlignedBoundingBox> elementBlockBoundingBoxes;
 
@@ -832,6 +808,7 @@ namespace Ioss {
     Region *region_{nullptr};
     char    fieldSeparator{'_'};
     bool    enableFieldRecognition{true};
+    bool    fieldStripTrailing_{false};
     bool    isInput;
     bool    isParallelConsistent{
         true}; // True if application will make field data get/put calls parallel
@@ -851,7 +828,7 @@ namespace Ioss {
 
     bool m_timeStateInOut{false};
     bool m_enableTracing{false};
-    std::chrono::time_point<std::chrono::high_resolution_clock>
+    std::chrono::time_point<std::chrono::steady_clock>
         m_stateStart; // Used for optional output step timing.
   };
 } // namespace Ioss

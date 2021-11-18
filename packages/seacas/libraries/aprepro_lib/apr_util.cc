@@ -1,61 +1,41 @@
-// Copyright (c) 2014-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// See packages/seacas/LICENSE for details
 
+#include "apr_symrec.h"
 #include "aprepro.h"        // for symrec, Aprepro, etc
 #include "aprepro_parser.h" // for Parser, Parser::token, etc
-#include <cctype>           // for isalnum, isalpha, isupper, etc
-#include <cerrno>           // for errno, EDOM, ERANGE
-#include <cfenv>            // for fetestexcept, FE_DIVBYZERO, etc
-#include <cmath>            // for math_errhandling, etc
-#include <cstdio>           // for perror
-#include <cstdlib>          // for mkstemp
-#include <cstring>          // for strlen, etc
-#include <iostream>         // for operator<<, cerr, ostream
-#include <string>           // for allocator, operator+, etc
-#include <sys/stat.h>       // for stat, S_ISDIR
-#include <unistd.h>         // for close
-#include <vector>           // for vector
 
-#ifdef _WIN32
+#include <cctype>     // for isalnum, isalpha, isupper, etc
+#include <cerrno>     // for errno, EDOM, ERANGE
+#include <cfenv>      // for fetestexcept, FE_DIVBYZERO, etc
+#include <cmath>      // for math_errhandling, etc
+#include <cstdio>     // for perror
+#include <cstdlib>    // for mkstemp
+#include <cstring>    // for strlen, etc
+#include <iostream>   // for operator<<, cerr, ostream
+#include <string>     // for allocator, operator+, etc
+#include <sys/stat.h> // for stat, S_ISDIR
+#include <unistd.h>   // for close
+#include <vector>     // for vector
+
+#if defined(WIN32) || defined(__WIN32__) || defined(_WIN32) || defined(_MSC_VER) ||                \
+    defined(__MINGW32__) || defined(_WIN64) || defined(__MINGW64__)
 #include <fcntl.h>
 #include <io.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+
+#if !defined(S_ISDIR)
+#define S_ISDIR(mode) (((mode)&S_IFMT) == S_IFDIR)
+
+#endif
 #else
 #include <unistd.h> // for close
-#endif
-
-#if !defined(S_ISDIR) && defined(_WIN32)
-#define S_ISDIR(mode) (((mode)&S_IFMT) == S_IFDIR)
 #endif
 
 namespace {
@@ -144,7 +124,8 @@ namespace SEAMS {
     int fd = mkstemps(tmp_name, 0);
     if (fd >= 0)
       close(fd);
-#elif defined(_WIN32)
+#elif defined(WIN32) || defined(__WIN32__) || defined(_WIN32) || defined(_MSC_VER) ||              \
+    defined(__MINGW32__) || defined(_WIN64) || defined(__MINGW64__)
     copy_string(tmp_name, _mktemp(tmp_name), strlen(tmp_name) + 1);
 #else
     int fd = mkstemp(tmp_name);
@@ -166,7 +147,12 @@ namespace SEAMS {
   void undefined_error(const SEAMS::Aprepro &apr, const std::string &var)
   {
     if (!apr.inIfdefGetvar) {
-      apr.warning("Undefined variable '" + var + "'");
+      if (apr.ap_options.require_defined) {
+        apr.error("Undefined variable '" + var + "'");
+      }
+      else {
+        apr.warning("Undefined variable '" + var + "'");
+      }
     }
     else {
       apr.inIfdefGetvar = false;
@@ -192,6 +178,12 @@ namespace SEAMS {
 
   void math_error(const SEAMS::Aprepro &apr, const char *function)
   {
+#if !defined(WIN32) && !defined(__WIN32__) && !defined(_WIN32) && !defined(_MSC_VER) &&            \
+    !defined(__MINGW32__) && !defined(_WIN64) && !defined(__MINGW64__)
+#ifndef math_errhandling
+#define math_errhandling MATH_ERRNO
+#endif
+
     if (math_errhandling & MATH_ERRNO) {
       if (errno != 0) {
         yyerror(apr, function);
@@ -222,6 +214,7 @@ namespace SEAMS {
         std::cerr << "  RANGE error -- divide by zero\n";
       }
     }
+#endif
   }
 
   void math_error(const char *function) { math_error(*SEAMS::aprepro, function); }
@@ -260,9 +253,8 @@ namespace SEAMS {
     if (ok == 0) {
       return S_ISDIR(s.st_mode);
     }
-    else {
-      return false;
-    }
+
+    return false;
   }
 
   bool check_valid_var(const char *var)

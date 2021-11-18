@@ -1,37 +1,11 @@
-// Copyright (c) 2014-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-2021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// See packages/seacas/LICENSE for details
 
 #include "apr_builtin.h"
+#include "apr_symrec.h"
 
 #include <cctype>
 #include <cerrno>
@@ -41,17 +15,16 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
-#include <functional>
-#include <sstream>
+#include <stack>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
-#include <sys/stat.h>
-#ifdef _WIN32
+#if defined(WIN32) || defined(__WIN32__) || defined(_WIN32) || defined(_MSC_VER) ||                \
+    defined(__MINGW32__) || defined(_WIN64) || defined(__MINGW64__)
 #include <io.h>
-#else
-#include <unistd.h>
 #endif
 #include "apr_scanner.h"
 #include "apr_tokenize.h"
@@ -87,12 +60,18 @@ namespace {
 
   void reset_error()
   {
+#if !defined(WIN32) && !defined(__WIN32__) && !defined(_WIN32) && !defined(_MSC_VER) &&            \
+    !defined(__MINGW32__) && !defined(_WIN64) && !defined(__MINGW64__)
+#ifndef math_errhandling
+#define math_errhandling MATH_ERRNO
+#endif
     if (math_errhandling & MATH_ERREXCEPT) {
       std::feclearexcept(FE_ALL_EXCEPT);
     }
     if (math_errhandling & MATH_ERRNO) {
       errno = 0;
     }
+#endif
   }
 } // namespace
 
@@ -480,9 +459,11 @@ namespace SEAMS {
 
   double do_juldayhms(double mon, double day, double year, double h, double mi, double se)
   {
-    long   m = static_cast<long>(mon), d = static_cast<long>(day), y = static_cast<long>(year);
-    long   c, ya, j;
     double seconds = h * 3600.0 + mi * 60 + se;
+
+    long m = static_cast<long>(mon);
+    long d = static_cast<long>(day);
+    long y = static_cast<long>(year);
 
     if (m > 2) {
       m -= 3;
@@ -491,9 +472,9 @@ namespace SEAMS {
       m += 9;
       --y;
     }
-    c  = y / 100L;
-    ya = y - (100L * c);
-    j  = (146097L * c) / 4L + (1461L * ya) / 4L + (153L * m + 2L) / 5L + d + 1721119L;
+    long c  = y / 100L;
+    long ya = y - (100L * c);
+    long j  = (146097L * c) / 4L + (1461L * ya) / 4L + (153L * m + 2L) / 5L + d + 1721119L;
     if (seconds < 12 * 3600.0) {
       j--;
       seconds += 12.0 * 3600.0;
@@ -522,6 +503,13 @@ namespace SEAMS {
   double do_cols(const array *arr) { return arr->cols; }
 
   // --------------------------STRING FUNCTIONS------------------------
+  const char *do_version()
+  {
+    char *tmp;
+    new_string(SEAMS::Aprepro::version().c_str(), &tmp);
+    return tmp;
+  }
+
   const char *do_get_date()
   {
     char *       tmp;
@@ -602,7 +590,7 @@ namespace SEAMS {
 
     SEAMS::symrec *format;
     format = aprepro->getsym("_FORMAT");
-    (void)sprintf(tmpstr, format->value.svar.c_str(), x);
+    sprintf(tmpstr, format->value.svar.c_str(), x);
     new_string(tmpstr, &tmp);
     return (tmp);
   }
@@ -726,6 +714,12 @@ namespace SEAMS {
     return (nullptr);
   }
 
+  const char *do_dumpsym_json()
+  {
+    aprepro->dumpsym_json();
+    return (nullptr);
+  }
+
   const char *do_dumpfunc()
   {
     aprepro->dumpsym(SEAMS::Parser::token::FNCT, true);
@@ -809,7 +803,7 @@ namespace SEAMS {
       return (tmp);
     }
 
-    (void)sprintf(tmpstr, "%d", static_cast<int>(intval));
+    sprintf(tmpstr, "%d", static_cast<int>(intval));
     new_string(tmpstr, &tmp);
     return (tmp);
   }
@@ -967,13 +961,13 @@ namespace SEAMS {
 
   array *do_make_array(double rows, double cols)
   {
-    auto array_data = new array(rows, cols);
+    auto array_data = aprepro->make_array(rows, cols);
     return array_data;
   }
 
   array *do_make_array_init(double rows, double cols, double init)
   {
-    auto array_data = new array(rows, cols);
+    auto array_data = aprepro->make_array(rows, cols);
     int  isize      = (int)rows * int(cols);
     for (int i = 0; i < isize; i++) {
       array_data->data[i] = init;
@@ -983,11 +977,10 @@ namespace SEAMS {
 
   array *do_identity(double size)
   {
-    int  i;
-    int  isize      = size;
-    auto array_data = new array(size, size);
+    auto array_data = aprepro->make_array(size, size);
 
-    for (i = 0; i < isize; i++) {
+    int isize = size;
+    for (int i = 0; i < isize; i++) {
       array_data->data[i * isize + i] = 1.0;
     }
     return array_data;
@@ -998,7 +991,7 @@ namespace SEAMS {
     // Create 1D array with `count` rows and 1 column.
     // Values are linearly spaced from `init` to `final`
     int  isize      = count;
-    auto array_data = new array(count, 1);
+    auto array_data = aprepro->make_array(count, 1);
 
     double inc = (final - init) / (count - 1);
     for (int i = 0; i < isize; i++) {
@@ -1009,11 +1002,10 @@ namespace SEAMS {
 
   array *do_transpose(const array *a)
   {
-    int  i, j;
-    auto array_data = new array(a->cols, a->rows);
+    auto array_data = aprepro->make_array(a->cols, a->rows);
 
-    for (i = 0; i < a->rows; i++) {
-      for (j = 0; j < a->cols; j++) {
+    for (int i = 0; i < a->rows; i++) {
+      for (int j = 0; j < a->cols; j++) {
         array_data->data[j * a->rows + i] = a->data[i * a->cols + j];
       }
     }
@@ -1026,13 +1018,13 @@ namespace SEAMS {
   {
     size_t rows_to_skip = static_cast<size_t>(skip);
 
-    const char *  delim = ",\t ";
-    std::fstream *file  = aprepro->open_file(filename, "r");
+    std::fstream *file = aprepro->open_file(filename, "r");
     if (file != nullptr) {
 
       size_t rows = 0;
       size_t cols = 0;
 
+      const char *delim = ",\t ";
       std::string line;
       while (std::getline(*file, line)) {
         rows++;
@@ -1042,7 +1034,7 @@ namespace SEAMS {
         }
       }
 
-      auto array_data = new array(rows - rows_to_skip, cols);
+      auto array_data = aprepro->make_array(rows - rows_to_skip, cols);
 
       // Read file again storing entries in array_data->data
       file->clear();
@@ -1064,6 +1056,7 @@ namespace SEAMS {
         }
       }
       assert(rows - rows_to_skip == (size_t)array_data->rows);
+      delete file;
       return array_data;
     }
 
@@ -1088,7 +1081,7 @@ namespace SEAMS {
         }
       }
 
-      auto array_data = new array(rows, cols);
+      auto array_data = aprepro->make_array(rows, cols);
 
       // Read file again storing entries in array_data->data
       file->clear();
@@ -1111,16 +1104,16 @@ namespace SEAMS {
         }
       }
       assert((int)rows == array_data->rows);
+      delete file;
       return array_data;
     }
-
     return nullptr;
   }
 
   array *do_array_from_string(const char *string, const char *delm)
   {
     auto tokens     = SEAMS::tokenize(string, delm);
-    auto array_data = new array(tokens.size(), 1);
+    auto array_data = aprepro->make_array(tokens.size(), 1);
 
     int idx = 0;
     for (const auto &token : tokens) {

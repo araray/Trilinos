@@ -100,9 +100,10 @@ namespace MueLu {
     */
     void apply(const Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>& X,
                                          Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>& Y,
-                                         Teuchos::ETransp /* mode */ = Teuchos::NO_TRANS,
+                                         Teuchos::ETransp mode = Teuchos::NO_TRANS,
                                          Scalar /* alpha */ = Teuchos::ScalarTraits<Scalar>::one(),
                                          Scalar /* beta */  = Teuchos::ScalarTraits<Scalar>::one()) const{
+      TEUCHOS_TEST_FOR_EXCEPTION(mode!=Teuchos::NO_TRANS,std::logic_error,"MueLu::XpetraOperator does not support applying the adjoint operator");
       try {
 #ifdef HAVE_MUELU_DEBUG
         typedef Xpetra::Matrix<Scalar, LocalOrdinal, GlobalOrdinal, Node> Matrix;
@@ -118,8 +119,6 @@ namespace MueLu {
         TEUCHOS_TEST_FOR_EXCEPTION(A->getDomainMap()->isSameAs(*(Yop->getMap())) == false, std::logic_error,
                                    "MueLu::XpetraOperator::apply: map of Y is incompatible with domain map of A");
 #endif
-
-        Y.putScalar(Teuchos::ScalarTraits<Scalar>::zero());
         Hierarchy_->Iterate(X, Y, 1, true);
       } catch (std::exception& e) {
         //FIXME add message and rethrow
@@ -131,15 +130,6 @@ namespace MueLu {
     //! Indicates whether this operator supports applying the adjoint operator.
     bool hasTransposeApply() const { return false; }
 
-#ifdef HAVE_MUELU_DEPRECATED_CODE
-    template <class NewNode>
-    Teuchos::RCP< XpetraOperator<Scalar, LocalOrdinal, GlobalOrdinal, NewNode> >
-    MUELU_DEPRECATED
-    clone(const RCP<NewNode>& new_node) const {
-      return Teuchos::rcp (new XpetraOperator<Scalar, LocalOrdinal, GlobalOrdinal, NewNode> (Hierarchy_->template clone<NewNode> (new_node)));
-    }
-#endif
-
     //! Compute a residual R = B - (*this) * X
     void residual(const Xpetra::MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > & X,
                   const Xpetra::MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > & B,
@@ -149,9 +139,6 @@ namespace MueLu {
       this->apply (X, R, Teuchos::NO_TRANS, -STS::one(), STS::one());   
     }      
     
-
-
-
     //! @name MueLu specific
     //@{
 

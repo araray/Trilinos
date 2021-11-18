@@ -1056,11 +1056,6 @@ TEST(ElementGraph, test_parallel_graph_info_with_parallel_element_graph)
         stk::mesh::count_entities(bulkData.mesh_meta_data().locally_owned_part(), bulkData, counts);
         size_t numLocallyOwnedElems = counts[stk::topology::ELEM_RANK];
 
-        stk::mesh::impl::ElementLocalIdMapper localIdMapper;
-        localIdMapper.initialize(bulkData);
-        std::vector<stk::topology> element_topologies(numLocallyOwnedElems);
-        impl::fill_topologies(bulkData, localIdMapper, element_topologies);
-
         ElemElemGraphTester elemElemGraph(bulkData);
 
         ASSERT_EQ(numLocallyOwnedElems, elemElemGraph.get_graph_size());
@@ -1139,8 +1134,6 @@ TEST(ElementGraph, create_faces_using_element_graph_parallel)
         stk::mesh::EntityRank side_rank = meta.side_rank();
         unsigned num_faces = entity_counts[side_rank];
         EXPECT_EQ(21u, num_faces);
-
-        stk::io::write_mesh("out.exo", bulkData);
 
         if (stk::parallel_machine_rank(comm) == 0)
         {
@@ -1298,8 +1291,6 @@ TEST(ElementGraph, compare_performance_create_faces)
 
             double elapsed_time = stk::wall_time() - wall_time_start;
 
- //           stk::io::write_mesh("out.exo", bulkData, bulkData.parallel());
-
             std::vector<size_t> counts;
             stk::mesh::comm_mesh_counts(bulkData, counts);
 
@@ -1410,7 +1401,6 @@ TEST(ElementGraph, test_element_death)
 
             stk::mesh::Part& active = meta.declare_part("active", stk::topology::ELEMENT_RANK);
             stk::io::fill_mesh(filename, bulkData);
-            stk::io::write_mesh("orig.exo", bulkData);
 
             double start_graph = stk::wall_time();
 
@@ -1444,7 +1434,7 @@ TEST(ElementGraph, test_element_death)
                 stk::mesh::impl::populate_selected_value_for_remote_elements(bulkData, elementGraph, active, remoteActiveSelector);
 
                 double start_time = stk::wall_time();
-                process_killed_elements(bulkData, elementGraph, killedElements, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
+                process_killed_elements(bulkData, killedElements, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
                 elapsed_death_time += (stk::wall_time() - start_time);
             }
 
@@ -1470,9 +1460,6 @@ TEST(ElementGraph, test_element_death)
             }
 
             std::cerr << os.str();
-
-            stk::mesh::Selector activeSelector(active);
-            stk::io::write_mesh_subset("out.exo", bulkData, activeSelector);
         }
     }
 }
@@ -1521,7 +1508,7 @@ public:
         stk::mesh::impl::ParallelSelectedInfo remoteActiveSelector;
         stk::mesh::impl::populate_selected_value_for_remote_elements(*bulkData, bulkData->get_face_adjacent_element_graph(), *activePart, remoteActiveSelector);
 
-        stk::mesh::process_killed_elements(*bulkData, bulkData->get_face_adjacent_element_graph(), deactivatedElements, *activePart, remoteActiveSelector, partsForCreatingSides, NULL);
+        stk::mesh::process_killed_elements(*bulkData, deactivatedElements, *activePart, remoteActiveSelector, partsForCreatingSides, NULL);
     }
 
     void initializeObjects()
@@ -1561,7 +1548,7 @@ public:
         stk::mesh::impl::ParallelSelectedInfo remoteActiveSelector;
         stk::mesh::impl::populate_selected_value_for_remote_elements(*bulkData, bulkData->get_face_adjacent_element_graph(), *activePart, remoteActiveSelector);
 
-        process_killed_elements(*bulkData, bulkData->get_face_adjacent_element_graph(), elementsToKill, *activePart, remoteActiveSelector, partsForCreatingSides, &boundaryMeshParts);
+        process_killed_elements(*bulkData, elementsToKill, *activePart, remoteActiveSelector, partsForCreatingSides, &boundaryMeshParts);
     }
 
     void verify_mesh_before_death() const
@@ -1733,6 +1720,7 @@ TEST(ElementDeath, test_element_death_with_restart)
             elementDeathTest.kill_element(2);
             elementDeathTest.verify_mesh_after_killing_element_2();
         }
+        stk::unit_test_util::delete_mesh("elemDeathRestartFile.exo");
     }
 }
 
@@ -4120,7 +4108,7 @@ void test_add_element_to_graph_with_element_death(stk::mesh::BulkData::Automatic
         stk::mesh::impl::ParallelSelectedInfo remoteActiveSelector;
         stk::mesh::impl::populate_selected_value_for_remote_elements(bulkData, graph, active, remoteActiveSelector);
 
-        stk::mesh::process_killed_elements(bulkData, graph, deactivated_elems, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
+        stk::mesh::process_killed_elements(bulkData, deactivated_elems, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
 
         if (0 == pRank)
         {
@@ -4229,7 +4217,7 @@ void test_delete_element_from_graph_with_element_death(stk::mesh::BulkData::Auto
         stk::mesh::impl::ParallelSelectedInfo remoteActiveSelector;
         stk::mesh::impl::populate_selected_value_for_remote_elements(bulkData, graph, active, remoteActiveSelector);
 
-        stk::mesh::process_killed_elements(bulkData, graph, deactivated_elems, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
+        stk::mesh::process_killed_elements(bulkData, deactivated_elems, active, remoteActiveSelector, boundary_mesh_parts, &boundary_mesh_parts);
 
         stk::mesh::comm_mesh_counts(bulkData, entity_counts);
 
@@ -4697,7 +4685,6 @@ TEST(ElemGraph, get_all_sides_sideset_including_ghosts)
         stk::mesh::BulkData bulk(meta, comm, stk::mesh::BulkData::AUTO_AURA);
         stk::io::fill_mesh("generated:1x1x2", bulk);
         add_elem3_on_proc_1(bulk);
- stk::io::write_mesh("gen1x1x2.g", bulk);
 
         bool includeAuraElementSides = true;
         std::vector<stk::mesh::SideSetEntry> sides = stk::mesh::SkinMeshUtil::get_all_sides_sideset(bulk, meta.universal_part(), includeAuraElementSides);

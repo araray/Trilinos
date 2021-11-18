@@ -86,6 +86,7 @@
 #ifdef HAVE_XPETRA_TPETRA
 #include <Thyra_TpetraThyraWrappers.hpp>
 #include <Thyra_TpetraVector.hpp>
+#include <Thyra_TpetraMultiVector.hpp>
 #include <Thyra_TpetraVectorSpace.hpp>
 #include <Tpetra_Map.hpp>
 #include <Tpetra_Vector.hpp>
@@ -141,11 +142,9 @@ public:
     using Teuchos::RCP;
     using Teuchos::rcp_dynamic_cast;
     using Teuchos::as;
-    typedef Thyra::VectorSpaceBase<Scalar> ThyVecSpaceBase;
-    typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
-
-    using Map      = Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node>;
-    using ThyUtils = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
+    using ThyVecSpaceBase     = Thyra::VectorSpaceBase<Scalar>;
+    using ThyProdVecSpaceBase = Thyra::ProductVectorSpaceBase<Scalar>;
+    using ThyUtils            = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
 
 
     RCP<Map> resultMap = Teuchos::null;
@@ -211,12 +210,7 @@ public:
 
     using ThyMultVecBase     = Thyra::MultiVectorBase<Scalar>;
     using ThyProdMultVecBase = Thyra::ProductMultiVectorBase<Scalar>;
-
-    using Map                = Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node>;
-    using MultiVector        = Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
-    using MultiVectorFactory = Xpetra::MultiVectorFactory<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
     using ThyUtils           = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
-    using BlockedMultiVector = Xpetra::BlockedMultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
 
     // return value
     RCP<MultiVector> xpMultVec = Teuchos::null;
@@ -444,67 +438,48 @@ public:
   static Teuchos::RCP<const Thyra::MultiVectorBase<Scalar> >
   toThyraMultiVector(Teuchos::RCP<const Xpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
     // create Thyra MultiVector
-    Teuchos::RCP< Thyra::MultiVectorBase<Scalar> > thMVec = Thyra::createMembers(thMap, vec->getNumVectors());
-    Teuchos::RCP< Thyra::SpmdMultiVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdMultiVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast MultiVectorBase to SpmdMultiVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpMV = Teuchos::rcp_dynamic_cast<const TpetraMultiVector>(vec)->getTpetra_MultiVector();
+      auto thyDomMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Tpetra::createLocalMapWithNode<LocalOrdinal, GlobalOrdinal, Node>(vec->getNumVectors(), vec->getMap()->getComm()));
+      auto thyMV = rcp(new Thyra::TpetraMultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyMV->initialize(thyTpMap, thyDomMap, tpMV);
+      return thyMV;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "Epetra needs SC=double, LO=int, and GO=int or GO=long long");
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "MultiVector cannot be converted to Thyra.");
   }
 
   static Teuchos::RCP<const Thyra::VectorBase<Scalar> >
   toThyraVector(Teuchos::RCP<const Xpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
-    // create Thyra MultiVector
-    Teuchos::RCP< Thyra::VectorBase<Scalar> > thMVec = Thyra::createMember(thMap);
-    Teuchos::RCP< Thyra::SpmdVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast VectorBase to SpmdVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+    // create Thyra Vector
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpVec = Teuchos::rcp_dynamic_cast<const TpetraVector>(vec)->getTpetra_Vector();
+      auto thyVec = rcp(new Thyra::TpetraVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyVec->initialize(thyTpMap, tpVec);
+      return thyVec;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "Epetra needs SC=double, LO=int, and GO=int or GO=long long");
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "Vector cannot be converted to Thyra.");
   }
 
   // update Thyra multi vector with data from Xpetra multi vector
@@ -520,9 +495,6 @@ public:
     //typedef Thyra::SpmdMultiVectorBase<Scalar> ThySpmdMultVecBase;
     //typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
     typedef Thyra::ProductMultiVectorBase<Scalar> ThyProdMultVecBase;
-
-    using MultiVector        = Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
-    using BlockedMultiVector = Xpetra::BlockedMultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
 
 
     // copy data from tY_inout to Y_inout
@@ -793,8 +765,6 @@ public:
     using Teuchos::as;
     typedef Thyra::VectorSpaceBase<Scalar> ThyVecSpaceBase;
     typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
-    typedef Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> Map;
-    typedef Xpetra::MapUtils<LocalOrdinal,GlobalOrdinal,Node> MapUtils;
     typedef Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node> ThyUtils;
 
     RCP<Map> resultMap = Teuchos::null;
@@ -892,11 +862,7 @@ public:
 
     using ThyProdMultVecBase = Thyra::ProductMultiVectorBase<Scalar>;
     using ThyMultVecBase     = Thyra::MultiVectorBase<Scalar>;
-    using Map                = Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node>;
-    using MultiVector        = Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
-    using MultiVectorFactory = Xpetra::MultiVectorFactory<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
     using ThyUtils           = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
-    using BlockedMultiVector = Xpetra::BlockedMultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>;
 
     // return value
     RCP<MultiVector> xpMultVec = Teuchos::null;
@@ -961,7 +927,7 @@ public:
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(map));
         RCP<Xpetra::EpetraMapT<GlobalOrdinal,Node> > xeMap = rcp_dynamic_cast<Xpetra::EpetraMapT<GlobalOrdinal,Node> >(map);
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(xeMap));
-        RCP<const Epetra_Map> eMap = Teuchos::rcpFromRef(xeMap->getEpetra_Map());
+        RCP<const Epetra_Map> eMap = xeMap->getEpetra_MapRCP();
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(eMap));
         Teuchos::RCP<const Epetra_MultiVector> epMultVec = Thyra::get_Epetra_MultiVector(*eMap, v);
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(epMultVec));
@@ -973,7 +939,6 @@ public:
       TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(xpMultVec));
       return xpMultVec;
     } // end standard case
-    TEUCHOS_UNREACHABLE_RETURN(Teuchos::null);
   }
 
   // non-const version
@@ -1216,7 +1181,7 @@ public:
       Teuchos::RCP<const Xpetra::EpetraMapT<GlobalOrdinal,Node> > epetraMap = Teuchos::rcp_dynamic_cast<const Xpetra::EpetraMapT<GlobalOrdinal,Node> >(map);
       if (epetraMap == Teuchos::null)
         throw Exceptions::BadCast("Xpetra::ThyraUtils::toThyra: Cast from Xpetra::Map to Xpetra::EpetraMap failed");
-      RCP<const Thyra::VectorSpaceBase<Scalar> > thyraEpetraMap = Thyra::create_VectorSpace(Teuchos::rcpFromRef(epetraMap->getEpetra_Map()));
+      RCP<const Thyra::VectorSpaceBase<Scalar> > thyraEpetraMap = Thyra::create_VectorSpace(epetraMap->getEpetra_MapRCP());
       thyraMap = thyraEpetraMap;
     }
 #endif
@@ -1227,67 +1192,55 @@ public:
   static Teuchos::RCP<const Thyra::MultiVectorBase<Scalar> >
   toThyraMultiVector(Teuchos::RCP<const Xpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
     // create Thyra MultiVector
-    Teuchos::RCP< Thyra::MultiVectorBase<Scalar> > thMVec = Thyra::createMembers(thMap, vec->getNumVectors());
-    Teuchos::RCP< Thyra::SpmdMultiVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdMultiVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast MultiVectorBase to SpmdMultiVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpMV = Teuchos::rcp_dynamic_cast<const TpetraMultiVector>(vec)->getTpetra_MultiVector();
+      auto thyDomMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Tpetra::createLocalMapWithNode<LocalOrdinal, GlobalOrdinal, Node>(vec->getNumVectors(), vec->getMap()->getComm()));
+      auto thyMV = rcp(new Thyra::TpetraMultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyMV->initialize(thyTpMap, thyDomMap, tpMV);
+      return thyMV;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      auto thyEpMap = Thyra::create_VectorSpace(Teuchos::rcp_dynamic_cast<const EpetraMapT<GlobalOrdinal, Node> >(vec->getMap())->getEpetra_MapRCP());
+      auto epMV = Teuchos::rcp_dynamic_cast<const EpetraMultiVectorT<GlobalOrdinal, Node> >(vec)->getEpetra_MultiVector();
+      auto thyMV = Thyra::create_MultiVector(epMV, thyEpMap);
+      return thyMV;
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "MultiVector cannot be converted to Thyra.");
+
   }
 
   static Teuchos::RCP<const Thyra::VectorBase<Scalar> >
   toThyraVector(Teuchos::RCP<const Xpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
-    // create Thyra MultiVector
-    Teuchos::RCP< Thyra::VectorBase<Scalar> > thMVec = Thyra::createMember(thMap);
-    Teuchos::RCP< Thyra::SpmdVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast VectorBase to SpmdVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+    // create Thyra Vector
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpVec = Teuchos::rcp_dynamic_cast<const TpetraVector>(vec)->getTpetra_Vector();
+      auto thyVec = rcp(new Thyra::TpetraVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyVec->initialize(thyTpMap, tpVec);
+      return thyVec;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      auto thyEpMap = Thyra::create_VectorSpace(Teuchos::rcp_dynamic_cast<const EpetraMapT<GlobalOrdinal, Node> >(vec->getMap())->getEpetra_MapRCP());
+      auto epVec = rcp(Teuchos::rcp_dynamic_cast<const EpetraVectorT<GlobalOrdinal, Node> >(vec)->getEpetra_Vector(), false);
+      auto thyVec = Thyra::create_Vector(epVec, thyEpMap);
+      return thyVec;
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "Vector cannot be converted to Thyra.");
   }
 
   static void updateThyra(Teuchos::RCP<const Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> > source, Teuchos::RCP<const Xpetra::MapExtractor<Scalar, LocalOrdinal, GlobalOrdinal,Node> > mapExtractor, const Teuchos::RCP<Thyra::MultiVectorBase<Scalar> > & target) {
@@ -1300,7 +1253,6 @@ public:
     //typedef Thyra::SpmdMultiVectorBase<Scalar> ThySpmdMultVecBase;
     //typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
     typedef Thyra::ProductMultiVectorBase<Scalar> ThyProdMultVecBase;
-    typedef Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node > MultiVector;
 
     // copy data from tY_inout to Y_inout
     RCP<ThyProdMultVecBase> prodTarget = rcp_dynamic_cast<ThyProdMultVecBase>(target);
@@ -1511,7 +1463,6 @@ public:
     using Teuchos::as;
     typedef Thyra::VectorSpaceBase<Scalar> ThyVecSpaceBase;
     typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
-    typedef Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> Map;
     typedef Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node> ThyUtils;
 
     RCP<const ThyProdVecSpaceBase > prodVectorSpace = rcp_dynamic_cast<const ThyProdVecSpaceBase >(vectorSpace);
@@ -1611,9 +1562,6 @@ public:
     using Teuchos::as;
     typedef Thyra::ProductMultiVectorBase<Scalar> ThyProdMultVecBase;
     typedef Thyra::MultiVectorBase<Scalar> ThyMultVecBase;
-    typedef Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> Map;
-    typedef Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node > MultiVector;
-    typedef Xpetra::MultiVectorFactory<Scalar,LocalOrdinal,GlobalOrdinal,Node> MultiVectorFactory;
     typedef Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node> ThyUtils;
 
     // return value
@@ -1681,7 +1629,7 @@ public:
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(map));
         RCP<Xpetra::EpetraMapT<GlobalOrdinal,Node> > xeMap = rcp_dynamic_cast<Xpetra::EpetraMapT<GlobalOrdinal,Node> >(map);
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(xeMap));
-        RCP<const Epetra_Map> eMap = Teuchos::rcpFromRef(xeMap->getEpetra_Map());
+        RCP<const Epetra_Map> eMap = xeMap->getEpetra_MapRCP();
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(eMap));
         Teuchos::RCP<const Epetra_MultiVector> epMultVec = Thyra::get_Epetra_MultiVector(*eMap, v);
         TEUCHOS_TEST_FOR_EXCEPT(Teuchos::is_null(epMultVec));
@@ -1937,7 +1885,7 @@ public:
       Teuchos::RCP<const Xpetra::EpetraMapT<GlobalOrdinal,Node> > epetraMap = Teuchos::rcp_dynamic_cast<const Xpetra::EpetraMapT<GlobalOrdinal,Node> >(map);
       if (epetraMap == Teuchos::null)
         throw Exceptions::BadCast("Xpetra::ThyraUtils::toThyra: Cast from Xpetra::Map to Xpetra::EpetraMap failed");
-      RCP<const Thyra::VectorSpaceBase<Scalar> > thyraEpetraMap = Thyra::create_VectorSpace(Teuchos::rcpFromRef(epetraMap->getEpetra_Map()));
+      RCP<const Thyra::VectorSpaceBase<Scalar> > thyraEpetraMap = Thyra::create_VectorSpace(epetraMap->getEpetra_MapRCP());
       thyraMap = thyraEpetraMap;
     }
 #endif
@@ -1948,67 +1896,54 @@ public:
   static Teuchos::RCP<const Thyra::MultiVectorBase<Scalar> >
   toThyraMultiVector(Teuchos::RCP<const Xpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
     // create Thyra MultiVector
-    Teuchos::RCP< Thyra::MultiVectorBase<Scalar> > thMVec = Thyra::createMembers(thMap, vec->getNumVectors());
-    Teuchos::RCP< Thyra::SpmdMultiVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdMultiVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast MultiVectorBase to SpmdMultiVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpMV = Teuchos::rcp_dynamic_cast<const TpetraMultiVector>(vec)->getTpetra_MultiVector();
+      auto thyDomMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Tpetra::createLocalMapWithNode<LocalOrdinal, GlobalOrdinal, Node>(vec->getNumVectors(), vec->getMap()->getComm()));
+      auto thyMV = rcp(new Thyra::TpetraMultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyMV->initialize(thyTpMap, thyDomMap, tpMV);
+      return thyMV;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      auto thyEpMap = Thyra::create_VectorSpace(Teuchos::rcp_dynamic_cast<const EpetraMapT<GlobalOrdinal, Node> >(vec->getMap())->getEpetra_MapRCP());
+      auto epMV = Teuchos::rcp_dynamic_cast<const EpetraMultiVectorT<GlobalOrdinal, Node> >(vec)->getEpetra_MultiVector();
+      auto thyMV = Thyra::create_MultiVector(epMV, thyEpMap);
+      return thyMV;
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "MultiVector cannot be converted to Thyra.");
   }
 
   static Teuchos::RCP<const Thyra::VectorBase<Scalar> >
   toThyraVector(Teuchos::RCP<const Xpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node> > vec) {
 
-    // create Thyra vector space out of Xpetra Map
-    Teuchos::RCP<const Thyra::VectorSpaceBase<Scalar> > thMap = Xpetra::ThyraUtils<Scalar,LocalOrdinal,GlobalOrdinal,Node>::toThyra(vec->getMap());
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getGlobalNumElements())!=thMap->dim(), std::logic_error, "Global dimension of Xpetra map and Thyra VectorSpaceBase are different.");
-    Teuchos::RCP<const Thyra::SpmdVectorSpaceBase<Scalar> > thSpmdMap = Teuchos::rcp_dynamic_cast<const Thyra::SpmdVectorSpaceBase<Scalar> >(thMap);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMap == Teuchos::null, std::logic_error, "Cannot cast VectorSpaceBase to SpmdVectorSpaceBase.");
-    TEUCHOS_TEST_FOR_EXCEPTION(Teuchos::as<Teuchos::Ordinal>(vec->getMap()->getNodeNumElements())!=thSpmdMap->localSubDim(), std::logic_error, "Local dimension of Xpetra map and Thyra VectorSpaceBase on one (or more) processor(s) are different.");
-
-    // create Thyra MultiVector
-    Teuchos::RCP< Thyra::VectorBase<Scalar> > thMVec = Thyra::createMember(thMap);
-    Teuchos::RCP< Thyra::SpmdVectorBase<Scalar> > thSpmdMVec = Teuchos::rcp_dynamic_cast<Thyra::SpmdVectorBase<Scalar> >(thMVec);
-    TEUCHOS_TEST_FOR_EXCEPTION(thSpmdMVec == Teuchos::null, std::logic_error, "Cannot cast VectorBase to SpmdVectorBase.");
-
-    // fill multivector with some data
-    const LocalOrdinal localOffset = ( thSpmdMap != Teuchos::null ? thSpmdMap->localOffset() : 0 );
-    const LocalOrdinal localSubDim = ( thSpmdMap != Teuchos::null ? thSpmdMap->localSubDim() : thMap->dim() );
-    Teuchos::RCP<Thyra::DetachedMultiVectorView<Scalar> > thyData =
-        Teuchos::rcp(new Thyra::DetachedMultiVectorView<Scalar>(*thSpmdMVec,Teuchos::Range1D(localOffset,localOffset+localSubDim-1)));
-
-    // loop over all vectors in multivector
-    for(size_t j = 0; j < Teuchos::as<size_t>(thSpmdMVec->domain()->dim()); ++j) {
-      Teuchos::ArrayRCP< const Scalar > vecData = vec->getData(j);
-      // loop over all local rows
-      for(LocalOrdinal i = 0; i < localSubDim; ++i) {
-        (*thyData)(i,j) = vecData[i];
-      }
+    // create Thyra Vector
+#ifdef HAVE_XPETRA_TPETRA
+    if (vec->getMap()->lib() == Xpetra::UseTpetra) {
+      auto thyTpMap = Thyra::tpetraVectorSpace<Scalar,LocalOrdinal,GlobalOrdinal,Node>(Teuchos::rcp_dynamic_cast<const TpetraMap>(vec->getMap())->getTpetra_Map());
+      RCP<Tpetra::Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>> tpVec = Teuchos::rcp_dynamic_cast<const TpetraVector>(vec)->getTpetra_Vector();
+      auto thyVec = rcp(new Thyra::TpetraVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>());
+      thyVec->initialize(thyTpMap, tpVec);
+      return thyVec;
     }
+#endif
 
-    return thMVec;
+#ifdef HAVE_XPETRA_EPETRA
+    if (vec->getMap()->lib() == Xpetra::UseEpetra) {
+      auto thyEpMap = Thyra::create_VectorSpace(Teuchos::rcp_dynamic_cast<const EpetraMapT<GlobalOrdinal, Node> >(vec->getMap())->getEpetra_MapRCP());
+      auto epVec = rcp(Teuchos::rcp_dynamic_cast<const EpetraVectorT<GlobalOrdinal, Node> >(vec)->getEpetra_Vector(), false);
+      auto thyVec = Thyra::create_Vector(epVec, thyEpMap);
+      return thyVec;
+    }
+#endif
+
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError, "Vector cannot be converted to Thyra.");
   }
 
   static void updateThyra(Teuchos::RCP<const Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> > source, Teuchos::RCP<const Xpetra::MapExtractor<Scalar, LocalOrdinal, GlobalOrdinal,Node> > mapExtractor, const Teuchos::RCP<Thyra::MultiVectorBase<Scalar> > & target) {
@@ -2021,7 +1956,6 @@ public:
     //typedef Thyra::SpmdMultiVectorBase<Scalar> ThySpmdMultVecBase;
     //typedef Thyra::ProductVectorSpaceBase<Scalar> ThyProdVecSpaceBase;
     typedef Thyra::ProductMultiVectorBase<Scalar> ThyProdMultVecBase;
-    typedef Xpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node > MultiVector;
 
     // copy data from tY_inout to Y_inout
     RCP<ThyProdMultVecBase> prodTarget = rcp_dynamic_cast<ThyProdMultVecBase>(target);

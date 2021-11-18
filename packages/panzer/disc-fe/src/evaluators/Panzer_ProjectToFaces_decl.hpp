@@ -80,21 +80,14 @@ private:
 
   std::string dof_name;
   Teuchos::RCP<const PureBasis> basis;
-  int num_pts;
+  int num_faces;
   int num_dim;
-  int quad_degree;
-  //! If true, a fast algorithm can be used, but this requires a rectangular/square structured hex mesh.
-  bool use_fast_method_on_rectangular_hex_mesh;
 
   PHX::MDField<const ScalarT,Cell,BASIS,Dim> normals;
   std::vector<PHX::MDField<const ScalarT,Cell,BASIS,Dim> > vector_values;
   PHX::MDField<ScalarT,Cell,BASIS> result;
 
   ProjectToFaces();
-
-  PHX::MDField<ScalarT,Cell,NODE,Dim> gatherFieldNormals;
-
-  Teuchos::RCP<const std::vector<Intrepid2::Orientation> > orientations;
 };
 
 }

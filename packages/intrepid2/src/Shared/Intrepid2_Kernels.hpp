@@ -275,14 +275,14 @@ namespace Intrepid2 {
         case NORM_TWO:{
           for (ordinal_type i=0;i<m;++i)
             for (ordinal_type j=0;j<n;++j)
-              r_val += A(i,j)*A(i,j);
+              r_val += A.access(i,j)*A.access(i,j);
           r_val = sqrt(r_val);
           break;
         }
         case NORM_INF:{
           for (ordinal_type i=0;i<m;++i)
             for (ordinal_type j=0;j<n;++j) {
-              const value_type current = Util<value_type>::abs(A(i,j));
+              const value_type current = Util<value_type>::abs(A.access(i,j));
               r_val = (r_val < current ? current : r_val);
             }
           break;
@@ -290,7 +290,7 @@ namespace Intrepid2 {
         case NORM_ONE:{
           for (ordinal_type i=0;i<m;++i)
             for (ordinal_type j=0;j<n;++j)
-              r_val += Util<value_type>::abs(A(i,j));
+              r_val += Util<value_type>::abs(A.access(i,j));
           break;
         }
         default: {
@@ -310,7 +310,7 @@ namespace Intrepid2 {
           const ordinal_type m = dst.extent(0), n = dst.extent(1);
           for (ordinal_type i=0;i<m;++i) 
             for (ordinal_type j=0;j<n;++j) 
-              dst(i,j) = src(i,j);
+              dst.access(i,j) = src.access(i,j);
         }
       }
 

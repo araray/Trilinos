@@ -11,8 +11,8 @@ module load sems-openmpi/1.10.1
 module load sems-git/2.10.1
 module load sems-boost/1.63.0/base
 module load sems-zlib/1.2.8/base
-module load sems-hdf5/1.8.12/parallel
-module load sems-netcdf/4.4.1/exo_parallel
+module load sems-hdf5/1.10.6/parallel
+module load sems-netcdf/4.7.3/parallel
 module load sems-parmetis/4.0.3/parallel
 module load sems-scotch/6.0.3/nopthread_64bit_parallel
 module load sems-superlu/4.3/base
@@ -21,7 +21,7 @@ module load sems-superlu/4.3/base
 # - One of the SEMS modules will load CMake 3.4.x also,
 #   so this will pull in the SEMS cmake 3.10.3 version
 #   for Trilinos compatibility.
-module load sems-cmake/3.10.3
+module load sems-cmake/3.17.1
 
 # Using CMake and Ninja modules from the ATDM project space.
 # SEMS does not yet supply a recent enough version of CMake
@@ -41,5 +41,5 @@ export PATH=/projects/sierra/linux_rh7/install/Python/3.6.3/bin:${PATH}
 PATH=/projects/sierra/linux_rh7/install/Python/extras/bin:${PATH}
 export PYTHONPATH=/projects/sierra/linux_rh7/install/Python/extras/lib/python3.6/site-packages:${PYTHONPATH}
 export MANPATH=/projects/sierra/linux_rh7/install/Python/3.6.3/share/man:${MANPATH}
-unset PYTHONHOME 
+unset PYTHONHOME
 

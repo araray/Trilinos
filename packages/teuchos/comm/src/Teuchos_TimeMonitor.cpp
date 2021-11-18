@@ -273,7 +273,7 @@ namespace Teuchos {
         if (nonnull(stackedTimer_))
           stackedTimer_->stop(counter().name(),false);
       }
-      catch (std::runtime_error&) {
+      catch (std::runtime_error& e) {
         std::ostringstream warning;
         warning <<
           "\n*********************************************************************\n"
@@ -290,7 +290,7 @@ namespace Teuchos {
           "MM = Teuchos::null;\n"
           "MM = rcp(new TimeMonitor(*(TimeMonitor::getNewTimer(\"SecondJunk\"))));\n"
           "*********************************************************************\n";
-        std::cout << warning.str() << std::endl;
+        std::cout << warning.str() << std::endl << e.what() << std::endl;
         Teuchos::TimeMonitor::setStackedTimer(Teuchos::null);
       }
 #endif
@@ -1111,6 +1111,14 @@ namespace Teuchos {
     RCP<const Comm<int> > comm = getDefaultComm();
 
     computeGlobalTimerStatistics (statData, statNames, comm.ptr(), setOp, filter);
+  }
+
+  SyncTimeMonitor::SyncTimeMonitor(Time& timer, Ptr<const Comm<int> > comm, bool reset)
+    : TimeMonitor(timer, reset), comm_(comm)
+  { }
+
+  SyncTimeMonitor::~SyncTimeMonitor() {
+    comm_->barrier();
   }
 
 

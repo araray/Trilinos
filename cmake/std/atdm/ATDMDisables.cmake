@@ -25,30 +25,28 @@ ATDM_SET_CACHE(TPL_ENABLE_yaml-cpp OFF CACHE BOOL)
 
 # Packages and sub-packages disables common to both SPARC and EMPIRE
 SET(ATDM_SE_PACKAGE_DISABLES
+  TrilinosFrameworkTests
   MiniTensor
-  GlobiPack
-  OptiPack
   Isorropia
   KokkosExample
-  MiniTensor
   Domi
   Pliris
   Komplex
-  Trios
   FEI
   TriKota
+  Compadre
   STKClassic
   STKSearchUtil
   STKUnit_tests
   STKDoc_tests
   STKExp
   Moertel
+  ShyLU_NodeTacho
   ShyLU_DD
   ShyLU
   Stokhos
   MOOCHO
   PyTrilinos
-  ForTrilinos
   TrilinosCouplings
   Pike
   )
@@ -59,6 +57,7 @@ IF (NOT ATDM_ENABLE_SPARC_SETTINGS)
     ${ATDM_SE_PACKAGE_DISABLES}
     ShyLU_Node
     ROL
+    Tempus
     )
   # NOTE: For now, we will disable these packages not being used by EMPIRE for
   # now so that we don't introduce any new failing tests in the existing ATDM
@@ -68,11 +67,39 @@ IF (NOT ATDM_ENABLE_SPARC_SETTINGS)
   # at a time in an orderly fashion.
 ENDIF()
 
-# Disable MueLu for all cuda+complex builds for now since there are build
-# errors in the MueLu library that takes out everything downstream that
-# depends on MueLu (see #4599).
-IF (ATDM_USE_CUDA AND ATDM_COMPLEX)
-  ATDM_SET_ENABLE(Trilinos_ENABLE_MueLu OFF)
+IF (ATDM_COMPLEX)
+
+  # Disable extra packages not being used by GEMMA in complex builds (see
+  # ATDV-263, ATDV-265)
+  SET(ATDM_SE_PACKAGE_DISABLES
+    ${ATDM_SE_PACKAGE_DISABLES}
+    ShyLU_Node
+    Amesos2
+    SEACAS
+    Anasazi
+    Ifpack2
+    Stratimikos
+    Teko
+    Intrepid
+    Intrepid2
+    STK
+    Percept
+    NOX
+    Moertel
+    MueLu
+    Rythmos
+    Tempus
+    ROL
+    Piro
+    Panzer
+    )
+  # Note, above:
+  # * We are allowing the enable of Zoltan2 for now even though GEMMA is not
+  #   currently using it because Zoltan2 developers want to maintain it (see
+  #   discussion in ATDV-263).
+  # * The package MueLu does not currently build for cuda+complex builds so
+  #   therefore must be disabled (see #4599)
+
 ENDIF()
 
 
@@ -102,7 +129,9 @@ SET(ATDM_SE_PACKAGE_TEST_DISABLES
   Pamgen
   Ifpack
   ML
+  Anasazi
   Intrepid
+  Piro
   )
 
 #
@@ -197,6 +226,15 @@ ATDM_SET_ENABLE(Teko_ModALPreconditioner_MPI_1_DISABLE ON)
 ATDM_SET_ENABLE(Zoltan2_XpetraEpetraMatrix_EXE_DISABLE ON)
 ATDM_SET_ENABLE(Zoltan2_XpetraEpetraMatrix_MPI_4_DISABLE ON)
 
+# Diable experimental Belos HybridGMES tests in all ATDM Trilinos builds as
+# none of the ATDM customer codes are using this solver (see #4159)
+ATDM_SET_ENABLE(Belos_Tpetra_HybridGMRES_hb_test_1_MPI_4_DISABLE ON)
+ATDM_SET_ENABLE(Belos_Tpetra_HybridGMRES_hb_test_0_MPI_4_DISABLE ON)
+
+# Disable test for Belos recycling CG solver that is not used by ATDM APPs
+# (see #2919)
+ATDM_SET_ENABLE(Belos_rcg_hb_MPI_4_DISABLE ON)
+
 # Disable Piro_ThyraSolver exec that does not build with no global int
 # instantiation (see #5412)
 ATDM_SET_ENABLE(Piro_ThyraSolver_EXE_DISABLE ON)
@@ -212,10 +250,36 @@ ATDM_SET_ENABLE(Piro_AnalysisDriverTpetra_MPI_4_DISABLE ON)
 ATDM_SET_ENABLE(ROL_adapters_tpetra_test_vector_SimulatedVectorTpetraBatchManagerInterface_EXE_DISABLE ON)
 ATDM_SET_ENABLE(ROL_adapters_tpetra_test_vector_SimulatedVectorTpetraBatchManagerInterface_MPI_4_DISABLE ON)
 
+# Disable Kokkos timing based test. See #8545.
+ATDM_SET_ENABLE(KokkosCore_UnitTest_CudaTimingBased_MPI_1_DISABLE ON)
+
+# Disable serial.Random_XorShift64 due to random failures. See #3282.
+ATDM_SET_CACHE(KokkosAlgorithms_UnitTest_MPI_1_EXTRA_ARGS
+  "--gtest_filter=-*Random_XorShift64:-*Random_XorShift1024" CACHE STRING)
+
+IF (ATDM_NODE_TYPE STREQUAL "OPENMP")
+
+  # Disable ctest DISABLED test (otherwise, this shows up on CDash as "NotRun")
+  ATDM_SET_ENABLE(KokkosContainers_PerformanceTest_OpenMP_DISABLE ON)
+
+ENDIF()
+
 IF ("${ATDM_CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
 
   ATDM_SET_ENABLE(PanzerAdaptersSTK_CurlLaplacianExample-ConvTest-Quad-Order-4_DISABLE ON)
   ATDM_SET_ENABLE(PanzerAdaptersSTK_MixedPoissonExample-ConvTest-Hex-Order-3_DISABLE ON)
+
+  # Too expensive for full debug builds after Kokkos 2.99 upgrade
+  ATDM_SET_ENABLE(KokkosCore_UnitTest_Serial_MPI_1_DISABLE ON)
+  ATDM_SET_ENABLE(KokkosKernels_blas_serial_MPI_1_DISABLE ON)
+
+  IF (ATDM_USE_OPENMP)
+
+    # Too expensive for full debug builds after Kokkos 2.99 upgrade
+    ATDM_SET_ENABLE(KokkosCore_UnitTest_OpenMP_MPI_1_DISABLE ON)
+    ATDM_SET_ENABLE(KokkosKernels_blas_openmp_MPI_1_DISABLE ON)
+
+  ENDIF()
 
 ENDIF()
 
@@ -246,4 +310,24 @@ IF (ATDM_NODE_TYPE STREQUAL "CUDA")
   ATDM_SET_ENABLE(Zoltan_ch_nograph_zoltan_parallel_DISABLE ON)
   ATDM_SET_ENABLE(Zoltan_ch_simple_zoltan_parallel_DISABLE ON)
 
+  # Disable ctest DISABLED test (otherwise, this shows up on CDash as "NotRun")
+  ATDM_SET_ENABLE(KokkosContainers_PerformanceTest_Cuda_DISABLE ON)
+
+  # Disable a couple of unit tests in test KokkosCore_UnitTest_Cuda_MPI_1
+  # (#6799)
+  ATDM_SET_CACHE(KokkosCore_UnitTest_Cuda_MPI_1_EXTRA_ARGS
+    "--gtest_filter=-cuda.debug_pin_um_to_host:cuda.debug_serial_execution"
+    CACHE STRING )
+
+  # Ensure these Kokkos tests run in serial to other Trilinos tests.
+  # #6840 resulted in ctest spreading tests across multiple GPUs. By ensuring
+  # that this Kokkos inter operability test runs in serial, we ensure that the
+  # GPU ID is not swapped upon initialize resulting in an invalid Cuda stream.
+  # See #8544.
+  ATDM_SET_ENABLE(KokkosCore_UnitTest_CudaInterOpStreams_MPI_1_SET_RUN_SERIAL ON)
+  # See #8543.
+  ATDM_SET_ENABLE(KokkosCore_UnitTest_CudaInterOpInit_MPI_1_SET_RUN_SERIAL ON)
+
+  # Attempt to address intermittent timeouts reported in #6805
+  ATDM_SET_ENABLE(KokkosKernels_sparse_cuda_MPI_1_SET_RUN_SERIAL ON)
 ENDIF()

@@ -164,6 +164,8 @@ class StatusTestGenResNorm<Sacado::MP::Vector<Storage>, MV, OP> :
   */
   int defineScaleForm( ScaleType TypeOfScaling, NormType TypeOfNorm, MagnitudeType ScaleValue = Teuchos::ScalarTraits<MagnitudeType>::one());
 
+  NormType getResNormType() {return resnormtype_;}
+
   //! Set the value of the tolerance
   /*! We allow the tolerance to be reset for cases where, in the process of testing the residual,
     we find that the initial tolerance was too tight or too lax.
@@ -191,7 +193,7 @@ class StatusTestGenResNorm<Sacado::MP::Vector<Storage>, MV, OP> :
   StatusType checkStatus(Iteration<ScalarType,MV,OP>* iSolver);
 
   //! Return the result of the most recent CheckStatus call.
-  StatusType getStatus() const {return(status_);};
+  StatusType getStatus() const {return(status_);}
   //@}
 
   //! @name Reset methods
@@ -231,16 +233,16 @@ class StatusTestGenResNorm<Sacado::MP::Vector<Storage>, MV, OP> :
   std::vector<int> convIndices() { return ind_; }
 
   //! Returns the value of the tolerance, \f$ \tau \f$, set in the constructor.
-  MagnitudeType getTolerance() const {return(tolerance_);};
+  MagnitudeType getTolerance() const {return(tolerance_);}
 
   //! Returns the test value, \f$ \frac{\|r\|}{\sigma} \f$, computed in most recent call to CheckStatus.
-  const std::vector<MagnitudeType>* getTestValue() const {return(&testvector_);};
+  const std::vector<MagnitudeType>* getTestValue() const {return(&testvector_);}
 
   //! Returns the residual norm value, \f$ \|r\| \f$, computed in most recent call to CheckStatus.
-  const std::vector<MagnitudeType>* getResNormValue() const {return(&resvector_);};
+  const std::vector<MagnitudeType>* getResNormValue() const {return(&resvector_);}
 
   //! Returns the scaled norm value, \f$ \sigma \f$.
-  const std::vector<MagnitudeType>* getScaledNormValue() const {return(&scalevector_);};
+  const std::vector<MagnitudeType>* getScaledNormValue() const {return(&scalevector_);}
 
   //! Returns a boolean indicating a loss of accuracy has been detected in computing the residual.
   //! \note This status test does not check for loss of accuracy, so this method will always return false.

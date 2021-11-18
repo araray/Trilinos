@@ -28,3 +28,17 @@ TRIBITS_ADD_EXECUTABLE_AND_TEST(
   TESTONLYLIBS phalanx_unit_test_main phalanx_test_utilities
   NUM_MPI_PROCS 1
   )
+
+TRIBITS_ADD_EXECUTABLE_AND_TEST(
+  view_allocation_size
+  SOURCES ViewAllocationSize.cpp
+  TESTONLYLIBS phalanx_unit_test_main phalanx_test_utilities
+  NUM_MPI_PROCS 1
+  )
+
+TRIBITS_ADD_EXECUTABLE_AND_TEST(
+  nc_drv_from_c_mdfield
+  SOURCES NonConstDynRankViewFromConstMDField.cpp
+  TESTONLYLIBS phalanx_unit_test_main phalanx_test_utilities
+  NUM_MPI_PROCS 1
+  )

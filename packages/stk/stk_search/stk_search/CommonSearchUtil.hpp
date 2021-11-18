@@ -231,8 +231,7 @@ namespace stk {
       std::vector<int> proc_list(num_procs);
       for(unsigned int iboxB = 0; iboxB < numBoxRange; ++iboxB) {
         boxA_box_hierarchy.SearchForOverlap(local_range[iboxB].first, proc_list);
-        for(unsigned i = 0; i < proc_list.size(); ++i) {
-          int overlapping_proc = proc_list[i];
+        for(auto&& overlapping_proc : proc_list) {
           if(overlapping_proc == current_proc) continue;
           GlobalIdType id = local_range[iboxB].second.id();
           send_list[overlapping_proc].push_back(BoxIdPair(rangeBoxes[iboxB], id));
@@ -292,6 +291,10 @@ void communicateVector(
 
   const int p_rank = commSparse.parallel_rank();
   const int p_size = commSparse.parallel_size();
+
+  if (1 == p_size) {
+    return;
+  }
 
   typename std::vector< ValueType >::const_iterator i ; 
 

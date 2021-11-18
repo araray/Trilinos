@@ -48,7 +48,7 @@
 
 #include "Xpetra_ConfigDefs.hpp"
 
-#include "Xpetra_Map.hpp"
+#include "Xpetra_Map_decl.hpp"
 #include "Xpetra_Exceptions.hpp"
 
 namespace Xpetra {
@@ -76,16 +76,6 @@ class MapFactory
 
 
     //! Map constructor with Xpetra-defined contiguous uniform distribution.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-    Build(UnderlyingLib                                 lib,
-          global_size_t                                 numGlobalElements,
-          GlobalOrdinal                                 indexBase,
-          const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-          LocalGlobal                                   lg,
-          const Teuchos::RCP<Node>&                     /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -97,16 +87,6 @@ class MapFactory
 
 
     //! Map constructor with a user-defined contiguous distribution.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-    Build(UnderlyingLib                                 lib,
-          global_size_t                                 numGlobalElements,
-          size_t                                        numLocalElements,
-          GlobalOrdinal                                 indexBase,
-          const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-          const Teuchos::RCP<Node>&                     /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -118,16 +98,6 @@ class MapFactory
 
 
     //! Map constructor with user-defined non-contiguous (arbitrary) distribution.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-    Build(UnderlyingLib                                  lib,
-          global_size_t                                  numGlobalElements,
-          const Teuchos::ArrayView<const GlobalOrdinal>& elementList,
-          GlobalOrdinal                                  indexBase,
-          const Teuchos::RCP<const Teuchos::Comm<int>>&  comm,
-          const Teuchos::RCP<Node>&                      /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -138,11 +108,20 @@ class MapFactory
           const Teuchos::RCP<const Teuchos::Comm<int>>&  comm);
 
 
-    //! Map constructor transforming degrees of freedom
-    //! for numDofPerNode this acts like a deep copy
+    /*!
+      @brief Map constructor generating degrees of freedom with numDofPerNode for given nodeMap
+
+      @param[in] nodeMap Existing (node) map
+      @param[in] numDofPerNode Number of DOFs per node for output map
+      @param[in] gidOffset GID offset for output map
+      @return Map
+
+      \note This acts like a deep copy.
+    */
     static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
-    Build(const Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
-          LocalOrdinal                                                              numDofPerNode);
+    Build(const Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node>>& nodeMap,
+          const LocalOrdinal numDofPerNode,
+          const GlobalOrdinal gidOffset = Teuchos::ScalarTraits<GlobalOrdinal>::zero());
 
 
 #ifdef HAVE_XPETRA_KOKKOS_REFACTOR
@@ -165,14 +144,6 @@ class MapFactory
 
 
     //! Create a locally replicated Map with a specified node.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-    createLocalMapWithNode(UnderlyingLib                                 lib,
-                           size_t                                        numElements,
-                           const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                           const Teuchos::RCP<Node>& /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -182,14 +153,6 @@ class MapFactory
 
 
     //! Create a uniform, contiguous Map with a user-specified node.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-    createUniformContigMapWithNode(UnderlyingLib                                 lib,
-                                   global_size_t                                 numElements,
-                                   const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                                   const Teuchos::RCP<Node>& /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -214,15 +177,6 @@ class MapFactory
 
 
     //! Create a (potentially) non-uniform, contiguous Map with a user-specified node.
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
-    createContigMapWithNode(UnderlyingLib                                 lib,
-                            global_size_t                                 numElements,
-                            size_t                                        localNumElements,
-                            const Teuchos::RCP<const Teuchos::Comm<int>>& comm,
-                            const Teuchos::RCP<Node>& /* node */);
-#endif      // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>
@@ -263,16 +217,6 @@ class MapFactory
   public:
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build (UnderlyingLib lib,
-           global_size_t numGlobalElements,
-           int indexBase,
-           const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-           LocalGlobal lg,
-           const Teuchos::RCP<Node>& /* node */ );
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -283,16 +227,6 @@ class MapFactory
            LocalGlobal lg=GloballyDistributed);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build (UnderlyingLib lib,
-           global_size_t numGlobalElements,
-           size_t numLocalElements,
-           int indexBase,
-           const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-           const Teuchos::RCP<Node>& /* node */ );
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -303,16 +237,6 @@ class MapFactory
            const Teuchos::RCP<const Teuchos::Comm<int> > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build(UnderlyingLib lib,
-          global_size_t numGlobalElements,
-          const Teuchos::ArrayView<const GlobalOrdinal> &elementList,
-          int indexBase,
-          const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-          const Teuchos::RCP<Node>& /* node */ );
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -322,11 +246,20 @@ class MapFactory
           int indexBase,
           const Teuchos::RCP<const Teuchos::Comm<int> > &comm);
 
-    //! Map constructor transforming degrees of freedom
-    //! for numDofPerNode this acts like a deep copy
-    static Teuchos::RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build(const Teuchos::RCP<const Map<LocalOrdinal,GlobalOrdinal,Node> >& map,
-          LocalOrdinal                                                     numDofPerNode);
+    /*!
+      @brief Map constructor transforming degrees of freedom for numDofPerNode
+
+      @param[in] map Existing (node) map
+      @param[in] numDofPerNode Number of DOFs per node for output map
+      @param[in] gidOffset GID offset for output map
+      @return Map
+
+      \note This acts like a deep copy.
+    */
+    static Teuchos::RCP<Map<LocalOrdinal, GlobalOrdinal, Node>>
+    Build(const Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
+          const LocalOrdinal numDofPerNode,
+          const GlobalOrdinal gidOffset = Teuchos::ScalarTraits<GlobalOrdinal>::zero());
 
 
     static Teuchos::RCP<const Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -336,14 +269,6 @@ class MapFactory
 
 
     // TODO remove this
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createLocalMapWithNode(UnderlyingLib lib,
-                           size_t numElements,
-                           const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                           const Teuchos::RCP<Node> & /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
@@ -353,13 +278,6 @@ class MapFactory
 
 
     // TODO remove this
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createUniformContigMapWithNode (UnderlyingLib lib, global_size_t numElements,
-                                    const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                                    const Teuchos::RCP<Node>& /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
 
@@ -381,15 +299,6 @@ class MapFactory
                     const Teuchos::RCP< const Teuchos::Comm< int > > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createContigMapWithNode(UnderlyingLib lib,
-                            global_size_t numElements,
-                            size_t localNumElements,
-                            const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                            const Teuchos::RCP<Node> & /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
@@ -427,16 +336,6 @@ class MapFactory
 
   public:
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build (UnderlyingLib lib,
-           global_size_t numGlobalElements,
-           int indexBase,
-           const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-           LocalGlobal lg,
-           const Teuchos::RCP<Node>& /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -447,16 +346,6 @@ class MapFactory
            LocalGlobal lg=GloballyDistributed);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build (UnderlyingLib lib,
-           global_size_t numGlobalElements,
-           size_t numLocalElements,
-           int indexBase,
-           const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-           const Teuchos::RCP<Node>& /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -467,16 +356,6 @@ class MapFactory
            const Teuchos::RCP<const Teuchos::Comm<int> > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
-    Build(UnderlyingLib lib,
-          global_size_t numGlobalElements,
-          const Teuchos::ArrayView<const GlobalOrdinal> &elementList,
-          int indexBase,
-          const Teuchos::RCP<const Teuchos::Comm<int> > &comm,
-          const Teuchos::RCP<Node>& /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static RCP<Map<LocalOrdinal,GlobalOrdinal, Node> >
@@ -500,14 +379,6 @@ class MapFactory
                    const Teuchos::RCP< const Teuchos::Comm< int > > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createLocalMapWithNode(UnderlyingLib lib,
-                           size_t numElements,
-                           const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                           const Teuchos::RCP<Node> & /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
@@ -516,13 +387,6 @@ class MapFactory
                            const Teuchos::RCP< const Teuchos::Comm< int > > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createUniformContigMapWithNode (UnderlyingLib lib, global_size_t numElements,
-                                    const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                                    const Teuchos::RCP<Node>& /* node */);
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
@@ -543,15 +407,6 @@ class MapFactory
                     const Teuchos::RCP< const Teuchos::Comm< int > > &comm);
 
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    TPETRA_DEPRECATED
-    static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >
-    createContigMapWithNode(UnderlyingLib lib,
-                            global_size_t numElements,
-                            size_t localNumElements,
-                            const Teuchos::RCP< const Teuchos::Comm< int > > &comm,
-                            const Teuchos::RCP<Node> & /* node */ );
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
 
     static Teuchos::RCP< const Map<LocalOrdinal,GlobalOrdinal, Node>  >

@@ -1,36 +1,9 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions of
- * Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 #include <cassert>
 #include <cstddef> // for size_t
@@ -67,10 +40,10 @@ int    num_inf_rec = 0, num_qa_rec = 0, length_qa = 0;
  ****************************************************************************
  ****************************************************************************
  ****************************************************************************/
-template void NemSpread<float, int>::load_lb_info(void);
-template void NemSpread<double, int>::load_lb_info(void);
-template void NemSpread<float, int64_t>::load_lb_info(void);
-template void NemSpread<double, int64_t>::load_lb_info(void);
+template void NemSpread<float, int>::load_lb_info();
+template void NemSpread<double, int>::load_lb_info();
+template void NemSpread<float, int64_t>::load_lb_info();
+template void NemSpread<double, int64_t>::load_lb_info();
 
 template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
 
@@ -98,7 +71,8 @@ template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
 {
 
   int   lb_exoid      = 0;
-  INT   cmap_max_size = 0, *comm_vec;
+  INT   cmap_max_size = 0;
+  INT * comm_vec;
   char  Title[MAX_LINE_LENGTH + 1];
   float version;
 
@@ -111,12 +85,12 @@ template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
 
   /* Open the Load Balance exoII file for reading */
 
-  fmt::print("EXODUS II load-balance file: {}\n", Exo_LB_File.c_str());
+  fmt::print("EXODUS II load-balance file: {}\n", Exo_LB_File);
   cpu_ws     = io_ws;
   int mode   = EX_READ | int64api;
   int iio_ws = 0; // Don't interfere with exodus files; this is the nemesis file.
   if ((lb_exoid = ex_open(Exo_LB_File.c_str(), mode, &cpu_ws, &iio_ws, &version)) == -1) {
-    fmt::print(stderr, "[{}] ERROR: Couldn\'t open lb file, {}\n", __func__, Exo_LB_File.c_str());
+    fmt::print(stderr, "[{}] ERROR: Couldn\'t open lb file, {}\n", __func__, Exo_LB_File);
     exit(1);
   }
 
@@ -186,7 +160,7 @@ template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
         exit(1);
       }
 
-      for (size_t ijump = 0; ijump < PEX_MAX(1, globals.Num_N_Comm_Maps[iproc]); ijump++) {
+      for (INT ijump = 0; ijump < PEX_MAX(1, globals.Num_N_Comm_Maps[iproc]); ijump++) {
         ((globals.N_Comm_Map[iproc]) + ijump)->node_cnt = 0;
       }
 
@@ -197,7 +171,7 @@ template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
         exit(1);
       }
 
-      for (size_t ijump = 0; ijump < PEX_MAX(1, globals.Num_E_Comm_Maps[iproc]); ijump++) {
+      for (INT ijump = 0; ijump < PEX_MAX(1, globals.Num_E_Comm_Maps[iproc]); ijump++) {
         ((globals.E_Comm_Map[iproc]) + ijump)->elem_cnt = 0;
       }
     }
@@ -303,14 +277,14 @@ template <typename T, typename INT> void NemSpread<T, INT>::load_lb_info()
     for (int i = 0; i < length_qa; i++) {
       safe_free(reinterpret_cast<void **>(&(qa_record_ptr[i])));
     }
-    safe_free((void **)&qa_record_ptr);
+    safe_free(reinterpret_cast<void **>(&qa_record_ptr));
   }
 
   if (num_inf_rec > 0) {
     for (int i = 0; i < num_inf_rec; i++) {
       safe_free(reinterpret_cast<void **>(&(inf_record_ptr[i])));
     }
-    safe_free((void **)&inf_record_ptr);
+    safe_free(reinterpret_cast<void **>(&inf_record_ptr));
   }
 
   safe_free((void **)&Int_Space);
@@ -441,7 +415,10 @@ void NemSpread<T, INT>::process_lb_data(INT *Integer_Vector, int indx)
  */
 {
   /* Local variables */
-  INT icount = 0, itotal_nodes, itotal_elems, ig_count = 0;
+  INT icount = 0;
+  INT itotal_nodes;
+  INT itotal_elems;
+  INT ig_count = 0;
 
   /***************************** execution begins ******************************/
 
@@ -612,7 +589,11 @@ void NemSpread<T, INT>::read_lb_init(int lb_exoid, INT *Int_Space, INT *Int_Node
   }
 
   /* Read the title of the LB File and about the size of the mesh */
-  INT num_nodes, num_elem, num_elem_blk, num_node_sets, num_side_sets;
+  INT num_nodes;
+  INT num_elem;
+  INT num_elem_blk;
+  INT num_node_sets;
+  INT num_side_sets;
   int error = ex_get_init_global(lb_exoid, &num_nodes, &num_elem, &num_elem_blk, &num_node_sets,
                                  &num_side_sets);
 
@@ -627,9 +608,9 @@ void NemSpread<T, INT>::read_lb_init(int lb_exoid, INT *Int_Space, INT *Int_Node
     fmt::print("---------------------------------------------------------\n"
                "\t\tLoad balance file global information\n"
                "---------------------------------------------------------\n"
-               "\tNumber of nodes:          {:n}\n"
-               "\tNumber of elements:       {:n}\n"
-               "\tNumber of element blocks: {:n}\n"
+               "\tNumber of nodes:          {:L}\n"
+               "\tNumber of elements:       {:L}\n"
+               "\tNumber of element blocks: {:L}\n"
                "---------------------------------------------------------\n",
                num_nodes, num_elem, num_elem_blk);
   }
@@ -689,14 +670,14 @@ in mesh file",
                    "\t\tLoad balance parameters as read by Processor 0\n"
                    "--------------------------------------------------------\n");
       }
-      fmt::print("Read on processor 0 for processor  {:n}\n"
-                 "\tNumber internal nodes:         {:n}\n"
-                 "\tNumber border nodes:           {:n}\n"
-                 "\tNumber external nodes:         {:n}\n"
-                 "\tNumber internal elements:      {:n}\n"
-                 "\tNumber border elements:       {:n}\n"
-                 "\tNumber of nodal comm maps:     {:n}\n"
-                 "\tNumber of elemental comm maps: {:n}\n"
+      fmt::print("Read on processor 0 for processor {:L}\n"
+                 "\tNumber internal nodes:         {:L}\n"
+                 "\tNumber border nodes:           {:L}\n"
+                 "\tNumber external nodes:         {:L}\n"
+                 "\tNumber internal elements:      {:L}\n"
+                 "\tNumber border elements:        {:L}\n"
+                 "\tNumber of nodal comm maps:     {:L}\n"
+                 "\tNumber of elemental comm maps: {:L}\n"
                  "--------------------------------------------------------\n",
                  i, Int_Node_Num[i], Bor_Node_Num[i], Ext_Node_Num[i], Int_Elem_Num[i],
                  Bor_Elem_Num[i], Node_Comm_Num[i], Elem_Comm_Num[i]);
@@ -795,9 +776,6 @@ void NemSpread<T, INT>::read_cmap_params(int lb_exoid, INT *Node_Comm_Num, INT *
 
     /* Increment starting pointer */
     vec_start += 2 * Node_Comm_Num[iproc] + 2 * Elem_Comm_Num[iproc];
-
-    /* Calculate the length of the broadcast information */
-    read_len = 2 * Node_Comm_Num[iproc] + 2 * Elem_Comm_Num[iproc];
 
     /* For processor and node IDs */
     INT psum = 0;

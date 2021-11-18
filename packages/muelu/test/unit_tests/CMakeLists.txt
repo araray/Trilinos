@@ -8,6 +8,7 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../../src/Smoothers/BlockedSmoot
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../../src/Utils)
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../../adapters)
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/Smoothers)
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../../research/regionMG/src)
 
 #INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR}/)
 
@@ -17,12 +18,18 @@ SET(SOURCES "")
 SET(SOURCES_INTREPID2 "")
 SET(SOURCES_BLOCKED "")
 SET(SOURCES_CREATEPRECONDITIONER "")
+IF (${PACKAGE_NAME}_ENABLE_Experimental)
+  SET(SOURCES_REGION "")
+ENDIF()
 
 APPEND_SET(SOURCES
   Aggregates.cpp
+  AggregateQualityEstimateFactory.cpp
+  AmalgamationFactory.cpp
   BlackBoxPFactory.cpp
   CoalesceDropFactory.cpp
   CoarseMapFactory.cpp
+  ClassicalPFactory.cpp
 # CoupledAggregationFactory.cpp
   FineLevelInputDataFactory.cpp
   GeneralGeometricPFactory.cpp
@@ -30,6 +37,7 @@ APPEND_SET(SOURCES
   Hierarchy.cpp
   IndexManager.cpp
   Level.cpp
+  MapTransferFactory.cpp
   Memory.cpp
   MueLu_UnitTests.cpp
   MueLu_TestHelpers.cpp
@@ -40,8 +48,10 @@ APPEND_SET(SOURCES
   PgPFactory.cpp
   RAPFactory.cpp
   RAPShiftFactory.cpp
+  ReitzingerPFactory.cpp
   SaPFactory.cpp
   ScaledNullspaceFactory.cpp
+  SemiCoarsenPFactory.cpp
   Smoothers/SmootherFactory.cpp
   StructuredAggregationFactory.cpp
   StructuredLineDetection.cpp
@@ -50,7 +60,7 @@ APPEND_SET(SOURCES
   TransPFactory.cpp
   UnsmooshFactory.cpp
   UserData/CreateXpetraPreconditioner.cpp
-  Utilities
+  Utilities.cpp
   VariableContainer.cpp
   VariableDofLaplacianFactory.cpp
 )
@@ -65,10 +75,29 @@ APPEND_SET(SOURCES_BLOCKED
   MueLu_TestHelpers.cpp
 )
 
+IF (${PACKAGE_NAME}_ENABLE_Experimental)
+  APPEND_SET(SOURCES_REGION
+    MueLu_UnitTests.cpp
+    MueLu_TestHelpers.cpp
+  )
+ENDIF()
+
 TRIBITS_COPY_FILES_TO_BINARY_DIR(UnitTestsUserData_cp
   SOURCE_DIR ${MueLu_SOURCE_DIR}/test/unit_tests/UserData
   SOURCE_FILES test.xml
   DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/UserData
+)
+
+TRIBITS_COPY_FILES_TO_BINARY_DIR(UnitTestsTestMatrices_cp
+  SOURCE_DIR ${MueLu_SOURCE_DIR}/test/unit_tests/TestMatrices
+  SOURCE_FILES cd2dx.mat
+  SOURCE_FILES cd2dy.mat
+  SOURCE_FILES aniso2dx.mat
+  SOURCE_FILES aniso2dy.mat
+  SOURCE_FILES iso2d.mat
+  SOURCE_FILES fuego0.mm
+  SOURCE_FILES fuego1.mm
+  DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/TestMatrices
 )
 
 IF (${PACKAGE_NAME}_ENABLE_Epetra)
@@ -81,6 +110,7 @@ ENDIF()
 APPEND_SET(SOURCES_BLOCKED
   BlockedCoarseMapFactory.cpp
   BlockedPFactory.cpp
+  BlockedRAPFactory.cpp
   SchurComplementFactory.cpp
   SubBlockAFactory.cpp
 )
@@ -116,6 +146,14 @@ ENDIF()
 
 IF (${PACKAGE_NAME}_ENABLE_Epetra AND ${PACKAGE_NAME}_ENABLE_Ifpack)
   APPEND_SET(SOURCES Smoothers/IfpackSmoother.cpp)
+ENDIF()
+
+IF (${PACKAGE_NAME}_ENABLE_Belos)
+  APPEND_SET(SOURCES Smoothers/BelosSmoother.cpp)
+ENDIF()
+
+IF (${PACKAGE_NAME}_ENABLE_Stratimikos AND ${PACKAGE_NAME}_ENABLE_Tpetra AND ${PACKAGE_NAME}_ENABLE_Thyra)
+  APPEND_SET(SOURCES Smoothers/StratimikosSmoother.cpp)
 ENDIF()
 
 IF (${PACKAGE_NAME}_ENABLE_Epetra AND ${PACKAGE_NAME}_ENABLE_Amesos)
@@ -183,7 +221,14 @@ IF (${PACKAGE_NAME}_ENABLE_Zoltan AND TPL_ENABLE_MPI)
   )
 ENDIF()
 
-IF (${PACKAGE_NAME}_ENABLE_Galeri) #TMP
+IF (${PACKAGE_NAME}_ENABLE_Experimental AND ${PACKAGE_NAME}_ENABLE_Tpetra AND ${PACKAGE_NAME}_ENABLE_Ifpack2 AND ${PACKAGE_NAME}_ENABLE_Amesos2)
+  APPEND_SET(SOURCES_REGION
+    RegionMatrix.cpp
+    RegionVector.cpp
+    RegionRFactory.cpp)
+ENDIF()
+
+
   APPEND_SET(SOURCES Galeri.cpp)
   APPEND_SET(SOURCES_INTREPID2 Galeri.cpp)
   APPEND_SET(SOURCES_BLOCKED Galeri.cpp)
@@ -272,7 +317,7 @@ IF (${PACKAGE_NAME}_ENABLE_Galeri) #TMP
         )
     ENDIF()
 
-  ENDIF()
+  ENDIF() # Epetra / EpetraExt
 
   IF (${PACKAGE_NAME}_ENABLE_Tpetra)
 
@@ -319,6 +364,7 @@ IF (${PACKAGE_NAME}_ENABLE_Galeri) #TMP
       PASS_REGULAR_EXPRESSION "End Result: TEST PASSED"
       NUM_MPI_PROCS 1
       COMM serial mpi
+      RUN_SERIAL
       )
 
     TRIBITS_ADD_TEST(
@@ -328,6 +374,7 @@ IF (${PACKAGE_NAME}_ENABLE_Galeri) #TMP
       PASS_REGULAR_EXPRESSION "End Result: TEST PASSED"
       NUM_MPI_PROCS 4
       COMM mpi
+      RUN_SERIAL
       )
 
     IF (${PACKAGE_NAME}_ENABLE_CreatePreconditionerTests)
@@ -350,9 +397,37 @@ IF (${PACKAGE_NAME}_ENABLE_Galeri) #TMP
         )
     ENDIF()
 
-  ENDIF()
+    IF (${PACKAGE_NAME}_ENABLE_Experimental)
+      APPEND_SET(SOURCES_REGION Galeri.cpp)
 
-ENDIF() # Galeri TMP
+      TRIBITS_ADD_EXECUTABLE(
+        UnitTests_Region
+        SOURCES ${SOURCES_REGION}
+        COMM serial mpi
+      )
+
+      TRIBITS_ADD_TEST(
+        UnitTests_Region
+        NAME "UnitTestsRegion"
+        ARGS "--linAlgebra=Tpetra"
+        PASS_REGULAR_EXPRESSION "End Result: TEST PASSED"
+        NUM_MPI_PROCS 1
+        COMM serial mpi
+        )
+
+      TRIBITS_ADD_TEST(
+        UnitTests_Region
+        NAME "UnitTestsRegion"
+        ARGS "--linAlgebra=Tpetra"
+        PASS_REGULAR_EXPRESSION "End Result: TEST PASSED"
+        NUM_MPI_PROCS 4
+        COMM mpi
+        )
+    ENDIF()
+
+  ENDIF() # Tpetra
+
+
 
 ADD_SUBDIRECTORY(ParameterList/FactoryFactory/)
 IF (${PACKAGE_NAME}_ENABLE_Epetra)

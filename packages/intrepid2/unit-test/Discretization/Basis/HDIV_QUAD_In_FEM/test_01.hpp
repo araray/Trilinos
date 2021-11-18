@@ -70,14 +70,14 @@ namespace Test {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     }
 
-template<typename OutValueType, typename PointValueType, typename DeviceSpaceType>
+template<typename OutValueType, typename PointValueType, typename DeviceType>
 int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
 
   Teuchos::RCP<std::ostream> outStream;
@@ -90,7 +90,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
 
   Teuchos::oblackholestream oldFormatState;
   oldFormatState.copyfmt(std::cout);
-
+  using DeviceSpaceType = typename DeviceType::execution_space;   
   typedef typename
       Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType ;
 
@@ -115,10 +115,10 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
   << "|                                                                             |\n"
   << "===============================================================================\n";
 
-  typedef Kokkos::DynRankView<PointValueType,DeviceSpaceType> DynRankViewPointValueType;
-  typedef Kokkos::DynRankView<OutValueType,DeviceSpaceType> DynRankViewOutValueType;
+  typedef Kokkos::DynRankView<PointValueType,DeviceType> DynRankViewPointValueType;
+  typedef Kokkos::DynRankView<OutValueType,DeviceType> DynRankViewOutValueType;
   typedef typename ScalarTraits<OutValueType>::scalar_type scalar_type;
-  typedef Kokkos::DynRankView<scalar_type, DeviceSpaceType> DynRankViewScalarValueType;
+  typedef Kokkos::DynRankView<scalar_type, DeviceType> DynRankViewScalarValueType;
   typedef Kokkos::DynRankView<scalar_type, HostSpaceType> DynRankViewHostScalarValueType;
 
 #define ConstructWithLabelScalar(obj, ...) obj(#obj, __VA_ARGS__)
@@ -126,7 +126,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
   const scalar_type tol = tolerence();
   int errorFlag = 0;
 
-  typedef Basis_HDIV_QUAD_In_FEM<DeviceSpaceType,OutValueType,PointValueType> QuadBasisType;
+  typedef Basis_HDIV_QUAD_In_FEM<DeviceType,OutValueType,PointValueType> QuadBasisType;
   constexpr ordinal_type maxOrder = Parameters::MaxOrder ;
 
   *outStream
@@ -217,7 +217,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
       *outStream << "# of catch ("<< ncatch << ") is different from # of throw (" << nthrow << ")\n";
     }
 #endif
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -244,7 +244,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
     quadBasis.getDofCoeffs(dofCoeffs);
 
     DynRankViewPointValueType ConstructWithLabelPointView(dofCoords, numFields , spaceDim);
-    RealSpaceTools<DeviceSpaceType>::clone(dofCoords,dofCoords_scalar);
+    RealSpaceTools<DeviceType>::clone(dofCoords,dofCoords_scalar);
 
     DynRankViewOutValueType ConstructWithLabelOutView(basisAtDofCoords, numFields, numFields, spaceDim);
     quadBasis.getValues(basisAtDofCoords, dofCoords, OPERATOR_VALUE);
@@ -278,7 +278,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
       }
     }
 
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -302,7 +302,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
     quadBasis.getDofCoords(dofCoords_scalar);
 
     DynRankViewPointValueType ConstructWithLabelPointView(dofCoords, numFields , spaceDim);
-    RealSpaceTools<DeviceSpaceType>::clone(dofCoords,dofCoords_scalar);
+    RealSpaceTools<DeviceType>::clone(dofCoords,dofCoords_scalar);
 
     DynRankViewOutValueType ConstructWithLabelOutView(basisAtDofCoords, numFields, numFields, spaceDim);
     quadBasis.getValues(basisAtDofCoords, dofCoords, OPERATOR_VALUE);
@@ -341,7 +341,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
       }
     }
 
-  } catch (std::exception err) {
+  } catch (std::exception &err) {
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -404,7 +404,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
             << myTag(3) << "} ) = " << myBfOrd << "\n";
       }
     }
-  } catch (std::logic_error err){
+  } catch (std::logic_error &err){
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -453,9 +453,9 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
     quadNodesHost(7,0) =  0.0;  quadNodesHost(7,1) =  1.0;
     quadNodesHost(8,0) =  1.0;  quadNodesHost(8,1) =  1.0;
 
-    auto quadNodes_scalar = Kokkos::create_mirror_view(typename DeviceSpaceType::memory_space(), quadNodesHost);
+    auto quadNodes_scalar = Kokkos::create_mirror_view(typename DeviceType::memory_space(), quadNodesHost);
     Kokkos::deep_copy(quadNodes_scalar, quadNodesHost);
-    RealSpaceTools<DeviceSpaceType>::clone(quadNodes, quadNodes_scalar);
+    RealSpaceTools<DeviceType>::clone(quadNodes, quadNodes_scalar);
 
     // Generic array for the output values; needs to be properly resized depending on the operator type
     const ordinal_type numFields = quadBasis.getCardinality();
@@ -516,7 +516,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
         }
       }
     }
-  } catch (std::logic_error err) {
+  } catch (std::logic_error &err) {
     *outStream << err.what() << "\n\n";
     errorFlag = -1000;
   }
@@ -545,7 +545,7 @@ int HDIV_QUAD_In_FEM_Test01(const bool verbose) {
       }
       errorFlag++;
     }
-  } catch (std::logic_error err){
+  } catch (std::logic_error &err){
     *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
     *outStream << err.what() << '\n';
     *outStream << "-------------------------------------------------------------------------------" << "\n\n";

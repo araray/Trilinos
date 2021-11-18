@@ -49,11 +49,7 @@
 #include <Teuchos_RCP.hpp>
 
 #include <Xpetra_ConfigDefs.hpp>
-#ifdef HAVE_XPETRA_KOKKOSCORE
-#  include <KokkosCompat_ClassicNodeAPI_Wrapper.hpp>
-#else
-#  include <Kokkos_SerialNode.hpp>
-#endif
+#include <KokkosCompat_ClassicNodeAPI_Wrapper.hpp>
 
 // forward declaration for (fake) KokkosSerialWrapperNode
 // This is the node definition used if Epetra is enabled only
@@ -67,11 +63,7 @@ namespace Compat {
 namespace KokkosClassic {
 
   namespace Details {
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-    template <class NodeType>
-    Teuchos::RCP<NodeType> getNode() { return Teuchos::null; }
-#endif
-  } //namespace Details
+} //namespace Details
 
   class DefaultNode {
     public:

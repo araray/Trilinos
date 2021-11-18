@@ -1,35 +1,8 @@
-// Copyright (c) 2014-2017 National Technology & Engineering Solutions
+// Copyright(C) 1999-, 20212021 National Technology & Engineering Solutions
 // of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
 // NTESS, the U.S. Government retains certain rights in this software.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//
-//     * Neither the name of NTESS nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// See packages/seacas/LICENSE for details
 
 // Might be good to add a callback function which would be called
 // when there was output -- In LexerOutput for example.  Default
@@ -40,16 +13,12 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <stack>
 #include <string>
 #include <vector>
-
-#include <cmath>
-#ifndef math_errhandling
-#define math_errhandling MATH_ERRNO
-#endif
 
 #if defined(_MSC_VER)
 #include <io.h>
@@ -60,89 +29,24 @@
  * SEAMS::Parser, SEAMS::Scanner and SEAMS::Aprepro */
 namespace SEAMS {
 
-  struct array
-  {
-    std::vector<double> data;
-    int                 rows{0};
-    int                 cols{0};
-
-    array(int r, int c) : rows(r), cols(c) { data.resize(r * c); }
-    array()  = default;
-    ~array() = default;
-  };
-
-  struct symrec
-  {
-    std::string name;
-    std::string syntax;
-    std::string info;
-    int         type;
-    bool        isInternal;
-    struct value
-    {
-      double var{0};
-      double (*fnctptr)(){nullptr};
-      double (*fnctptr_d)(double){nullptr};
-      double (*fnctptr_c)(char *){nullptr};
-      double (*fnctptr_dc)(double, char *){nullptr};
-      double (*fnctptr_cd)(char *, double){nullptr};
-      double (*fnctptr_cc)(char *, char *){nullptr};
-      double (*fnctptr_dd)(double, double){nullptr};
-      double (*fnctptr_ddd)(double, double, double){nullptr};
-      double (*fnctptr_ccc)(char *, char *, char *){nullptr};
-      double (*fnctptr_ccd)(char *, char *, double){nullptr};
-      double (*fnctptr_dddd)(double, double, double, double){nullptr};
-      double (*fnctptr_ddddc)(double, double, double, double, char *){nullptr};
-      double (*fnctptr_dddddd)(double, double, double, double, double, double){nullptr};
-      double (*fnctptr_a)(const array *){nullptr};
-      std::string svar;
-      const char *(*strfnct)(){nullptr};
-      const char *(*strfnct_c)(char *){nullptr};
-      const char *(*strfnct_d)(double){nullptr};
-      const char *(*strfnct_a)(const array *){nullptr};
-      const char *(*strfnct_dd)(double, double){nullptr};
-      const char *(*strfnct_cc)(char *, char *){nullptr};
-      const char *(*strfnct_ccc)(char *, char *, char *){nullptr};
-      const char *(*strfnct_dcc)(double, char *, char *){nullptr};
-      const char *(*strfnct_dcccc)(double, char *, char *, char *, char *){nullptr};
-      array *avar{nullptr}; /* Array Variable */
-      array *(*arrfnct_c)(const char *){nullptr};
-      array *(*arrfnct_cc)(const char *, const char *){nullptr};
-      array *(*arrfnct_cd)(const char *, double){nullptr};
-      array *(*arrfnct_ddd)(double, double, double){nullptr};
-      array *(*arrfnct_dd)(double, double){nullptr};
-      array *(*arrfnct_d)(double){nullptr};
-      array *(*arrfnct_a)(const array *){nullptr};
-
-      value() = default;
-    } value;
-    symrec *next;
-
-    symrec(const char *my_name, int my_type, bool is_internal = false)
-        : name(my_name), syntax(my_name), info("UNDEFINED"), type(my_type), isInternal(is_internal),
-          next(nullptr)
-    {
-      value.var = 0;
-    }
-
-    symrec(const std::string &my_name, int my_type, bool is_internal = false)
-        : name(my_name), syntax(my_name), info("UNDEFINED"), type(my_type), isInternal(is_internal),
-          next(nullptr)
-    {
-      value.var = 0;
-    }
-  };
+  struct Symtable;
+  struct symrec;
+  struct array;
 
   /* Global options */
   struct aprepro_options
   {
-    std::string include_path;
-    std::string include_file;
+    std::string include_path{};
+    std::string include_file{};
     bool        end_on_exit{false};
+    bool        errors_fatal{false};
+    bool        errors_and_warnings_fatal{false};
+    bool        require_defined{false}; // flag to treat undefined vars as errors
     bool        warning_msg{true};
     bool        info_msg{false};
     bool        debugging{false};
     bool        dumpvars{false};
+    bool        dumpvars_json{false};
     bool        interactive{false};
     bool        immutable{false};
     bool        trace_parsing{false}; // enable debug output in the bison parser
@@ -208,7 +112,10 @@ namespace SEAMS {
     void                      clear_results();
 
     /** Return string representation of current version of aprepro.  */
-    std::string version() const;
+    static std::string version();
+
+    /** Return long version: `# Algebraic Preprocessor (Aprepro) version X.X.X` */
+    std::string long_version() const;
 
     /** Invoke the scanner and parser for a stream.
      * @param in        input stream
@@ -253,9 +160,9 @@ namespace SEAMS {
     void statistics(std::ostream *out = nullptr) const;
 
     aprepro_options      ap_options;
-    std::stack<file_rec> ap_file_list;
+    std::stack<file_rec> ap_file_list{};
 
-    std::stack<std::ostream *> outputStream;
+    std::stack<std::ostream *> outputStream{};
 
     SEAMS::symrec *getsym(const char *sym_name) const;
     SEAMS::symrec *getsym(const std::string &sym_name) const;
@@ -284,6 +191,10 @@ namespace SEAMS {
     {
       return parseErrorCount;
     } /** Return number of errors reported during parse */
+    int get_warning_count() const
+    {
+      return parseWarningCount;
+    } /** Return number of warnings reported during parse */
     void error(const std::string &msg, bool line_info = true, bool prefix = true) const;
     void warning(const std::string &msg, bool line_info = true, bool prefix = true) const;
     void info(const std::string &msg, bool line_info = false, bool prefix = true) const;
@@ -296,15 +207,21 @@ namespace SEAMS {
 
     void dumpsym(const char *type, bool doInternal) const;
     void dumpsym(int type, bool doInternal) const;
+    void dumpsym_json() const;
     void dumpsym(int type, const char *pre, bool doInternal) const;
 
+    array *make_array(int r, int c);
+    array *make_array(const array &from);
+
   private:
-    void                  init_table(const char *comment);
-    std::vector<symrec *> sym_table;
-    std::ostringstream    parsingResults;
+    std::unique_ptr<Symtable> sym_table;
+
+    void                 init_table(const char *comment);
+    std::vector<array *> array_allocations{};
+    std::ostringstream   parsingResults{};
 
     // Input stream used with parse_string_interactive
-    std::istringstream stringInput;
+    std::istringstream stringInput{};
 
     bool           stringInteractive{false};
     class Scanner *stringScanner{nullptr};
@@ -314,9 +231,10 @@ namespace SEAMS {
     std::ostream *warningStream{&std::cerr};
 
     // For substitution history.
-    std::vector<history_data> history;
+    std::vector<history_data> history{};
 
     mutable int parseErrorCount{0};
+    mutable int parseWarningCount{0};
 
   public:
     bool stateImmutable{false};

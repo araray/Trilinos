@@ -3,7 +3,7 @@
  * zlib project The zlib source is subject to the following copyright
  * and license:
  *
- *   Copyright (C) 1995-2010 Jean-loup Gailly and Mark Adler
+ *   Copyright (C) 1995-2010, 2021 Jean-loup Gailly and Mark Adler
  *
  *   This software is provided 'as-is', without any express or implied
  *   warranty.  In no event will the authors be held liable for any damages
@@ -29,18 +29,18 @@
 
 #define DO1(buf, i)                                                                                \
   {                                                                                                \
-    s1 += buf[i];                                                                                  \
+    s1 += (buf)[i];                                                                                \
     s2 += s1;                                                                                      \
   }
 #define DO2(buf, i)                                                                                \
   DO1(buf, i);                                                                                     \
-  DO1(buf, i + 1);
+  DO1(buf, (i) + 1);
 #define DO4(buf, i)                                                                                \
   DO2(buf, i);                                                                                     \
-  DO2(buf, i + 2);
+  DO2(buf, (i) + 2);
 #define DO8(buf, i)                                                                                \
   DO4(buf, i);                                                                                     \
-  DO4(buf, i + 4);
+  DO4(buf, (i) + 4);
 #define DO16(buf)                                                                                  \
   DO8(buf, 0);                                                                                     \
   DO8(buf, 8);
@@ -55,14 +55,13 @@ size_t adler(size_t adler, const void *vbuf, size_t len)
 
   size_t s1 = adler & 0xffff;
   size_t s2 = (adler >> 16) & 0xffff;
-  int    k  = 0;
 
   if (buf == NULL || len == 0) {
     return 1L;
   }
 
   while (len > 0) {
-    k = len < NMAX ? len : NMAX;
+    int k = len < NMAX ? len : NMAX;
     len -= k;
     while (k >= 16) {
       DO16(buf);

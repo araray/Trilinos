@@ -1,36 +1,9 @@
 /*
- * Copyright (c) 2005-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 /*****************************************************************************/
@@ -66,16 +39,11 @@ char *ne_ret_string;
 /*****************************************************************************/
 int ne__id_lkup(int exoid, const char *ne_var_name, int64_t *idx, ex_entity_id ne_var_id)
 {
-  int       status;
-  int       varid, ndims, dimid[1], ret = -1;
-  nc_type   var_type;
-  size_t    length, start[1];
-  int64_t   my_index, begin, end;
-  long long id_val;
 
-  char errmsg[MAX_ERR_LENGTH];
-
+  int status;
+  int varid;
   if ((status = nc_inq_varid(exoid, ne_var_name, &varid)) != NC_NOERR) {
+    char errmsg[MAX_ERR_LENGTH];
     snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to find variable ID for \"%s\" in file ID %d",
              ne_var_name, exoid);
     ex_err_fn(exoid, __func__, errmsg, status);
@@ -85,8 +53,12 @@ int ne__id_lkup(int exoid, const char *ne_var_name, int64_t *idx, ex_entity_id n
   /* check if I need the length for this variable */
   if (idx[1] == -1) {
     /* Get the dimension IDs for this variable */
+    int     ndims;
+    int     dimid[1];
+    nc_type var_type;
     if ((status = nc_inq_var(exoid, varid, (char *)0, &var_type, &ndims, dimid, (int *)0)) !=
         NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH,
                "ERROR: failed to find dimension ID for variable \"%s\" "
                "in file ID %d",
@@ -96,7 +68,9 @@ int ne__id_lkup(int exoid, const char *ne_var_name, int64_t *idx, ex_entity_id n
     }
 
     /* Get the length of this variable */
+    size_t length;
     if ((status = nc_inq_dimlen(exoid, dimid[0], &length)) != NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH,
                "ERROR: failed to find dimension for variable \"%s\" in file ID %d", ne_var_name,
                exoid);
@@ -107,15 +81,18 @@ int ne__id_lkup(int exoid, const char *ne_var_name, int64_t *idx, ex_entity_id n
     idx[1] = length;
   } /* End "if (idx[1] == -1)" */
 
-  begin = idx[0];
-  end   = idx[1];
+  int64_t begin = idx[0];
+  int64_t end   = idx[1];
 
   /* Find the index by looping over each entry */
-  for (my_index = begin; my_index < end; my_index++) {
-    start[0] = my_index;
-    status   = nc_get_var1_longlong(exoid, varid, start, &id_val);
+  int ret = -1;
+  for (int64_t my_index = begin; my_index < end; my_index++) {
+    size_t    start[] = {my_index};
+    long long id_val;
+    status = nc_get_var1_longlong(exoid, varid, start, &id_val);
 
     if (status != NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to find variable \"%s\" in file ID %d",
                ne_var_name, exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
@@ -138,15 +115,10 @@ int ne__id_lkup(int exoid, const char *ne_var_name, int64_t *idx, ex_entity_id n
 /*****************************************************************************/
 int ex__get_file_type(int exoid, char *ftype)
 {
-  int status;
-  int varid;
-  int lftype;
-
-  char errmsg[MAX_ERR_LENGTH];
-
   EX_FUNC_ENTER();
 
-  if ((status = nc_inq_varid(exoid, VAR_FILE_TYPE, &varid)) != NC_NOERR) {
+  int varid;
+  if (nc_inq_varid(exoid, VAR_FILE_TYPE, &varid) != NC_NOERR) {
 
     /* If no file type is found, assume parallel */
     ftype[0] = 'p';
@@ -155,7 +127,10 @@ int ex__get_file_type(int exoid, char *ftype)
     EX_FUNC_LEAVE(EX_NOERR);
   }
 
+  int status;
+  int lftype;
   if ((status = nc_get_var1_int(exoid, varid, NULL, &lftype)) != NC_NOERR) {
+    char errmsg[MAX_ERR_LENGTH];
     snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to get variable \"%s\" from file ID %d",
              VAR_FILE_TYPE, exoid);
     ex_err_fn(exoid, __func__, errmsg, status);
@@ -181,22 +156,18 @@ int ex__get_file_type(int exoid, char *ftype)
 /*****************************************************************************/
 int ex__put_nemesis_version(int exoid)
 {
-  int   status;
-  float file_ver, api_ver;
-
-  char errmsg[MAX_ERR_LENGTH];
-
   EX_FUNC_ENTER();
 
-  file_ver = NEMESIS_FILE_VERSION;
-  api_ver  = NEMESIS_API_VERSION;
+  float file_ver = NEMESIS_FILE_VERSION;
 
   /* Check to see if the nemesis file version is already in the file */
   if (nc_get_att_float(exoid, NC_GLOBAL, "nemesis_file_version", &file_ver) != NC_NOERR) {
 
     /* Output the Nemesis file version */
-    if ((status = nc_put_att_float(exoid, NC_GLOBAL, "nemesis_file_version", NC_FLOAT, 1,
+    int status;
+    if ((status = nc_put_att_float(exoid, NC_GLOBAL, ATT_NEM_FILE_VERSION, NC_FLOAT, 1,
                                    &file_ver)) != NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to output nemesis file version in file ID %d",
                exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
@@ -204,8 +175,10 @@ int ex__put_nemesis_version(int exoid)
     }
 
     /* Output the Nemesis API version */
-    if ((status = nc_put_att_float(exoid, NC_GLOBAL, "nemesis_api_version", NC_FLOAT, 1,
-                                   &api_ver)) != NC_NOERR) {
+    float api_ver = NEMESIS_API_VERSION;
+    if ((status = nc_put_att_float(exoid, NC_GLOBAL, ATT_NEM_API_VERSION, NC_FLOAT, 1, &api_ver)) !=
+        NC_NOERR) {
+      char errmsg[MAX_ERR_LENGTH];
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to output nemesis api version in file ID %d",
                exoid);
       ex_err_fn(exoid, __func__, errmsg, status);
@@ -262,7 +235,6 @@ int ne__check_file_version(int exoid)
 /*****************************************************************************/
 int ex_get_idx(int exoid, const char *ne_var_name, int64_t *my_index, int pos)
 {
-  int    status;
   int    varid;
   size_t start[1], count[1];
 #if NC_HAS_HDF5
@@ -283,7 +255,7 @@ int ex_get_idx(int exoid, const char *ne_var_name, int64_t *my_index, int pos)
    * means that this is a parallel file, and the index does
    * not exists. This is not an error
    */
-  if ((status = nc_inq_varid(exoid, ne_var_name, &varid)) == NC_NOERR) {
+  if (nc_inq_varid(exoid, ne_var_name, &varid) == NC_NOERR) {
     /* check if we are at the beginning of the index vector */
     if (pos == 0) {
       start[0] = pos;
@@ -295,9 +267,9 @@ int ex_get_idx(int exoid, const char *ne_var_name, int64_t *my_index, int pos)
     }
 
 #if NC_HAS_HDF5
-    status = nc_get_vara_longlong(exoid, varid, start, count, varidx);
+    int status = nc_get_vara_longlong(exoid, varid, start, count, varidx);
 #else
-    status = nc_get_vara_int(exoid, varid, start, count, varidx);
+    int status = nc_get_vara_int(exoid, varid, start, count, varidx);
 #endif
     if (status != NC_NOERR) {
       snprintf(errmsg, MAX_ERR_LENGTH, "ERROR: failed to find variable \"%s\" in file ID %d",

@@ -52,11 +52,14 @@
 /// It defines a new implementation of Chebyshev iteration.
 
 #include "Ifpack2_Details_Chebyshev_decl.hpp"
-#include "Ifpack2_Details_ScaledDampedResidual.hpp"
+// #include "Ifpack2_Details_ScaledDampedResidual.hpp"
+#include "Ifpack2_Details_ChebyshevKernel.hpp"
 #include "Kokkos_ArithTraits.hpp"
 #include "Teuchos_FancyOStream.hpp"
 #include "Teuchos_oblackholestream.hpp"
 #include "Tpetra_Details_residual.hpp"
+#include "Teuchos_LAPACK.hpp"
+#include "Ifpack2_Details_LapackSupportsScalar.hpp"
 #include <cmath>
 #include <iostream>
 
@@ -165,13 +168,9 @@ struct GlobalReciprocalThreshold<TpetraVectorType, false> {
            const typename TpetraVectorType::scalar_type& minVal)
   {
     typedef typename TpetraVectorType::impl_scalar_type value_type;
-    typedef typename TpetraVectorType::device_type::memory_space memory_space;
-
-    X.template sync<memory_space> ();
-    X.template modify<memory_space> ();
 
     const value_type minValS = static_cast<value_type> (minVal);
-    auto X_0 = Kokkos::subview (X.template getLocalView<memory_space> (),
+    auto X_0 = Kokkos::subview (X.getLocalViewDevice (Tpetra::Access::ReadWrite),
                                 Kokkos::ALL (), 0);
     LocalReciprocalThreshold<decltype (X_0) >::compute (X_0, minValS);
   }
@@ -220,6 +219,51 @@ private:
 };
 
 } // namespace (anonymous)
+
+
+template<class ScalarType, const bool lapackSupportsScalarType = LapackSupportsScalar<ScalarType>::value>
+struct LapackHelper{
+  static
+  ScalarType
+  tri_diag_spectral_radius(Teuchos::ArrayRCP<typename Teuchos::ScalarTraits<ScalarType>::magnitudeType> diag,
+                           Teuchos::ArrayRCP<typename Teuchos::ScalarTraits<ScalarType>::magnitudeType> offdiag) {
+    throw std::runtime_error("LAPACK does not support the scalar type.");
+  }
+};
+
+
+template<class ScalarType>
+struct LapackHelper<ScalarType,true> {
+  static
+  ScalarType
+  tri_diag_spectral_radius(Teuchos::ArrayRCP<typename Teuchos::ScalarTraits<ScalarType>::magnitudeType> diag,
+                           Teuchos::ArrayRCP<typename Teuchos::ScalarTraits<ScalarType>::magnitudeType> offdiag) {
+    using STS = Teuchos::ScalarTraits<ScalarType>;
+    using MagnitudeType = typename STS::magnitudeType;
+    int info = 0;
+    const int N = diag.size ();
+    ScalarType scalar_dummy;
+    std::vector<MagnitudeType> mag_dummy(4*N);
+    char char_N = 'N';
+
+    // lambdaMin = one;
+    ScalarType lambdaMax = STS::one();
+    if( N > 2 ) {
+      Teuchos::LAPACK<int,ScalarType> lapack;
+      lapack.PTEQR (char_N, N, diag.getRawPtr (), offdiag.getRawPtr (),
+                    &scalar_dummy, 1, &mag_dummy[0], &info);
+      TEUCHOS_TEST_FOR_EXCEPTION
+        (info < 0, std::logic_error, "Ifpack2::Details::LapackHelper::tri_diag_spectral_radius:"
+         "LAPACK's _PTEQR failed with info = "
+         << info << " < 0.  This suggests there might be a bug in the way Ifpack2 "
+         "is calling LAPACK.  Please report this to the Ifpack2 developers.");
+      // lambdaMin = Teuchos::as<ScalarType> (diag[N-1]);
+      lambdaMax = Teuchos::as<ScalarType> (diag[0]);
+    }
+    return lambdaMax;
+  }
+};
+
 
 template<class ScalarType, class MV>
 void Chebyshev<ScalarType, MV>::checkInputMatrix () const
@@ -289,6 +333,10 @@ Chebyshev (Teuchos::RCP<const row_matrix_type> A) :
   minDiagVal_ (STS::eps ()),
   numIters_ (1),
   eigMaxIters_ (10),
+  eigRelTolerance_(Teuchos::ScalarTraits<MT>::zero ()),
+  eigKeepVectors_(false),
+  eigenAnalysisType_("power method"),
+  eigNormalizationFreq_(1),
   zeroStartingSolution_ (true),
   assumeMatrixUnchanged_ (false),
   textbookAlgorithm_ (false),
@@ -316,6 +364,10 @@ Chebyshev (Teuchos::RCP<const row_matrix_type> A,
   minDiagVal_ (STS::eps ()),
   numIters_ (1),
   eigMaxIters_ (10),
+  eigRelTolerance_(Teuchos::ScalarTraits<MT>::zero ()),
+  eigKeepVectors_(false),
+  eigenAnalysisType_("power method"),
+  eigNormalizationFreq_(1),
   zeroStartingSolution_ (true),
   assumeMatrixUnchanged_ (false),
   textbookAlgorithm_ (false),
@@ -358,6 +410,9 @@ setParameters (Teuchos::ParameterList& plist)
   const ST defaultMinDiagVal = STS::eps ();
   const int defaultNumIters = 1;
   const int defaultEigMaxIters = 10;
+  const MT defaultEigRelTolerance = Teuchos::ScalarTraits<MT>::zero ();
+  const bool defaultEigKeepVectors = false;
+  const int defaultEigNormalizationFreq = 1;
   const bool defaultZeroStartingSolution = true; // Ifpack::Chebyshev default
   const bool defaultAssumeMatrixUnchanged = false;
   const bool defaultTextbookAlgorithm = false;
@@ -376,6 +431,9 @@ setParameters (Teuchos::ParameterList& plist)
   ST minDiagVal = defaultMinDiagVal;
   int numIters = defaultNumIters;
   int eigMaxIters = defaultEigMaxIters;
+  MT eigRelTolerance = defaultEigRelTolerance;
+  bool eigKeepVectors = defaultEigKeepVectors;
+  int eigNormalizationFreq = defaultEigNormalizationFreq;
   bool zeroStartingSolution = defaultZeroStartingSolution;
   bool assumeMatrixUnchanged = defaultAssumeMatrixUnchanged;
   bool textbookAlgorithm = defaultTextbookAlgorithm;
@@ -580,6 +638,22 @@ setParameters (Teuchos::ParameterList& plist)
     "\" parameter (also called \"eigen-analysis: iterations\") must be a "
     "nonnegative integer.  You gave a value of " << eigMaxIters << ".");
 
+  if (plist.isType<double>("chebyshev: eigenvalue relative tolerance"))
+    eigRelTolerance = Teuchos::as<MT>(plist.get<double> ("chebyshev: eigenvalue relative tolerance"));
+  else if (plist.isType<MT>("chebyshev: eigenvalue relative tolerance"))
+    eigRelTolerance = plist.get<MT> ("chebyshev: eigenvalue relative tolerance");
+  else if (plist.isType<ST>("chebyshev: eigenvalue relative tolerance"))
+    eigRelTolerance = Teuchos::ScalarTraits<ST>::magnitude(plist.get<ST> ("chebyshev: eigenvalue relative tolerance"));
+
+  eigKeepVectors = plist.get ("chebyshev: eigenvalue keep vectors", eigKeepVectors);
+
+  eigNormalizationFreq = plist.get ("chebyshev: eigenvalue normalization frequency", eigNormalizationFreq);
+  TEUCHOS_TEST_FOR_EXCEPTION(
+    eigNormalizationFreq < 0, std::invalid_argument,
+    "Ifpack2::Chebyshev::setParameters: \"chebyshev: eigenvalue normalization frequency"
+    "\" parameter must be a "
+    "nonnegative integer.  You gave a value of " << eigNormalizationFreq << ".")
+
   zeroStartingSolution = plist.get ("chebyshev: zero starting solution",
                                     zeroStartingSolution);
   assumeMatrixUnchanged = plist.get ("chebyshev: assume matrix does not change",
@@ -624,13 +698,10 @@ setParameters (Teuchos::ParameterList& plist)
     eigenAnalysisType = plist.get<std::string> ("eigen-analysis: type");
     TEUCHOS_TEST_FOR_EXCEPTION(
       eigenAnalysisType != "power-method" &&
-      eigenAnalysisType != "power method",
+      eigenAnalysisType != "power method" &&
+      eigenAnalysisType != "cg",
       std::invalid_argument,
-      "Ifpack2::Chebyshev: This class supports the ML parameter \"eigen-"
-      "analysis: type\" for backwards compatibility.  However, Ifpack2 "
-      "currently only supports the \"power-method\" option for this "
-      "parameter.  This imitates Ifpack, which only implements the power "
-      "method for eigenanalysis.");
+      "Ifpack2::Chebyshev: Ifpack2 only supports \"power method\" and \"cg\" for \"eigen-analysis: type\".");
   }
 
   // We've validated all the parameters, so it's safe now to "commit" them.
@@ -642,6 +713,10 @@ setParameters (Teuchos::ParameterList& plist)
   minDiagVal_ = minDiagVal;
   numIters_ = numIters;
   eigMaxIters_ = eigMaxIters;
+  eigRelTolerance_ = eigRelTolerance;
+  eigKeepVectors_ = eigKeepVectors;
+  eigNormalizationFreq_ = eigNormalizationFreq;
+  eigenAnalysisType_ = eigenAnalysisType;
   zeroStartingSolution_ = zeroStartingSolution;
   assumeMatrixUnchanged_ = assumeMatrixUnchanged;
   textbookAlgorithm_ = textbookAlgorithm;
@@ -680,13 +755,15 @@ template<class ScalarType, class MV>
 void
 Chebyshev<ScalarType, MV>::reset ()
 {
-  sdr_ = Teuchos::null;
+  ck_ = Teuchos::null;
   D_ = Teuchos::null;
   diagOffsets_ = offsets_type ();
   savedDiagOffsets_ = false;
   W_ = Teuchos::null;
   computedLambdaMax_ = STS::nan ();
   computedLambdaMin_ = STS::nan ();
+  eigVector_ = Teuchos::null;
+  eigVector2_ = Teuchos::null;
 }
 
 
@@ -700,7 +777,7 @@ setMatrix (const Teuchos::RCP<const row_matrix_type>& A)
       reset ();
     }
     A_ = A;
-    sdr_ = Teuchos::null; // constructed on demand
+    ck_ = Teuchos::null; // constructed on demand
 
     // The communicator may have changed, or we may not have had a
     // communicator before.  Thus, we may have to reset the debug
@@ -731,7 +808,6 @@ setMatrix (const Teuchos::RCP<const row_matrix_type>& A)
     }
   }
 }
-
 
 template<class ScalarType, class MV>
 void
@@ -770,7 +846,7 @@ Chebyshev<ScalarType, MV>::compute ()
       Teuchos::rcp_dynamic_cast<const crs_matrix_type> (A_);
 
     if (D_.is_null ()) { // We haven't computed D_ before
-      if (! A_crsMat.is_null () && A_crsMat->isStaticGraph ()) {
+      if (! A_crsMat.is_null () && A_crsMat->isFillComplete ()) {
         // It's a CrsMatrix with a const graph; cache diagonal offsets.
         const size_t lclNumRows = A_crsMat->getNodeNumRows ();
         if (diagOffsets_.extent (0) < lclNumRows) {
@@ -786,7 +862,7 @@ Chebyshev<ScalarType, MV>::compute ()
       }
     }
     else if (! assumeMatrixUnchanged_) { // D_ exists but A_ may have changed
-      if (! A_crsMat.is_null () && A_crsMat->isStaticGraph ()) {
+      if (! A_crsMat.is_null () && A_crsMat->isFillComplete ()) {
         // It's a CrsMatrix with a const graph; cache diagonal offsets
         // if we haven't already.
         if (! savedDiagOffsets_) {
@@ -823,7 +899,11 @@ Chebyshev<ScalarType, MV>::compute ()
   // most important one if using Chebyshev as a smoother.
   if (! assumeMatrixUnchanged_ ||
       (! computedEigenvalueEstimates && STS::isnaninf (userLambdaMax_))) {
-    const ST computedLambdaMax = powerMethod (*A_, *D_, eigMaxIters_);
+    ST computedLambdaMax;
+    if ((eigenAnalysisType_ == "power method") || (eigenAnalysisType_ == "power-method"))
+      computedLambdaMax = powerMethod (*A_, *D_, eigMaxIters_);
+    else
+      computedLambdaMax = cgMethod (*A_, *D_, eigMaxIters_);
     TEUCHOS_TEST_FOR_EXCEPTION(
       STS::isnaninf (computedLambdaMax),
       std::runtime_error,
@@ -861,11 +941,8 @@ Chebyshev<ScalarType, MV>::compute ()
   ////////////////////////////////////////////////////////////////////
 
   // Always favor the user's max eigenvalue estimate, if provided.
-  if (STS::isnaninf (userLambdaMax_)) {
-    lambdaMaxForApply_ = computedLambdaMax_;
-  } else {
-    lambdaMaxForApply_ = userLambdaMax_;
-  }
+  lambdaMaxForApply_ = STS::isnaninf (userLambdaMax_) ? computedLambdaMax_ : userLambdaMax_;
+ 
   // mfh 11 Feb 2013: For now, we imitate Ifpack by ignoring the
   // user's min eigenvalue estimate, and using the given eigenvalue
   // ratio to estimate the min eigenvalue.  We could instead do this:
@@ -1010,7 +1087,17 @@ makeInverseDiagonal (const row_matrix_type& A, const bool useDiagOffsets) const
   using Teuchos::rcpFromRef;
   using Teuchos::rcp_dynamic_cast;
 
-  RCP<V> D_rowMap (new V (A.getGraph ()->getRowMap ()));
+  RCP<V> D_rowMap;
+  if (!D_.is_null() &&
+      D_->getMap()->isSameAs(*(A.getGraph ()->getRowMap ()))) {
+    if (debug_)
+      *out_ << "Reusing pre-existing vector for diagonal extraction" << std::endl;
+    D_rowMap = Teuchos::rcp_const_cast<V>(D_);
+  } else {
+    D_rowMap = Teuchos::rcp(new V (A.getGraph ()->getRowMap (), /*zeroOut=*/false));
+    if (debug_)
+      *out_ << "Allocated new vector for diagonal extraction" << std::endl;
+  }
   if (useDiagOffsets) {
     // The optimizations below only work if A_ is a Tpetra::CrsMatrix.
     // We'll make our best guess about its type here, since we have no
@@ -1043,21 +1130,22 @@ makeInverseDiagonal (const row_matrix_type& A, const bool useDiagOffsets) const
     // In debug mode, make sure that all diagonal entries are
     // positive, on all processes.  Note that *out_ only prints on
     // Process 0 of the matrix's communicator.
-    D_rangeMap->sync_host ();
-    auto D_lcl = D_rangeMap->getLocalViewHost ();
-    auto D_lcl_1d = Kokkos::subview (D_lcl, Kokkos::ALL (), 0);
-
-    typedef typename MV::impl_scalar_type IST;
-    typedef typename MV::local_ordinal_type LO;
-    typedef Kokkos::Details::ArithTraits<IST> STS;
-    typedef Kokkos::Details::ArithTraits<typename STS::mag_type> STM;
-
-    const LO lclNumRows = static_cast<LO> (D_rangeMap->getLocalLength ());
     bool foundNonpositiveValue = false;
-    for (LO i = 0; i < lclNumRows; ++i) {
-      if (STS::real (D_lcl_1d(i)) <= STM::zero ()) {
-        foundNonpositiveValue = true;
-        break;
+    {
+      auto D_lcl = D_rangeMap->getLocalViewHost (Tpetra::Access::ReadOnly);
+      auto D_lcl_1d = Kokkos::subview (D_lcl, Kokkos::ALL (), 0);
+
+      typedef typename MV::impl_scalar_type IST;
+      typedef typename MV::local_ordinal_type LO;
+      typedef Kokkos::Details::ArithTraits<IST> STS;
+      typedef Kokkos::Details::ArithTraits<typename STS::mag_type> STM;
+
+      const LO lclNumRows = static_cast<LO> (D_rangeMap->getLocalLength ());
+      for (LO i = 0; i < lclNumRows; ++i) {
+        if (STS::real (D_lcl_1d(i)) <= STM::zero ()) {
+          foundNonpositiveValue = true;
+          break;
+        }
       }
     }
 
@@ -1279,14 +1367,14 @@ ifpackApplyImpl (const op_type& A,
   if (! zeroStartingSolution_) {
     // mfh 22 May 2019: Tests don't actually exercise this path.
 
-    if (sdr_.is_null ()) {
+    if (ck_.is_null ()) {
       Teuchos::RCP<const op_type> A_op = A_;
-      sdr_ = Teuchos::rcp (new ScaledDampedResidual<op_type> (A_op));
+      ck_ = Teuchos::rcp (new ChebyshevKernel<op_type> (A_op));
     }
     // W := (1/theta)*D_inv*(B-A*X) and X := X + W.
-    sdr_->compute (W, one/theta, const_cast<V&> (D_inv),
+    // X := X + W
+    ck_->compute (W, one/theta, const_cast<V&> (D_inv),
                    const_cast<MV&> (B), X, zero);
-    X.update (one, W, one);
   }
   else {
     // W := (1/theta)*D_inv*B and X := 0 + W.
@@ -1298,9 +1386,9 @@ ifpackApplyImpl (const op_type& A,
           << " - \\|X\\|_{\\infty} = " << maxNormInf (X) << endl;
   }
 
-  if (numIters > 1 && sdr_.is_null ()) {
+  if (numIters > 1 && ck_.is_null ()) {
     Teuchos::RCP<const op_type> A_op = A_;
-    sdr_ = Teuchos::rcp (new ScaledDampedResidual<op_type> (A_op));
+    ck_ = Teuchos::rcp (new ChebyshevKernel<op_type> (A_op));
   }
 
   // The rest of the iterations.
@@ -1326,9 +1414,9 @@ ifpackApplyImpl (const op_type& A,
     }
 
     // W := dtemp2*D_inv*(B - A*X) + dtemp1*W.
-    sdr_->compute (W, dtemp2, const_cast<V&> (D_inv),
+    // X := X + W
+    ck_->compute (W, dtemp2, const_cast<V&> (D_inv),
                    const_cast<MV&> (B), (X), dtemp1);
-    X.update (one, W, one); // X := X + W
 
     if (debug) {
       *out_ << " - \\|W\\|_{\\infty} = " << maxNormInf (W) << endl
@@ -1353,9 +1441,16 @@ powerMethodWithInitGuess (const op_type& A,
   const ST zero = static_cast<ST> (0.0);
   const ST one = static_cast<ST> (1.0);
   ST lambdaMax = zero;
-  ST RQ_top, RQ_bottom, norm;
+  ST lambdaMaxOld = one;
+  ST norm;
 
-  V y (A.getRangeMap ());
+  Teuchos::RCP<V> y;
+  if (eigVector2_.is_null()) {
+    y = rcp(new V(A.getRangeMap ()));
+    if (eigKeepVectors_)
+      eigVector2_ = y;
+  } else
+    y = eigVector2_;
   norm = x.norm2 ();
   TEUCHOS_TEST_FOR_EXCEPTION
     (norm == zero, std::runtime_error,
@@ -1376,31 +1471,60 @@ powerMethodWithInitGuess (const op_type& A,
     *out_ << "  norm1(x.scale(one/norm)): " << x.norm1 () << endl;
   }
 
-  for (int iter = 0; iter < numIters; ++iter) {
+  for (int iter = 0; iter < numIters-1; ++iter) {
     if (debug_) {
       *out_ << "  Iteration " << iter << endl;
     }
-    A.apply (x, y);
-    solve (y, D_inv, y);
-    RQ_top = y.dot (x);
-    RQ_bottom = x.dot (x);
-    if (debug_) {
-      *out_ << "   RQ_top: " << RQ_top
-            << ", RQ_bottom: " << RQ_bottom << endl;
-    }
-    lambdaMax = RQ_top / RQ_bottom;
-    norm = y.norm2 ();
-    if (norm == zero) { // Return something reasonable.
-      if (debug_) {
-        *out_ << "   norm is zero; returning zero" << endl;
+    A.apply (x, *y);
+    solve (x, D_inv, *y);
+
+    if (((iter+1) % eigNormalizationFreq_ == 0) && (iter < numIters-2)) {
+      norm = x.norm2 ();
+      if (norm == zero) { // Return something reasonable.
+        if (debug_) {
+          *out_ << "   norm is zero; returning zero" << endl;
+          *out_ << "   Power method terminated after "<< iter << " iterations." << endl;
+        }
+        return zero;
+      } else {
+        lambdaMaxOld = lambdaMax;
+        lambdaMax = pow(norm, Teuchos::ScalarTraits<MT>::one() / eigNormalizationFreq_);
+        if (Teuchos::ScalarTraits<ST>::magnitude(lambdaMax-lambdaMaxOld) < eigRelTolerance_ * Teuchos::ScalarTraits<ST>::magnitude(lambdaMax)) {
+          if (debug_) {
+            *out_ << "  lambdaMax: " << lambdaMax << endl;
+            *out_ << "  Power method terminated after "<< iter << " iterations." << endl;
+          }
+          return lambdaMax;
+        } else if (debug_) {
+          *out_ << "  lambdaMaxOld: " << lambdaMaxOld << endl;
+          *out_ << "  lambdaMax: " << lambdaMax << endl;
+          *out_ << "  |lambdaMax-lambdaMaxOld|/|lambdaMax|: " << Teuchos::ScalarTraits<ST>::magnitude(lambdaMax-lambdaMaxOld)/Teuchos::ScalarTraits<ST>::magnitude(lambdaMax) << endl;
+        }
       }
-      return zero;
+      x.scale (one / norm);
     }
-    x.update (one / norm, y, zero);
   }
   if (debug_) {
     *out_ << "  lambdaMax: " << lambdaMax << endl;
   }
+
+  norm = x.norm2 ();
+  if (norm == zero) { // Return something reasonable.
+    if (debug_) {
+      *out_ << "   norm is zero; returning zero" << endl;
+      *out_ << "   Power method terminated after "<< numIters << " iterations." << endl;
+    }
+    return zero;
+  }
+  x.scale (one / norm);
+  A.apply (x, *y);
+  solve (*y, D_inv, *y);
+  lambdaMax = y->dot (x);
+  if (debug_) {
+    *out_ << "  lambdaMax: " << lambdaMax << endl;
+    *out_ << "  Power method terminated after "<< numIters << " iterations." << endl;
+  }
+
   return lambdaMax;
 }
 
@@ -1410,14 +1534,12 @@ Chebyshev<ScalarType, MV>::
 computeInitialGuessForPowerMethod (V& x, const bool nonnegativeRealParts) const
 {
   typedef typename MV::device_type::execution_space dev_execution_space;
-  typedef typename MV::device_type::memory_space dev_memory_space;
   typedef typename MV::local_ordinal_type LO;
 
   x.randomize ();
 
   if (nonnegativeRealParts) {
-    x.template modify<dev_memory_space> ();
-    auto x_lcl = x.template getLocalView<dev_memory_space> ();
+    auto x_lcl = x.getLocalViewDevice (Tpetra::Access::ReadWrite);
     auto x_lcl_1d = Kokkos::subview (x_lcl, Kokkos::ALL (), 0);
 
     const LO lclNumRows = static_cast<LO> (x.getLocalLength ());
@@ -1438,13 +1560,19 @@ powerMethod (const op_type& A, const V& D_inv, const int numIters)
   }
 
   const ST zero = static_cast<ST> (0.0);
-  V x (A.getDomainMap ());
-  // For the first pass, just let the pseudorandom number generator
-  // fill x with whatever values it wants; don't try to make its
-  // entries nonnegative.
-  computeInitialGuessForPowerMethod (x, false);
+  Teuchos::RCP<V> x;
+  if (eigVector_.is_null()) {
+    x = rcp(new V(A.getDomainMap ()));
+    if (eigKeepVectors_)
+      eigVector_ = x;
+    // For the first pass, just let the pseudorandom number generator
+    // fill x with whatever values it wants; don't try to make its
+    // entries nonnegative.
+    computeInitialGuessForPowerMethod (*x, false);
+  } else
+    x = eigVector_;
 
-  ST lambdaMax = powerMethodWithInitGuess (A, D_inv, numIters, x);
+  ST lambdaMax = powerMethodWithInitGuess (A, D_inv, numIters, *x);
 
   // mfh 07 Jan 2015: Taking the real part here is only a concession
   // to the compiler, so that this class can build with ScalarType =
@@ -1465,9 +1593,105 @@ powerMethod (const op_type& A, const V& D_inv, const int numIters)
 
     // For the second pass, make all the entries of the initial guess
     // vector have nonnegative real parts.
-    computeInitialGuessForPowerMethod (x, true);
-    lambdaMax = powerMethodWithInitGuess (A, D_inv, numIters, x);
+    computeInitialGuessForPowerMethod (*x, true);
+    lambdaMax = powerMethodWithInitGuess (A, D_inv, numIters, *x);
   }
+  return lambdaMax;
+}
+
+
+template<class ScalarType, class MV>
+typename Chebyshev<ScalarType, MV>::ST
+Chebyshev<ScalarType, MV>::
+cgMethodWithInitGuess (const op_type& A,
+                          const V& D_inv,
+                          const int numIters,
+                          V& r)
+{
+  using std::endl;
+  using STS = Teuchos::ScalarTraits<ST>;
+  using MagnitudeType = typename STS::magnitudeType;
+  if (debug_) {
+    *out_ << " cgMethodWithInitGuess:" << endl;
+  }
+
+  const ST one = STS::one();
+  ST beta, betaOld = one, pAp, pApOld = one, alpha, rHz, rHzOld, rHzOld2 = one, lambdaMax;
+  // ST lambdaMin;
+  Teuchos::ArrayRCP<MagnitudeType> diag, offdiag;
+  Teuchos::RCP<V> p, z, Ap;
+  diag.resize(numIters);
+  offdiag.resize(numIters-1);
+
+  p = rcp(new V(A.getRangeMap ()));
+  z = rcp(new V(A.getRangeMap ()));
+  Ap = rcp(new V(A.getRangeMap ()));
+
+  // Tpetra::Details::residual (A, x, *b, *r);
+  solve (*p, D_inv, r);
+  rHz = r.dot (*p);
+
+  for (int iter = 0; iter < numIters; ++iter) {
+    if (debug_) {
+      *out_ << "  Iteration " << iter << endl;
+    }
+    A.apply (*p, *Ap);
+    pAp = p->dot (*Ap);
+    alpha = rHz/pAp;
+    r.update (-alpha, *Ap, one);
+    rHzOld = rHz;
+    solve (*z, D_inv, r);
+    rHz = r.dot (*z);
+    beta = rHz / rHzOld;
+    p->update (one, *z, beta);
+    if (iter>0) {
+      diag[iter] = STS::real((betaOld*betaOld * pApOld + pAp) / rHzOld);
+      offdiag[iter-1] = -STS::real((betaOld * pApOld / (sqrt(rHzOld * rHzOld2))));
+      if (debug_) {
+        *out_ << " diag[" << iter << "]     = " << diag[iter] << endl;
+        *out_ << " offdiag["<< iter-1 << "] = " << offdiag[iter-1] << endl;
+        }
+    } else {
+      diag[iter] = STS::real(pAp/rHzOld);
+      if (debug_) {
+        *out_ << " diag[" << iter << "]     = " << diag[iter] << endl;
+      }
+    }
+    rHzOld2 = rHzOld;
+    betaOld = beta;
+    pApOld = pAp;
+  }
+
+  lambdaMax = LapackHelper<ST>::tri_diag_spectral_radius(diag, offdiag);
+
+  return lambdaMax;
+}
+
+
+template<class ScalarType, class MV>
+typename Chebyshev<ScalarType, MV>::ST
+Chebyshev<ScalarType, MV>::
+cgMethod (const op_type& A, const V& D_inv, const int numIters)
+{
+  using std::endl;
+  if (debug_) {
+    *out_ << "cgMethod:" << endl;
+  }
+
+  Teuchos::RCP<V> r;
+  if (eigVector_.is_null()) {
+    r = rcp(new V(A.getDomainMap ()));
+    if (eigKeepVectors_)
+      eigVector_ = r;
+    // For the first pass, just let the pseudorandom number generator
+    // fill x with whatever values it wants; don't try to make its
+    // entries nonnegative.
+    computeInitialGuessForPowerMethod (*r, false);
+  } else
+    r = eigVector_;
+
+  ST lambdaMax = cgMethodWithInitGuess (A, D_inv, numIters, *r);
+
   return lambdaMax;
 }
 
@@ -1494,10 +1718,9 @@ makeTempMultiVector (const MV& B)
   // null, but also if the number of columns match, since some multi-RHS
   // solvers (e.g., Belos) may call apply() with different numbers of columns.
 
-  //W must be initialized to zero when it is used as a multigrid smoother.
   const size_t B_numVecs = B.getNumVectors ();
   if (W_.is_null () || W_->getNumVectors () != B_numVecs) {
-    W_ = Teuchos::rcp (new MV (B.getMap (), B_numVecs, true));
+    W_ = Teuchos::rcp (new MV (B.getMap (), B_numVecs, false));
   }
   return W_;
 }
@@ -1515,8 +1738,10 @@ description () const {
       << ", lambdaMax: " << lambdaMaxForApply_
       << ", alpha: " << eigRatioForApply_
       << ", lambdaMin: " << lambdaMinForApply_
-      << ", boost factor: " << boostFactor_
-      << "}";
+      << ", boost factor: " << boostFactor_;
+  if (!userInvDiag_.is_null())
+    oss << ", diagonal: user-supplied";
+  oss << "}";
   return oss.str();
 }
 
@@ -1652,6 +1877,8 @@ describe (Teuchos::FancyOStream& out,
           << "userEigRatio_: " << userEigRatio_ << endl
           << "numIters_: " << numIters_ << endl
           << "eigMaxIters_: " << eigMaxIters_ << endl
+          << "eigRelTolerance_: " << eigRelTolerance_ << endl
+          << "eigNormalizationFreq_: " << eigNormalizationFreq_ << endl
           << "zeroStartingSolution_: " << zeroStartingSolution_ << endl
           << "assumeMatrixUnchanged_: " << assumeMatrixUnchanged_ << endl
           << "textbookAlgorithm_: " << textbookAlgorithm_ << endl

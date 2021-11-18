@@ -48,12 +48,16 @@ GET_PROPERTY( LA_DIR    GLOBAL PROPERTY LA_DIR  )
 GET_PROPERTY( LAPACK_STRING GLOBAL PROPERTY LAPACK_IMPL )
 GET_PROPERTY( LAPACK_DIR    GLOBAL PROPERTY LAPACK_DIR  )
 
+GET_PROPERTY( BLAS_STRING GLOBAL PROPERTY BLAS_IMPL )
+GET_PROPERTY( BLAS_DIR    GLOBAL PROPERTY BLAS_DIR  )
+
 MESSAGE( "-- ROL has been configured to use the build options:"              )
 MESSAGE( "--   ROL::Ptr           is implemented by ${PTR_STRING}"           )
 MESSAGE( "--   ROL::ParameterList is implemented by ${PARAMETERLIST_STRING}" )
 MESSAGE( "--   ROL::stacktrace    is implemented by ${STACKTRACE_STRING}"    )
 MESSAGE( "--   ROL::LinearAlgebra is implemented by ${LA_STRING}"            )
 MESSAGE( "--   ROL::LAPACK        is implemented by ${LAPACK_STRING}"        )
+MESSAGE( "--   ROL::BLAS          is implemented by ${BLAS_STRING}"          )
 
 INCLUDE_DIRECTORIES( ${PTR_DIR} )
 APPEND_GLOB( HEADERS ${PTR_DIR}/*.hpp )
@@ -69,6 +73,9 @@ APPEND_GLOB( HEADERS ${LA_DIR}/*.hpp )
 
 INCLUDE_DIRECTORIES( ${LAPACK_DIR} )
 APPEND_GLOB( HEADERS ${LAPACK_DIR}/*.hpp )
+
+INCLUDE_DIRECTORIES( ${BLAS_DIR} )
+APPEND_GLOB( HEADERS ${BLAS_DIR}/*.hpp )
 
 #
 # vector headers
@@ -88,6 +95,7 @@ INCLUDE_DIRECTORIES(${DIR}
                     ${DIR}/boundconstraint
                     ${DIR}/constraint
                     ${DIR}/nlls
+                    ${DIR}/polyproj
                     ${DIR}/objective
                     ${DIR}/operator
                     ${DIR}/simopt
@@ -99,6 +107,7 @@ APPEND_GLOB(HEADERS ${DIR}/*.hpp
                     ${DIR}/boundconstraint/*.hpp
                     ${DIR}/constraint/*.hpp
                     ${DIR}/nlls/*.hpp
+                    ${DIR}/polyproj/*.hpp
                     ${DIR}/objective/*.hpp
                     ${DIR}/operator/*.hpp
                     ${DIR}/simopt/*.hpp
@@ -139,6 +148,42 @@ APPEND_GLOB(HEADERS ${DIR}/*.hpp
 #
 
 SET_AND_INC_DIRS(DIR ${CMAKE_CURRENT_SOURCE_DIR}/algorithm)
+INCLUDE_DIRECTORIES(${DIR}
+                    ${DIR}/TypeB
+                    ${DIR}/TypeE
+                    ${DIR}/TypeG
+                    ${DIR}/TypeU
+                    ${DIR}/TypeB/pqn
+                    ${DIR}/TypeG/augmentedlagrangian/
+                    ${DIR}/TypeG/fletcher
+                    ${DIR}/TypeG/interiorpoint
+                    ${DIR}/TypeG/moreauyosida
+                    ${DIR}/TypeG/stabilizedlcl
+                    ${DIR}/TypeU/bundle
+                    ${DIR}/TypeU/linesearch
+                    ${DIR}/TypeU/linesearch/descent
+                    ${DIR}/TypeU/trustregion)
+APPEND_GLOB(HEADERS ${DIR}/*.hpp
+                    ${DIR}/TypeB/*.hpp
+                    ${DIR}/TypeE/*.hpp
+                    ${DIR}/TypeG/*.hpp
+                    ${DIR}/TypeU/*.hpp
+                    ${DIR}/TypeB/pqn/*.hpp
+                    ${DIR}/TypeG/augmentedlagrangian/*.hpp
+                    ${DIR}/TypeG/fletcher/*.hpp
+                    ${DIR}/TypeG/interiorpoint/*.hpp
+                    ${DIR}/TypeG/moreauyosida/*.hpp
+                    ${DIR}/TypeG/stabilizedlcl/*.hpp
+                    ${DIR}/TypeU/bundle/*.hpp
+                    ${DIR}/TypeU/linesearch/*.hpp
+                    ${DIR}/TypeU/linesearch/descent/*.hpp
+                    ${DIR}/TypeU/trustregion/*.hpp)
+
+#
+# parameterlist headers
+#
+
+SET_AND_INC_DIRS(DIR ${CMAKE_CURRENT_SOURCE_DIR}/parameterlist)
 INCLUDE_DIRECTORIES(${DIR})
 APPEND_GLOB(HEADERS ${DIR}/*.hpp)
 

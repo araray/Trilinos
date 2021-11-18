@@ -64,14 +64,14 @@ namespace Intrepid2 {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     }
 
-    template<typename ValueType, typename DeviceSpaceType>
+    template<typename ValueType, typename DeviceType>
     int HGRAD_HEX_C1_FEM_Test01(const bool verbose) {
 
       Teuchos::RCP<std::ostream> outStream;
@@ -85,6 +85,7 @@ namespace Intrepid2 {
       Teuchos::oblackholestream oldFormatState;
       oldFormatState.copyfmt(std::cout);
 
+      using DeviceSpaceType = typename DeviceType::execution_space;
       typedef typename
         Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType ;
 
@@ -108,7 +109,7 @@ namespace Intrepid2 {
         << "|                                                                             |\n"
         << "===============================================================================\n";
 
-      typedef Kokkos::DynRankView<ValueType,DeviceSpaceType> DynRankView;
+      typedef Kokkos::DynRankView<ValueType,DeviceType> DynRankView;
       typedef Kokkos::DynRankView<ValueType,HostSpaceType>   DynRankViewHost;
 #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
 
@@ -118,7 +119,7 @@ namespace Intrepid2 {
       // for virtual function, value and point types are declared in the class
       typedef ValueType outputValueType;
       typedef ValueType pointValueType;
-      Basis_HGRAD_HEX_C1_FEM<DeviceSpaceType,outputValueType,pointValueType> hexBasis;
+      Basis_HGRAD_HEX_C1_FEM<DeviceType,outputValueType,pointValueType> hexBasis;
       //typedef typename decltype(hexBasis)::OutputViewType OutputViewType;
       //typedef typename decltype(hexBasis)::PointViewType  PointViewType;
 
@@ -229,7 +230,7 @@ namespace Intrepid2 {
           *outStream << "# of catch ("<< ncatch << ") is different from # of throw (" << nthrow << ")\n";
         }
 
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -290,7 +291,7 @@ namespace Intrepid2 {
                        << myTag(3) << "} ) = " << myBfOrd << "\n";
           }
         }
-      } catch (std::logic_error err){
+      } catch (std::logic_error &err){
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -512,6 +513,9 @@ namespace Intrepid2 {
             {  0.00000,   0.00000,   0.12500,   0.00000,   0.12500,   0.00000 },
             {  0.00000,   0.00000,  -0.12500,   0.00000,   0.12500,   0.00000 } }
         };
+        
+        // the only nonzeros for D3 are in the "4" slot of the operator column, with values ±1/8, as indicated below:
+        const ValueType basisD3Nonzeros[8] = { -0.125, 0.125,-0.125, 0.125, 0.125,-0.125,0.125,-0.125  };
 
 
         // Define array containing the 8 vertices of the reference HEX, its center and 6 face centers
@@ -538,7 +542,7 @@ namespace Intrepid2 {
         hexNodesHost(13,0)=  0.0;  hexNodesHost(13,1)=  0.0;  hexNodesHost(13,2)=  1.0;
         hexNodesHost(14,0)=  0.0;  hexNodesHost(14,1)=  0.0;  hexNodesHost(14,2)= -1.0;
 
-        auto hexNodes = Kokkos::create_mirror_view(typename DeviceSpaceType::memory_space(), hexNodesHost);
+        auto hexNodes = Kokkos::create_mirror_view(typename DeviceType::memory_space(), hexNodesHost);
         Kokkos::deep_copy(hexNodes, hexNodesHost);
 
         // Generic array for the output values; needs to be properly resized depending on the operator type
@@ -546,6 +550,7 @@ namespace Intrepid2 {
         const auto numPoints = hexNodes.extent(0);
         const auto spaceDim  = hexBasis.getBaseCellTopology().getDimension();
         const auto D2Cardin  = getDkCardinality(OPERATOR_D2, spaceDim);
+        const auto D3Cardin  = getDkCardinality(OPERATOR_D3, spaceDim);
         const auto D10Cardin = getDkCardinality(OPERATOR_D10, spaceDim);
 
         const auto workSize  = numFields*numPoints*D10Cardin;
@@ -621,12 +626,35 @@ namespace Intrepid2 {
                              << " but reference D2 component: " << basisD2[j][i][k] << "\n";
                 }
         }
+        
+        // Check D3 of basis function
+        { 
+          DynRankView vals = DynRankView(work.data(), numFields, numPoints, D3Cardin);
+          hexBasis.getValues(vals, hexNodes, OPERATOR_D3);
+          auto vals_host = Kokkos::create_mirror_view(typename HostSpaceType::memory_space(), vals);
+          Kokkos::deep_copy(vals_host, vals);
+          for (auto i=0;i<numFields;++i)
+            for (size_type j=0;j<numPoints;++j)
+              for (auto k=0;k<D3Cardin;++k)
+              {
+                const ValueType expected_value = (k==4) ? basisD3Nonzeros[i] : 0.0;
+                if (std::abs(vals_host(i,j,k) - expected_value) > tol) {
+                  errorFlag++;
+                  *outStream << std::setw(70) << "^^^^----FAILURE!" << "\n";
+
+                  // Output the multi-index of the value where the error is:
+                  *outStream << " At multi-index { ";
+                  *outStream << i << " ";*outStream << j << " ";*outStream << k << " ";
+                  *outStream << "}  computed D3 component: " << vals_host(i,j,k)
+                             << " but reference D3 component: " << expected_value << "\n";
+                }
+              }
+        }
 
 
         // Check all higher derivatives - must be zero.
         {
-          const EOperator ops[] = { OPERATOR_D3,
-                                    OPERATOR_D4,
+          const EOperator ops[] = { OPERATOR_D4,
                                     OPERATOR_D5,
                                     OPERATOR_D6,
                                     OPERATOR_D7,
@@ -657,7 +685,7 @@ namespace Intrepid2 {
                   }
           }
         }
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -724,7 +752,7 @@ namespace Intrepid2 {
           }
         }
 
-      } catch (std::logic_error err){
+      } catch (std::logic_error &err){
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -753,7 +781,7 @@ namespace Intrepid2 {
           }
           errorFlag++;
         }
-      } catch (std::logic_error err){
+      } catch (std::logic_error &err){
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";

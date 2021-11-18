@@ -1,36 +1,9 @@
 /*
- * Copyright (C) 2009-2017 National Technology & Engineering Solutions of
- * Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of NTESS nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * See packages/seacas/LICENSE for details
  */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -73,9 +46,9 @@
 
 int ilog2i(size_t n)
 {
-  size_t       i  = 0;
-  unsigned int n1 = n;
-  while ((n1 >>= 1) != 0u) {
+  size_t i  = 0;
+  size_t n1 = n;
+  while ((n1 >>= 1) != 0U) {
     ++i;
   }
 
@@ -96,12 +69,12 @@ namespace {
                      Problem_Description * /*problem*/);
 
   /* ZPINCH partitioning interface */
-  int ZPINCH_assign(Machine_Description * /*machine*/, int /*ndot*/, float * /*x*/, float * /*y*/,
-                    float * /*z*/, int * /*part*/);
+  int ZPINCH_assign(Machine_Description * /*machine*/, int /*ndot*/, const float * /*x*/,
+                    const float * /*y*/, const float * /*z*/, int * /*part*/);
 
   /* BRICK partitioning interface */
-  int BRICK_assign(Machine_Description * /*machine*/, int /*ndot*/, float * /*x*/, float * /*y*/,
-                   float * /*z*/, int * /*part*/);
+  int BRICK_assign(Machine_Description * /*machine*/, int /*ndot*/, const float * /*x*/,
+                   const float * /*y*/, const float * /*z*/, int * /*part*/);
 
 #ifdef USE_ZOLTAN
   /* ZOLTAN_RCB partitioning interface */
@@ -109,7 +82,7 @@ namespace {
                     float * /*x*/, float * /*y*/, float * /*z*/, int /*ignore_z*/, int * /*part*/,
                     int /*argc*/, char ** /*argv*/);
 #endif
-  void BALANCE_STATS(Machine_Description * /*machine*/, int * /*wgt*/, size_t /*ndot*/,
+  void BALANCE_STATS(Machine_Description * /*machine*/, const int * /*wgt*/, size_t /*ndot*/,
                      int * /*part*/);
 
   template <typename INT>
@@ -154,17 +127,26 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
 {
   const char *assignfile = nullptr;
 
-  int flag = 0, arch = 0, refine = 0, num_level = 0, totalproc = 0, glob_method = 0;
-  int start_proc = 0;
+  int flag        = 0;
+  int arch        = 0;
+  int refine      = 0;
+  int num_level   = 0;
+  int totalproc   = 0;
+  int glob_method = 0;
+  int start_proc  = 0;
 
   INT *            tmp_start = nullptr, *tmp_adj = nullptr;
   int *            tmp_vwgts = nullptr;
   size_t           tmp_nv;
   std::vector<int> nprocg, nelemg, nadjg;
-  size_t           max_vtx, max_adj;
+  size_t           max_vtx;
+  size_t           max_adj;
   int              group;
   std::vector<INT> elem_map;
-  int              dim[1], tmpdim[3], tmp_arch, tmp_lev;
+  int              dim[1];
+  int              tmpdim[3];
+  int              tmp_arch;
+  int              tmp_lev;
   int *            tmp_v2p = nullptr;
 
   float *            x_ptr = nullptr, *y_ptr = nullptr, *z_ptr = nullptr;
@@ -175,7 +157,8 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
 
   long    seed = 1;
   double *goal = nullptr;
-  double  time1, time2;
+  double  time1;
+  double  time2;
   FILE *  fp = nullptr;
 
   /*-----------------------------Execution Begins------------------------------*/
@@ -418,11 +401,11 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
       exit(-1);
     }
     else {
-      flag = INTERFACE(problem->num_vertices, (int *)graph->start.data(), (int *)graph->adj.data(),
-                       weight->vertices.data(), weight->edges.data(), x_ptr, y_ptr, z_ptr,
-                       const_cast<char *>(assignfile), (char *)nullptr, lb->vertex2proc, tmp_arch,
-                       tmp_lev, dim, goal, glob_method, refine, solve->rqi_flag, solve->vmax,
-                       lb->num_sects, solve->tolerance, seed);
+      flag = INTER_FACE(problem->num_vertices, (int *)graph->start.data(), (int *)graph->adj.data(),
+                        weight->vertices.data(), weight->edges.data(), x_ptr, y_ptr, z_ptr,
+                        const_cast<char *>(assignfile), (char *)nullptr, lb->vertex2proc, tmp_arch,
+                        tmp_lev, dim, goal, glob_method, refine, solve->rqi_flag, solve->vmax,
+                        lb->num_sects, solve->tolerance, seed);
     }
 
     time2 = get_time();
@@ -524,7 +507,7 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
       Gen_Error(0, "fatal: insufficient memory");
       goto cleanup;
     }
-    start_proc = 0; /* counter to keep track of proccessors for each group */
+    start_proc = 0; /* counter to keep track of processors for each group */
   }
 
   /*
@@ -633,15 +616,23 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
         }
       }
       else {
-        tmp_nv    = problem->num_vertices;
-        tmp_start = &graph->start[0];
-        tmp_adj   = &graph->adj[0];
-        tmp_vwgts = &weight->vertices[0];
-        tmp_ewgts = &weight->edges[0];
-        tmp_x     = x_ptr;
-        tmp_y     = y_ptr;
-        tmp_z     = z_ptr;
-        tmp_v2p   = lb->vertex2proc;
+        tmp_nv = problem->num_vertices;
+        if (!graph->start.empty()) {
+          tmp_start = &graph->start[0];
+        }
+        if (!graph->adj.empty()) {
+          tmp_adj = &graph->adj[0];
+        }
+        if (!weight->vertices.empty()) {
+          tmp_vwgts = &weight->vertices[0];
+        }
+        if (!weight->edges.empty()) {
+          tmp_ewgts = &weight->edges[0];
+        }
+        tmp_x   = x_ptr;
+        tmp_y   = y_ptr;
+        tmp_z   = z_ptr;
+        tmp_v2p = lb->vertex2proc;
 
         for (int cnt = 0; cnt < machine->num_dims; cnt++) {
           tmpdim[cnt] = machine->dim[cnt];
@@ -734,10 +725,10 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
       else {
         fmt::print("===================Call Chaco===========================\n");
         time1 = get_time();
-        flag  = INTERFACE(tmp_nv, (int *)tmp_start, (int *)tmp_adj, tmp_vwgts, tmp_ewgts, tmp_x,
-                         tmp_y, tmp_z, const_cast<char *>(assignfile), (char *)nullptr, tmp_v2p,
-                         arch, num_level, tmpdim, goal, glob_method, refine, solve->rqi_flag,
-                         solve->vmax, lb->num_sects, solve->tolerance, seed);
+        flag  = INTER_FACE(tmp_nv, (int *)tmp_start, (int *)tmp_adj, tmp_vwgts, tmp_ewgts, tmp_x,
+                          tmp_y, tmp_z, const_cast<char *>(assignfile), (char *)nullptr, tmp_v2p,
+                          arch, num_level, tmpdim, goal, glob_method, refine, solve->rqi_flag,
+                          solve->vmax, lb->num_sects, solve->tolerance, seed);
         time2 = get_time();
         fmt::print("========================================================\n");
         fmt::print("Time in Chaco: {}s\n", time2 - time1);
@@ -882,7 +873,8 @@ int generate_loadbal(Machine_Description *machine, Problem_Description *problem,
       }
       else {
         /* need to free the bigger graph and create a face adjacent graph */
-        int tmp_alloc_graph, tmp_adjacency;
+        int tmp_alloc_graph;
+        int tmp_adjacency;
 
         vec_free(graph->start);
         vec_free(graph->adj);
@@ -1060,14 +1052,7 @@ namespace {
                           Mesh_Description<INT> *mesh, LB_Description<INT> *lb,
                           Graph_Description<INT> *graph, int check_type)
   {
-    std::vector<INT> pt_list;
-    size_t           nelem;
-    size_t           nhold;
-    size_t           count;
-    size_t           num_found = 0;
-
     std::vector<int> list_ptr;
-    int              end;
 
     /*
      * look for discontinuities in the graph
@@ -1143,15 +1128,15 @@ namespace {
               int proc = lb->vertex2proc[ecnt];
               assert(proc < machine->num_procs);
               if (proc == pcnt) {
+                size_t end = 0;
                 if (ecnt < (mesh->num_elems - 1)) {
                   end = graph->start[ecnt + 1];
                 }
                 else {
                   end = graph->nadj;
-                  ;
                 }
                 size_t distance = 1;
-                for (int i = graph->start[ecnt]; i < end; i++) {
+                for (size_t i = graph->start[ecnt]; i < end; i++) {
                   int proc2 = lb->vertex2proc[graph->adj[i] - 1];
                   assert(proc2 < machine->num_procs);
                   if (proc2 == proc) {
@@ -1175,13 +1160,14 @@ namespace {
                 if (proc == pcnt) {
                   global_index[ki++] = ecnt;
                   columns[kf++]      = local_number[ecnt];
+                  size_t end         = 0;
                   if (ecnt < (mesh->num_elems - 1)) {
                     end = graph->start[ecnt + 1];
                   }
                   else {
                     end = graph->nadj;
                   }
-                  for (int i = graph->start[ecnt]; i < end; i++) {
+                  for (size_t i = graph->start[ecnt]; i < end; i++) {
                     int proc2 = lb->vertex2proc[graph->adj[i] - 1];
                     assert(proc2 < machine->num_procs);
                     if (proc2 == proc) {
@@ -1230,7 +1216,7 @@ namespace {
 
     if (problem->global_mech == 1 || problem->local_mech == 1) {
 
-      pt_list.resize(graph->max_nsur);
+      std::vector<INT> pt_list(graph->max_nsur);
       std::vector<INT> hold_elem(graph->max_nsur);
       std::vector<int> problems(mesh->num_nodes);
       std::vector<int> proc_cnt(machine->num_procs);
@@ -1245,6 +1231,7 @@ namespace {
         }
       }
 
+      size_t num_found = 0;
       for (size_t ecnt = 0; ecnt < mesh->num_elems; ecnt++) {
         E_Type etype = mesh->elem_type[ecnt];
 
@@ -1279,8 +1266,8 @@ namespace {
 
             for (int ncnt = 0; ncnt < side_cnt; ncnt++) {
 
-              size_t node = side_nodes[ncnt];
-              nhold       = graph->sur_elem[node].size();
+              size_t node  = side_nodes[ncnt];
+              size_t nhold = graph->sur_elem[node].size();
 
               /*
                * look for the following cases
@@ -1314,7 +1301,7 @@ namespace {
 
                     int nsides2 = get_elem_info(NSIDES, etype2);
 
-                    count = 0;
+                    size_t count = 0;
                     for (int cnt = 0; cnt < nsides2; cnt++) {
 
                       ss_to_node_list(etype2, mesh->connect[el2], (cnt + 1), side_nodes2);
@@ -1329,9 +1316,9 @@ namespace {
                         hold_elem[i] = graph->sur_elem[side_nodes2[0]][pt_list[i]];
                       }
 
-                      nelem = find_inter(hold_elem.data(), graph->sur_elem[side_nodes2[2]].data(),
-                                         nhold2, graph->sur_elem[side_nodes2[2]].size(),
-                                         pt_list.data());
+                      size_t nelem = find_inter(
+                          hold_elem.data(), graph->sur_elem[side_nodes2[2]].data(), nhold2,
+                          graph->sur_elem[side_nodes2[2]].size(), pt_list.data());
 
                       if (nelem >= 1) {
                         count++;
@@ -1405,15 +1392,7 @@ namespace {
   int nodal_dist(LB_Description<INT> *lb, Machine_Description *machine, Mesh_Description<INT> *mesh,
                  Graph_Description<INT> *graph)
   {
-    size_t ncnt, i;
-    int    proc, proc_n;
-    int    internal, flag, elem, node, nnodes;
-    E_Type etype;
-    double time1, time2;
-
-    /*-----------------------------Execution Begins------------------------------*/
-    /* Allocate memory */
-    time1 = get_time();
+    double time1 = get_time();
     lb->int_nodes.resize(machine->num_procs);
     lb->bor_nodes.resize(machine->num_procs);
     lb->ext_nodes.resize(machine->num_procs);
@@ -1421,22 +1400,22 @@ namespace {
     lb->bor_elems.resize(machine->num_procs); // Not used in nodal dist.
     lb->ext_procs.resize(machine->num_procs);
 
-    time2 = get_time();
+    double time2 = get_time();
     fmt::print("Allocation time: {}s\n", time2 - time1);
 
     /* Find the internal, border and external nodes */
     time1 = get_time();
-    for (ncnt = 0; ncnt < mesh->num_nodes; ncnt++) {
-      proc = lb->vertex2proc[ncnt];
+    for (size_t ncnt = 0; ncnt < mesh->num_nodes; ncnt++) {
+      int proc = lb->vertex2proc[ncnt];
       assert(proc < machine->num_procs);
-      internal = 1;
-      flag     = 0;
+      int internal = 1;
+      int flag     = 0;
       for (size_t ecnt = 0; ecnt < graph->sur_elem[ncnt].size(); ecnt++) {
-        elem   = graph->sur_elem[ncnt][ecnt];
-        etype  = mesh->elem_type[elem];
-        nnodes = get_elem_info(NNODES, etype);
-        for (i = 0; i < static_cast<size_t>(nnodes); i++) {
-          proc_n = lb->vertex2proc[mesh->connect[elem][i]];
+        int    elem   = graph->sur_elem[ncnt][ecnt];
+        E_Type etype  = mesh->elem_type[elem];
+        int    nnodes = get_elem_info(NNODES, etype);
+        for (size_t i = 0; i < static_cast<size_t>(nnodes); i++) {
+          int proc_n = lb->vertex2proc[mesh->connect[elem][i]];
           assert(proc_n < machine->num_procs);
           if (proc_n != proc) {
             /* "ncnt" is a border node and is an external node to proc_n */
@@ -1470,11 +1449,11 @@ namespace {
     /* Find the internal elements */
     time1 = get_time();
     for (size_t ecnt = 0; ecnt < mesh->num_elems; ecnt++) {
-      etype  = mesh->elem_type[ecnt];
-      nnodes = get_elem_info(NNODES, etype);
-      for (ncnt = 0; ncnt < static_cast<size_t>(nnodes); ncnt++) {
-        node = mesh->connect[ecnt][ncnt];
-        proc = lb->vertex2proc[node];
+      E_Type etype  = mesh->elem_type[ecnt];
+      int    nnodes = get_elem_info(NNODES, etype);
+      for (size_t ncnt = 0; ncnt < static_cast<size_t>(nnodes); ncnt++) {
+        int node = mesh->connect[ecnt][ncnt];
+        int proc = lb->vertex2proc[node];
         assert(proc < machine->num_procs);
         /*
         ** since the outer loop is on the elements, I don't need to
@@ -1501,14 +1480,18 @@ namespace {
                      Problem_Description *problem)
   {
     int sid;
-    int hflag1, hflag2, tflag1, tflag2;
+    int hflag1;
+    int hflag2;
+    int tflag1;
+    int tflag2;
     int dflag;
 
     INT nelem;
-    INT side_nodes[MAX_SIDE_NODES], mirror_nodes[MAX_SIDE_NODES];
+    INT side_nodes[MAX_SIDE_NODES];
+    INT mirror_nodes[MAX_SIDE_NODES];
     int side_cnt;
 
-    double time1, time2;
+    double time2;
 
     std::string cmesg;
     std::string tmpstr;
@@ -1536,7 +1519,7 @@ namespace {
     std::vector<INT> hold_elem(graph->max_nsur);
 
     /* Find the internal and border elements */
-    time1 = get_time();
+    double time1 = get_time();
 
     for (size_t ecnt = 0; ecnt < mesh->num_elems; ecnt++) {
       int proc = lb->vertex2proc[ecnt];
@@ -1603,11 +1586,10 @@ namespace {
               if (nelem < 2) {
                 break;
               }
-              else {
-                nhold = nelem;
-                for (int ncnt2 = 0; ncnt2 < nelem; ncnt2++) {
-                  hold_elem[ncnt2] = hold_elem[pt_list[ncnt2]];
-                }
+
+              nhold = nelem;
+              for (int ncnt2 = 0; ncnt2 < nelem; ncnt2++) {
+                hold_elem[ncnt2] = hold_elem[pt_list[ncnt2]];
               }
             }
           }
@@ -1900,7 +1882,6 @@ namespace {
     time1 = get_time();
     for (size_t ncnt = 0; ncnt < mesh->num_nodes; ncnt++) {
       bool internal = true;
-      int  flag     = 0;
       int  proc     = 0;
 
       /* If a node is not connected to any elements (graph->nsur_elem[ncnt] == 0),
@@ -1912,6 +1893,7 @@ namespace {
 
         proc = lb->vertex2proc[elem];
         assert(proc < machine->num_procs);
+        int flag = 0;
         for (size_t ecnt = 1; ecnt < graph->sur_elem[ncnt].size(); ecnt++) {
           int proc2 = lb->vertex2proc[graph->sur_elem[ncnt][ecnt]];
           assert(proc2 < machine->num_procs);
@@ -2151,7 +2133,19 @@ namespace {
   int extract_connected_lists(int nrow, const int *columns, const int *rows, int *list,
                               std::vector<int> &list_ptr)
   {
-    int root, nordered, ni, nf, nni, nnf, i, ki, kf, k, j, components, too_many_components = 0;
+    int root;
+    int nordered;
+    int ni;
+    int nf;
+    int nni;
+    int nnf;
+    int i;
+    int ki;
+    int kf;
+    int k;
+    int j;
+    int components;
+    int too_many_components = 0;
     if (nrow == 0) {
       return (0);
     }
@@ -2264,9 +2258,9 @@ namespace {
   /*****************************************************************************/
   int ZPINCH_assign(Machine_Description *machine, /* Machine MESH = nwedge * nslice  */
                     int                  ndot, /* Length of x, y, z, and part (== # of elements) */
-                    float *              x,    /* x-coordinates */
-                    float *              y,    /* y-coordinates */
-                    float *              z,    /* z-coordinates */
+                    const float *        x,    /* x-coordinates */
+                    const float *        y,    /* y-coordinates */
+                    const float *        z,    /* z-coordinates */
                     int *                part  /* Output:  partition assignments for each element */
   )
   {
@@ -2285,16 +2279,7 @@ namespace {
      * March 18, 2004
      */
 
-    int    i;
-    int    nslice;         /* # of slices in the z-direction */
-    int    nwedge;         /* # of wedge-shaped slices in the x,y-plane */
-    int    slice;          /* the slice to which an element is assigned */
-    int    wedge;          /* the wedge to which an element is assigned */
-    float  zmin = FLT_MAX; /* Minimum and maximum z-coordinate values */
-    float  zmax = -FLT_MAX;
-    double dz;              /* zmax - zmin */
-    double theta;           /* angle of (x,y) (polar coordinates) */
-    double epsilon = 1e-07; /* tolerance that allows a point to be in wedge */
+    double theta; /* angle of (x,y) (polar coordinates) */
 
     if (ndot > 0 && (x == nullptr || y == nullptr || z == nullptr || part == nullptr)) {
       fmt::print(stderr, "KDD -- Bad input to ZPINCH_assign.\n");
@@ -2310,8 +2295,8 @@ namespace {
       fmt::print(stderr, "KDD -- B = # slices along z-axis.\n");
       exit(-1);
     }
-    nwedge = machine->dim[0];
-    nslice = machine->dim[1];
+    int nwedge = machine->dim[0];
+    int nslice = machine->dim[1];
     fmt::print("ZPINCH:  Computing\n"
                "   {} slices in the z-direction\n"
                "   {} wedges in the x,y-plane\n"
@@ -2319,7 +2304,9 @@ namespace {
                nslice, nwedge, nslice * nwedge);
 
     /* Compute the maximum values of z */
-    for (i = 0; i < ndot; i++) {
+    float zmin = FLT_MAX; /* Minimum and maximum z-coordinate values */
+    float zmax = -FLT_MAX;
+    for (int i = 0; i < ndot; i++) {
       if (z[i] > zmax) {
         zmax = z[i];
       }
@@ -2327,25 +2314,27 @@ namespace {
         zmin = z[i];
       }
     }
-    dz = zmax - zmin;
+    double dz = zmax - zmin;
 
     /* Compute maximum z for each slice, using uniform partition of zmin - zmax */
     std::vector<double> slice_max_z(nslice);
-    for (i = 0; i < nslice; i++) {
+    for (int i = 0; i < nslice; i++) {
       slice_max_z[i] =
           static_cast<double>(zmin) + static_cast<double>(i + 1) * dz / static_cast<double>(nslice);
     }
 
     /* Compute maximum angle for each wedge, using uniform partition of 2*M_PI */
     std::vector<double> wedge_max_theta(nwedge);
-    for (i = 0; i < nwedge; i++) {
+    for (int i = 0; i < nwedge; i++) {
       wedge_max_theta[i] = static_cast<double>(i + 1) * (2. * M_PI) / static_cast<double>(nwedge);
     }
 
     /* Compute the partition assignment for each set of coordinates */
-    for (i = 0; i < ndot; i++) {
+    double epsilon = 1e-07; /* tolerance that allows a point to be in wedge */
+    for (int i = 0; i < ndot; i++) {
 
       /* Compute the z slice that the element is in. */
+      int slice = 0;
       if (dz > 0.) {
         slice =
             static_cast<int>(nslice * (static_cast<double>(z[i]) - static_cast<double>(zmin)) / dz);
@@ -2364,8 +2353,8 @@ namespace {
       }
 
       /* Compute polar coordinate theta in x,y-plane for the element. */
-      if (x[i] == 0.0f) {
-        if (y[i] >= 0.0f) {
+      if (x[i] == 0.0F) {
+        if (y[i] >= 0.0F) {
           theta = M_PI_2;
         }
         else {
@@ -2376,16 +2365,16 @@ namespace {
         theta = std::atan2(y[i], x[i]); /* In range -M_PI_2 to M_PI_2 */
 
         /* Convert to range 0 to 2*M_PI */
-        if (x[i] < 0.0f) {
+        if (x[i] < 0.0F) {
           theta += M_PI;
         }
-        else if (y[i] < 0.0f) {
+        else if (y[i] < 0.0F) {
           theta += 2 * M_PI;
         }
       }
 
       /* Compute the wedge that the element is in. */
-      wedge = static_cast<int>(nwedge * theta / (2 * M_PI));
+      int wedge = static_cast<int>(nwedge * theta / (2 * M_PI));
       if (wedge == nwedge) {
         wedge--; /* Handles theta == 2*M_PI correctly */
       }
@@ -2405,7 +2394,7 @@ namespace {
   /*****************************************************************************/
   void BRICK_slices(int                  nslices_d, /* # of subdomains in this dimension */
                     int                  ndot,      /* # of dots */
-                    float *              d,       /* Array of ndot coordinates in this dimension */
+                    const float *        d,       /* Array of ndot coordinates in this dimension */
                     float *              dmin,    /* Output:  Smallest value in d[] */
                     float *              dmax,    /* Output:  Largest value in d[] */
                     double *             delta,   /* Output:  dmax - dmin */
@@ -2454,9 +2443,7 @@ namespace {
     /* KDDKDD Note:  This routine could also be used by ZPINCH in the z-direction,
      * KDDKDD Note:  but I don't want to tamper with code that already works. */
 
-    int    d_slice;         /* Return value:  The slice to which the coordinate is assigned */
-    double epsilon = 5e-06; /* tolerance that allows a point to be in subdomain*/
-
+    int d_slice; /* Return value:  The slice to which the coordinate is assigned */
     if (delta > 0.) {
       d_slice = static_cast<int>(nslices_d * static_cast<double>((d - dmin)) / delta);
       if (d_slice == nslices_d) {
@@ -2465,6 +2452,7 @@ namespace {
 
       /* Move dots within epsilon of upper end of slice into next slice */
       /* This step reduces jagged edges due to roundoff in coordinate values */
+      double epsilon = 5e-06; /* tolerance that allows a point to be in subdomain*/
       if (d_slice != nslices_d - 1 && static_cast<double>(d) > (slices_d[d_slice] - epsilon)) {
         d_slice++;
       }
@@ -2479,9 +2467,9 @@ namespace {
   /*****************************************************************************/
   int BRICK_assign(Machine_Description *machine, /* Machine MESH = nx * ny * nz */
                    int                  ndot, /* Length of x, y, z, and part (== # of elements) */
-                   float *              x,    /* x-coordinates */
-                   float *              y,    /* y-coordinates */
-                   float *              z,    /* z-coordinates */
+                   const float *        x,    /* x-coordinates */
+                   const float *        y,    /* y-coordinates */
+                   const float *        z,    /* z-coordinates */
                    int *                part  /* Output:  partition assignments for each element */
   )
   {
@@ -2524,15 +2512,18 @@ namespace {
                "   {} partitions total\n",
                nx, ny, nz, nx * ny * nz);
 
-    float               xmin, xmax; /* Minimum and maximum x-coordinate values */
-    float               ymin, ymax; /* Minimum and maximum y-coordinate values */
-    float               zmin, zmax; /* Minimum and maximum z-coordinate values */
-    double              dx;         /* xmax - xmin */
-    double              dy;         /* ymax - ymin */
-    double              dz;         /* zmax - zmin */
-    std::vector<double> slices_x;   /* max x value in each slice. */
-    std::vector<double> slices_y;   /* max y value in each slice. */
-    std::vector<double> slices_z;   /* max z value in each slice. */
+    float               xmin;
+    float               xmax; /* Minimum and maximum x-coordinate values */
+    float               ymin;
+    float               ymax; /* Minimum and maximum y-coordinate values */
+    float               zmin;
+    float               zmax;     /* Minimum and maximum z-coordinate values */
+    double              dx;       /* xmax - xmin */
+    double              dy;       /* ymax - ymin */
+    double              dz;       /* zmax - zmin */
+    std::vector<double> slices_x; /* max x value in each slice. */
+    std::vector<double> slices_y; /* max y value in each slice. */
+    std::vector<double> slices_z; /* max z value in each slice. */
 
     /* Compute bounds of subdomains in each dimension */
     BRICK_slices(nx, ndot, x, &xmin, &xmax, &dx, slices_x);
@@ -2614,7 +2605,8 @@ namespace {
   }
 
   void zoltan_geom(void * /*data*/, int /*ngid_ent*/, int /*nlid_ent*/, int nobj,
-                   ZOLTAN_ID_PTR gids, ZOLTAN_ID_PTR /*lids*/, int ndim, double *geom, int *ierr)
+                   const ZOLTAN_ID_PTR gids, ZOLTAN_ID_PTR /*lids*/, int ndim, double *geom,
+                   int *ierr)
   {
     /* Return coordinates for objects.
      * gids are array indices for coordinate arrays.
@@ -2654,17 +2646,6 @@ namespace {
      * Return PARTITION_ASSIGNMENTS from Zoltan_LB_Partition; they should
      * match what is needed in part array above.
      */
-    struct Zoltan_Struct *zz;
-    int                   zngid_ent, znlid_ent; /* Useful output from Zoltan_LB_Partition */
-    int                   znobj;
-    ZOLTAN_ID_PTR         zgids, zlids;             /* Useful output from Zoltan_LB_Partition */
-    int *                 zprocs, *zparts;          /* Useful output from Zoltan_LB_Partition */
-    ZOLTAN_ID_PTR         dummy1, dummy2;           /* Empty output from Zoltan_LB_Partition */
-    int                   dummy0, *dummy3, *dummy4; /* Empty output from Zoltan_LB_Partition */
-    int                   ierr = ZOLTAN_OK;
-    float                 ver;
-    std::string           str;
-    int                   changes;
 
     /* Copy mesh data and pointers into structure accessible from callback fns. */
     Zoltan_Data.ndot = ndot;
@@ -2674,12 +2655,13 @@ namespace {
     Zoltan_Data.z    = (ignore_z != 0 ? nullptr : z);
 
     /* Initialize Zoltan */
-    ierr = Zoltan_Initialize(argc, argv, &ver);
+    float ver;
+    int   ierr = Zoltan_Initialize(argc, argv, &ver);
     if (ierr == ZOLTAN_FATAL) {
       fmt::print(stderr, "Error returned from Zoltan_Initialize ({}:{})\n", __FILE__, __LINE__);
       exit(-1);
     }
-    zz = Zoltan_Create(MPI_COMM_WORLD);
+    struct Zoltan_Struct *zz = Zoltan_Create(MPI_COMM_WORLD);
 
     /* Register Callback functions */
     /* Using global Zoltan_Data; could register it here instead as data field. */
@@ -2709,8 +2691,10 @@ namespace {
     }
 
     /* Set parameters for Zoltan */
-    str  = fmt::format("{}", totalproc);
-    ierr = Zoltan_Set_Param(zz, "NUM_GLOBAL_PARTITIONS", str.c_str());
+    {
+      std::string str = fmt::format("{}", totalproc);
+      ierr            = Zoltan_Set_Param(zz, "NUM_GLOBAL_PARTITIONS", str.c_str());
+    }
     if (ierr == ZOLTAN_FATAL) {
       fmt::print(stderr, "Error returned from Zoltan_Set_Param ({}:{})\n", __FILE__, __LINE__);
       goto End;
@@ -2731,6 +2715,10 @@ namespace {
       goto End;
     }
     ierr = Zoltan_Set_Param(zz, "RETURN_LISTS", "PARTITION_ASSIGNMENTS");
+    if (ierr == ZOLTAN_FATAL) {
+      fmt::print(stderr, "Error returned from Zoltan_Set_Param ({}:{})\n", __FILE__, __LINE__);
+      goto End;
+    }
     if (vwgt != nullptr) {
       ierr = Zoltan_Set_Param(zz, "OBJ_WEIGHT_DIM", "1");
       if (ierr == ZOLTAN_FATAL) {
@@ -2748,6 +2736,18 @@ namespace {
 
     /* Call partitioner */
     fmt::print("Using Zoltan version {}, method {}\n", static_cast<double>(ver), method);
+    ZOLTAN_ID_PTR dummy1;
+    ZOLTAN_ID_PTR dummy2; /* Empty output from Zoltan_LB_Partition */
+    int           dummy0;
+    int *         dummy3;
+    int *         dummy4; /* Empty output from Zoltan_LB_Partition */
+    int           zngid_ent;
+    int           znlid_ent; /* Useful output from Zoltan_LB_Partition */
+    int           znobj;
+    ZOLTAN_ID_PTR zgids;
+    ZOLTAN_ID_PTR zlids;           /* Useful output from Zoltan_LB_Partition */
+    int *         zprocs, *zparts; /* Useful output from Zoltan_LB_Partition */
+    int           changes;
     ierr = Zoltan_LB_Partition(zz, &changes, &zngid_ent, &znlid_ent, &dummy0, &dummy1, &dummy2,
                                &dummy3, &dummy4, &znobj, &zgids, &zlids, &zprocs, &zparts);
     if (ierr != 0) {
@@ -2781,18 +2781,20 @@ namespace {
 
   /*****************************************************************************/
   void BALANCE_STATS(Machine_Description *machine, /* Machine MESH = nwedge * nslice  */
-                     int *                wgt,  /* element weights; can be nullptr if no weights  */
+                     const int *          wgt,  /* element weights; can be nullptr if no weights  */
                      size_t               ndot, /* Length of x, y, z, and part (== # of elements) */
                      int *                part  /* Partition assignments for each element */
   )
   {
     /* Routine to print some info about the ZPINCH, BRICK or ZOLTAN_RCB
        decompositions */
-    int              npart = machine->dim[0] * machine->dim[1] * machine->dim[2];
     std::vector<int> cntwgt;
 
-    int minwgt, maxwgt, sumwgt;
+    int minwgt = INT_MAX;
+    int maxwgt = 0;
+    int sumwgt = 0;
 
+    int              npart = machine->dim[0] * machine->dim[1] * machine->dim[2];
     std::vector<int> cnts(npart);
     if (wgt != nullptr) {
       cntwgt.resize(npart);
@@ -2804,15 +2806,9 @@ namespace {
       }
     }
 
+    size_t sum = 0;
     int    max = 0;
     int    min = ndot;
-    size_t sum = 0;
-    if (wgt != nullptr) {
-      maxwgt = 0;
-      minwgt = INT_MAX;
-      sumwgt = 0;
-    }
-
     for (int i = 0; i < npart; i++) {
       if (cnts[i] > max) {
         max = cnts[i];

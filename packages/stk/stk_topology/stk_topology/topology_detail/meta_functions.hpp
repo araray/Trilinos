@@ -35,6 +35,8 @@
 #ifndef STKTOPOLOGY_DETAIL_META_FUNCTION_HPP
 #define STKTOPOLOGY_DETAIL_META_FUNCTION_HPP
 
+#include "stk_topology/topology_decl.hpp"
+#include "stk_util/stk_config.h"
 #include <type_traits>
 
 namespace stk { namespace topology_detail {
@@ -83,15 +85,41 @@ constexpr bool defined_on_spatial_dimension_()
   return Topology::spatial_dimension_vector[SpatialDimension];
 }
 
-
 //------------------------------------------------------------------------------
-template <typename Topology, unsigned FaceOrdinal>
+
+template <typename Topology, unsigned EdgeOrdinal>
 STK_INLINE_FUNCTION
-constexpr topology::topology_t face_topology_()
+constexpr typename std::enable_if<EdgeOrdinal < Topology::num_edges, topology::topology_t>::type
+edge_topology_()
 {
-  return (FaceOrdinal < Topology::num_faces) ? Topology::face_topology_vector[FaceOrdinal] : topology::INVALID_TOPOLOGY;
+  return Topology::edge_topology_vector[EdgeOrdinal];
 }
 
+template <typename Topology, unsigned EdgeOrdinal>
+STK_INLINE_FUNCTION
+constexpr typename std::enable_if<EdgeOrdinal >= Topology::num_edges, topology::topology_t>::type
+edge_topology_()
+{
+  return topology::INVALID_TOPOLOGY;
+}
+
+//------------------------------------------------------------------------------
+
+template <typename Topology, unsigned FaceOrdinal>
+STK_INLINE_FUNCTION
+constexpr typename std::enable_if<FaceOrdinal < Topology::num_faces, topology::topology_t>::type
+face_topology_()
+{
+  return Topology::face_topology_vector[FaceOrdinal];
+}
+
+template <typename Topology, unsigned FaceOrdinal>
+STK_INLINE_FUNCTION
+constexpr typename std::enable_if<FaceOrdinal >= Topology::num_faces, topology::topology_t>::type
+face_topology_()
+{
+  return topology::INVALID_TOPOLOGY;
+}
 
 //------------------------------------------------------------------------------
 template <typename Topology, typename OrdinalOutputFunctor, unsigned EdgeOrdinal, unsigned NumNodes, unsigned CurrentNode = 0>

@@ -199,8 +199,10 @@ void test_vdp_fsa(const std::string& method_name,
       // Setup the Integrator and reset initial time step
       pl->sublist("Default Integrator")
          .sublist("Time Step Control").set("Initial Time Step", dt);
+      pl->sublist("Default Integrator")
+         .sublist("Time Step Control").remove("Time Step Control Strategy");
       RCP<Tempus::IntegratorForwardSensitivity<double> > integrator =
-        Tempus::integratorForwardSensitivity<double>(pl, model);
+        Tempus::createIntegratorForwardSensitivity<double>(pl, model);
       order = integrator->getStepper()->getOrder();
 
       // Integrate to timeMax
@@ -224,7 +226,7 @@ void test_vdp_fsa(const std::string& method_name,
       StepSize.push_back(dt);
 
       // Output finest temporal solution for plotting
-      if ((n == 0) or (n == nTimeStepSizes-1)) {
+      if ((n == 0) || (n == nTimeStepSizes-1)) {
         typedef Thyra::DefaultMultiVectorProductVector<double> DMVPV;
 
         std::string fname = "Tempus_"+stepperName+"_VanDerPol_Sens-Ref.dat";

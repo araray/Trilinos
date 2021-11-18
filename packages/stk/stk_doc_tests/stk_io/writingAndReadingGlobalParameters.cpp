@@ -37,7 +37,7 @@
 #include <unistd.h>                     // for unlink
 #include <map>                          // for _Rb_tree_const_iterator, etc
 #include <stk_io/StkMeshIoBroker.hpp>   // for StkMeshIoBroker
-#include <stk_util/unit_test_support/parameterTestUtils.hpp>
+#include "parameterTestUtils.hpp"
 #include <stk_util/util/ParameterList.hpp>  // for ParameterList, etc
 #include <string>                       // for string
 #include <utility>                      // for pair
@@ -82,9 +82,9 @@ namespace
       stk::util::ParameterMapType::const_iterator i  = params.begin();
       stk::util::ParameterMapType::const_iterator ie = params.end();
       for (; i != ie; ++i) {
-	const std::string parameterName = (*i).first;
-	stk::util::Parameter &param = params.get_param(parameterName);
-	stkIo.add_global(idx, parameterName, param.value, param.type);
+          const std::string parameterName = (*i).first;
+          stk::util::Parameter &param = params.get_param(parameterName);
+          stkIo.add_global(idx, parameterName, param);
       }
 
       stkIo.begin_output_step(idx, 0.0);/*@\label{io:global:write_begin}*/
@@ -92,7 +92,7 @@ namespace
       for (i = params.begin(); i != ie; ++i) {
 	const std::string parameterName = (*i).first;
 	stk::util::Parameter &param = params.get_param(parameterName);
-	stkIo.write_global(idx, parameterName, param.value, param.type);
+	stkIo.write_global(idx, parameterName, param);
       }
 
       stkIo.end_output_step(idx);/*@\label{io:global:write_end}*/
@@ -112,9 +112,9 @@ namespace
       stk::util::ParameterMapType::const_iterator i = params.begin();
       stk::util::ParameterMapType::const_iterator ie = params.end();
       for (; i != ie; ++i) {
-	const std::string parameterName = (*i).first;
-	stk::util::Parameter &param = params.get_param(parameterName);
-	stkIo.get_global(parameterName, param.value, param.type);
+          const std::string parameterName = (*i).first;
+          stk::util::Parameter &param = params.get_param(parameterName);
+          stkIo.get_global(parameterName, param);
       }
 
       // ============================================================

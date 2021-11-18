@@ -44,13 +44,11 @@
 #include <stk_mesh/base/BulkData.hpp>   // for BulkData, etc
 #include <stk_mesh/base/GetEntities.hpp>  // for count_entities, etc
 #include <stk_util/parallel/Parallel.hpp>  // for ParallelMachine, etc
-#include <stk_util/parallel/ParallelReduce.hpp>  // for Reduce, ReduceSum, etc
 #include <gtest/gtest.h>
 #include <string>                       // for string, basic_string, etc
 #include <vector>                       // for vector, etc
 
 #include <stk_mesh/base/MetaData.hpp>
-#include <stk_mesh/base/BulkData.hpp>   // for BulkData, etc
 #include <stk_mesh/base/FEMHelpers.hpp>   // for BulkData, etc
 #include <stk_mesh/baseImpl/MeshImplUtils.hpp>
 #include <stk_mesh/base/Entity.hpp>
@@ -930,15 +928,17 @@ void checkEntityRelations(int procId, stk::unit_test_util::BulkDataTester& stkMe
 
         entity = stkMeshBulkData.begin_elements(node9);
         ASSERT_TRUE(entity!=0) << "for proc " << procId;
-        EXPECT_EQ(*entity, element3) << "for proc " << procId;
-        entity++;
-        EXPECT_EQ(*entity, element2) << "for proc " << procId;
+        ASSERT_EQ(2u, stkMeshBulkData.num_elements(node9));
+        bool has_elem2_and_elem3 = (entity[0] == element3 && entity[1] == element2)
+                                || (entity[0] == element2 && entity[1] == element3);
+        EXPECT_TRUE(has_elem2_and_elem3) << "for proc " << procId;
 
         entity = stkMeshBulkData.begin_elements(node10);
         ASSERT_TRUE(entity!=0) << "for proc " << procId;
-        EXPECT_EQ(*entity, element3) << "for proc " << procId;
-        entity++;
-        EXPECT_EQ(*entity, element2) << "for proc " << procId;
+        ASSERT_EQ(2u, stkMeshBulkData.num_elements(node9));
+        has_elem2_and_elem3 = (entity[0] == element3 && entity[1] == element2)
+                           || (entity[0] == element2 && entity[1] == element3);
+        EXPECT_TRUE(has_elem2_and_elem3) << "for proc " << procId;
     }
 }
 

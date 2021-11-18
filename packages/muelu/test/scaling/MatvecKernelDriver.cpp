@@ -73,6 +73,7 @@
 #endif
 
 #if defined(HAVE_MUELU_CUSPARSE)
+#include "cublas_v2.h"
 #include "cusparse.h"
 #endif
 
@@ -135,7 +136,7 @@ class MagmaSparse_SpmV_Pack<double,LocalOrdinal,GlobalOrdinal,Kokkos::Compat::Ko
   typedef typename Kokkos::Compat::KokkosCudaWrapperNode Node;
   typedef Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> crs_matrix_type;
   typedef Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> vector_type;
-  typedef typename crs_matrix_type::local_matrix_type    KCRS;
+  typedef typename crs_matrix_type::local_matrix_host_type    KCRS;
   typedef typename KCRS::StaticCrsGraphType              graph_t;
   typedef typename graph_t::row_map_type::non_const_type lno_view_t;
   typedef typename graph_t::row_map_type::const_type     c_lno_view_t;
@@ -154,7 +155,7 @@ public:
                                vector_type& Y)
   {
     // data access common to other TPLs
-    const KCRS & Amat = A.getLocalMatrix();
+    const KCRS & Amat = A.getLocalMatrixHost();
     c_lno_view_t Arowptr = Amat.graph.row_map;
     c_lno_nnz_view_t Acolind = Amat.graph.entries;
     const scalar_view_t Avals = Amat.values;
@@ -267,7 +268,7 @@ class CuSparse_SpmV_Pack<double,LocalOrdinal,GlobalOrdinal,Kokkos::Compat::Kokko
   typedef typename Kokkos::Compat::KokkosCudaWrapperNode Node;
   typedef Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> crs_matrix_type;
   typedef Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> vector_type;
-  typedef typename crs_matrix_type::local_matrix_type    KCRS;
+  typedef typename crs_matrix_type::local_matrix_device_type    KCRS;
   typedef typename KCRS::StaticCrsGraphType              graph_t;
   typedef typename graph_t::row_map_type::non_const_type lno_view_t;
   typedef typename graph_t::row_map_type::const_type     c_lno_view_t;
@@ -285,7 +286,7 @@ public:
                             vector_type& Y)
   {
     // data access common to other TPLs
-    const KCRS & Amat = A.getLocalMatrix();
+    const KCRS & Amat = A.getLocalMatrixDevice();
     c_lno_view_t Arowptr = Amat.graph.row_map;
     c_lno_nnz_view_t Acolind = Amat.graph.entries;
     const scalar_view_t Avals = Amat.values;
@@ -305,25 +306,16 @@ public:
     cols   = reinterpret_cast<int*>(Acolind_cusparse.data());
     rowptr = reinterpret_cast<int*>(Arowptr_cusparse.data());
 
-    auto X_lcl = X.template getLocalView<device_type> ();
-    auto Y_lcl = Y.template getLocalView<device_type> ();
-    x = reinterpret_cast<Scalar*>(X_lcl.data());
+    auto X_lcl = X.getLocalViewDevice(Tpetra::Access::ReadOnly);
+    auto Y_lcl = Y.getLocalViewDevice(Tpetra::Access::ReadWrite);
+    x = reinterpret_cast<const Scalar*>(X_lcl.data());
     y = reinterpret_cast<Scalar*>(Y_lcl.data());
 
     /* Get handle to the CUBLAS context */
-    cublasStatus_t cublasStatus;
-    cublasStatus = cublasCreate(&cublasHandle);
-
-    //checkCudaErrors(cublasStatus);
-
+    cublasCreate(&cublasHandle);
     /* Get handle to the CUSPARSE context */
-    cusparseStatus_t cusparseStatus;
-    cusparseStatus = cusparseCreate(&cusparseHandle);
-
-    //checkCudaErrors(cusparseStatus);
-    cusparseStatus = cusparseCreateMatDescr(&descrA);
-
-    //checkCudaErrors(cusparseStatus);
+    cusparseCreate(&cusparseHandle);
+    cusparseCreateMatDescr(&descrA);
 
     cusparseSetMatType(descrA,CUSPARSE_MATRIX_TYPE_GENERAL);
     cusparseSetMatIndexBase(descrA,CUSPARSE_INDEX_BASE_ZERO);
@@ -381,7 +373,7 @@ private:
   Scalar * vals  = nullptr; // aliased
   int * cols     = nullptr; // copied
   int * rowptr   = nullptr; // copied
-  Scalar * x     = nullptr; // aliased
+  const Scalar * x     = nullptr; // aliased
   Scalar * y     = nullptr; // aliased
 
   // handles to the copied data
@@ -442,9 +434,9 @@ void MV_Tpetra(const Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> &
 template<class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
 void MV_KK(const Tpetra::CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> &A,  const Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> &x,   Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node> &y) {
   typedef typename Node::device_type device_type;
-  const auto& AK = A.getLocalMatrix();
-  auto X_lcl = x.template getLocalView<device_type> ();
-  auto Y_lcl = y.template getLocalView<device_type> ();
+  const auto& AK = A.getLocalMatrixDevice();
+  auto X_lcl = x.getLocalViewDevice (Tpetra::Access::ReadOnly);
+  auto Y_lcl = y.getLocalViewDevice (Tpetra::Access::OverwriteAll);
   KokkosSparse::spmv(KokkosSparse::NoTranspose,Teuchos::ScalarTraits<Scalar>::one(),AK,X_lcl,Teuchos::ScalarTraits<Scalar>::zero(),Y_lcl);
 }
 #endif
@@ -524,11 +516,11 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
     clp.setOption("report_error_norms", "noreport_error_norms", &report_error_norms,   "Report L2 norms for the solution");
 
     std::ostringstream galeriStream;
-    std::string rhsFile,coordFile,nullFile; //unused
+    std::string rhsFile,coordFile,coordMapFile,nullFile, materialFile; //unused
     typedef typename Teuchos::ScalarTraits<SC>::magnitudeType real_type;
     typedef Xpetra::MultiVector<real_type,LO,GO,NO> RealValuedMultiVector;
     RCP<RealValuedMultiVector> coordinates;
-    RCP<MultiVector> nullspace, x, b;
+    RCP<MultiVector> nullspace, material, x, b;
     RCP<Matrix> A;
     RCP<const Map> map;
 
@@ -543,7 +535,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
       TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"The Kokkos-Kernels matvec kernel cannot be run with more than one rank.");
 
     // Load the matrix off disk (or generate it via Galeri), assuming only one right hand side is loaded.
-    MatrixLoad<SC,LO,GO,NO>(comm, lib, binaryFormat, matrixFile, rhsFile, rowMapFile, colMapFile, domainMapFile, rangeMapFile, coordFile, nullFile, map, A, coordinates, nullspace, x, b, 1, galeriParameters, xpetraParameters, galeriStream);
+    MatrixLoad<SC,LO,GO,NO>(comm, lib, binaryFormat, matrixFile, rhsFile, rowMapFile, colMapFile, domainMapFile, rangeMapFile, coordFile, coordMapFile, nullFile, materialFile, map, A, coordinates, nullspace, material, x, b, 1, galeriParameters, xpetraParameters, galeriStream);
 
     #ifndef HAVE_MUELU_MKL
     if (do_mkl) {
@@ -670,7 +662,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
   #endif
   #if defined(HAVE_MUELU_MKL)
     // typedefs shared among other TPLs
-    typedef typename crs_matrix_type::local_matrix_type    KCRS;
+    typedef typename crs_matrix_type::local_matrix_host_type    KCRS;
     typedef typename KCRS::StaticCrsGraphType              graph_t;
     typedef typename graph_t::row_map_type::non_const_type lno_view_t;
     typedef typename graph_t::row_map_type::const_type     c_lno_view_t;
@@ -680,7 +672,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
     typedef typename Node::device_type device_type;
 
     // data access common to other TPLs
-    const KCRS & Amat = At->getLocalMatrix();
+    const KCRS & Amat = At->getLocalMatrixHost();
     c_lno_view_t Arowptr = Amat.graph.row_map;
     c_lno_nnz_view_t Acolind = Amat.graph.entries;
     const scalar_view_t Avals = Amat.values;
@@ -697,7 +689,7 @@ int main_(Teuchos::CommandLineProcessor &clp, Xpetra::UnderlyingLib& lib, int ar
     double * mkl_ydouble = nullptr;
     mkl_descr.type = SPARSE_MATRIX_TYPE_GENERAL;
 
-    if(Kokkos::Impl::is_same<Scalar,double>::value) {
+    if(std::is_same<Scalar,double>::value) {
       mkl_sparse_d_create_csr(&mkl_A,
                               SPARSE_INDEX_BASE_ZERO,
                               At->getNodeNumRows(),

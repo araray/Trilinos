@@ -48,11 +48,6 @@
 #include "stk_mesh/base/FieldBase.hpp"  // for field_data
 #include "stk_mesh/base/MetaData.hpp"   // for MetaData, put_field
 #include "stk_util/parallel/Parallel.hpp"  // for ParallelMachine
-namespace stk { namespace mesh { struct ConnectivityMap; } }
-
-
-
-
 
 namespace stk {
 namespace mesh {
@@ -76,7 +71,7 @@ HexFixture::HexFixture(   MetaData& meta
   m_bulk_p( &bulk ),
   m_meta( meta),
   m_bulk_data( bulk ),
-  m_elem_parts( ),
+  m_elem_parts( 1, &m_meta.declare_part_with_topology("hex_part", stk::topology::HEX_8) ),
   m_node_parts( 1, &m_meta.declare_part_with_topology("node_part", stk::topology::NODE) ),
   m_coord_field( m_meta.declare_field<CoordFieldType>(stk::topology::NODE_RANK, "Coordinates") ),
   owns_mesh(false)
@@ -93,7 +88,6 @@ HexFixture::HexFixture(   MetaData& meta
               , size_t nx
               , size_t ny
               , size_t nz
-              , ConnectivityMap const* /*connectivity_map*/
             )
   : m_spatial_dimension(3),
     m_nx(nx),
@@ -129,7 +123,6 @@ HexFixture::HexFixture(   MetaData& meta
               , size_t ny
               , size_t nz
               , const std::string& coordinate_name
-              , ConnectivityMap const* /*connectivity_map*/
             )
   : m_spatial_dimension(3),
     m_nx(nx),
@@ -163,7 +156,6 @@ HexFixture::HexFixture(   MetaData& meta
               , size_t ny
               , size_t nz
               , bool auraOn
-              , ConnectivityMap const* /*connectivity_map*/
             )
   : m_spatial_dimension(3),
     m_nx(nx),

@@ -69,7 +69,7 @@ namespace MueLu {
   void AggregationStructuredAlgorithm_kokkos<LocalOrdinal, GlobalOrdinal, Node>::
   BuildAggregates(const Teuchos::ParameterList& /* params */, const LWGraph_kokkos& graph,
                   Aggregates_kokkos& aggregates,
-                  Kokkos::View<unsigned*, memory_space>& aggStat,
+                  Kokkos::View<unsigned*, device_type>& aggStat,
                   LO& numNonAggregatedNodes) const {
     Monitor m(*this, "BuildAggregates");
 
@@ -84,8 +84,8 @@ namespace MueLu {
     RCP<IndexManager_kokkos> geoData = aggregates.GetIndexManager();
     const LO numLocalFineNodes= geoData->getNumLocalFineNodes();
     const LO numCoarseNodes   = geoData->getNumCoarseNodes();
-    LOVectorView vertex2AggId = aggregates.GetVertex2AggId()->template getLocalView<memory_space>();
-    LOVectorView procWinner   = aggregates.GetProcWinner()  ->template getLocalView<memory_space>();
+    LOVectorView vertex2AggId = aggregates.GetVertex2AggId()->getDeviceLocalView(Xpetra::Access::ReadWrite);
+    LOVectorView procWinner   = aggregates.GetProcWinner()  ->getDeviceLocalView(Xpetra::Access::ReadWrite);
 
     *out << "Loop over fine nodes and assign them to an aggregate and a rank" << std::endl;
     LO numAggregatedNodes;
@@ -119,8 +119,6 @@ namespace MueLu {
     } else {
       out = Teuchos::getFancyOStream(rcp(new Teuchos::oblackholestream()));
     }
-
-    typedef typename CrsGraph::local_graph_type local_graph_type;
 
     // Compute the number of coarse points needed to interpolate quantities to a fine point
     int numInterpolationPoints = 0;
@@ -207,7 +205,7 @@ namespace MueLu {
   AggregationStructuredAlgorithm_kokkos<LocalOrdinal, GlobalOrdinal, Node>::
   fillAggregatesFunctor::fillAggregatesFunctor(RCP<IndexManager_kokkos> geoData,
                                                const int myRank,
-                                               Kokkos::View<unsigned*, memory_space> aggStat,
+                                               Kokkos::View<unsigned*, device_type> aggStat,
                                                LOVectorView vertex2AggID,
                                                LOVectorView procWinner) :
     geoData_(*geoData), myRank_(myRank), aggStat_(aggStat),

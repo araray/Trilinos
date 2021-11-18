@@ -71,6 +71,7 @@ MACRO(TRILINOS_SYSTEM_SPECIFIC_CTEST_DRIVER)
     SET(BUILD_DIR_NAME ${COMM_TYPE}-${BUILD_TYPE}_${BUILD_NAME_DETAILS})
   ENDIF()
 
+  SET(Trilinos_REPOSITORY_LOCATION_NIGHTLY_DEFAULT "git@github.com:muelu/Trilinos.git")
 
   SET(CTEST_DASHBOARD_ROOT  "${TRILINOS_CMAKE_DIR}/../../${BUILD_DIR_NAME}" )
   SET(CTEST_NOTES_FILES     "${CTEST_SCRIPT_DIRECTORY}/${CTEST_SCRIPT_NAME}" )
@@ -117,8 +118,8 @@ MACRO(TRILINOS_SYSTEM_SPECIFIC_CTEST_DRIVER)
         ${EXTRA_SYSTEM_CONFIGURE_OPTIONS}
         "-DTPL_ENABLE_MPI=ON"
             "-DMPI_BASE_DIR:PATH=$ENV{SEMS_OPENMPI_ROOT}"
-        "-DTPL_BLAS_LIBRARIES=/usr/lib64/libblas.so.3.2.1"
-        "-DTPL_LAPACK_LIBRARIES=/usr/lib64/liblapack.so.3.2.1"
+        "-DTPL_BLAS_LIBRARIES=/usr/lib64/libblas.so"
+        "-DTPL_LAPACK_LIBRARIES=/usr/lib64/liblapack.so"
        )
 
     #NUMA memory binding doesn't work on rocketman currently; TODO: get libnumactl and enable binding again

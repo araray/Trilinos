@@ -1,35 +1,9 @@
 /*
- * Copyright(C) 2011-2017 National Technology & Engineering Solutions
+ * Copyright(C) 1999-2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS).  Under the terms of Contract DE-NA0003525 with
  * NTESS, the U.S. Government retains certain rights in this software.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * * Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * * Neither the name of NTESS nor the names of its
- *   contributors may be used to endorse or promote products derived
- *   from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * See packages/seacas/LICENSE for details
  */
 /* exodus II to matlab m file, copy of
    exo2mat.
@@ -60,12 +34,17 @@
 
 #include "add_to_log.h" // for add_to_log
 #include "exodusII.h"   // for ex_get_variable_param, etc
+#include "fmt/chrono.h"
+#include "fmt/ostream.h"
 #include "fmt/printf.h"
 #include "matio.h" // for Mat_VarCreate, Mat_VarFree, etc
+#include "time_stamp.h"
+
 #include <cassert> // for assert
 #include <cstddef> // for size_t
 #include <cstdio>  // for fprintf, printf, sprintf, etc
 #include <cstdlib> // for free, calloc, exit
+#include <ctime>
 #if MATIO_VERSION < 151
 #error "MatIO Version 1.5.1 or greater is required"
 #endif
@@ -79,30 +58,9 @@ static bool   debug    = false;
 
 static const char *qainfo[] = {
     "exo2mat",
-    "2019/05/18",
-    "4.07",
+    "2021/09/27",
+    "4.08",
 };
-
-std::string time_stamp(const std::string &format)
-{
-  if (format == "") {
-    return std::string("");
-  }
-
-  const int   length = 256;
-  static char time_string[length];
-
-  time_t     calendar_time = time(nullptr);
-  struct tm *local_time    = localtime(&calendar_time);
-
-  int error = strftime(time_string, length, format.c_str(), local_time);
-  if (error != 0) {
-    time_string[length - 1] = '\0';
-    return std::string(time_string);
-  }
-
-  return std::string("[ERROR]");
-}
 
 void logger(const char *message)
 {
@@ -253,13 +211,13 @@ int matPutInt(const std::string &name, int n1, int n2, int *pd)
 }
 
 /* wrappers for the output routine types */
-void PutStr(const std::string &name, const char *str)
+void PutStr(const std::string &name, const std::string &str)
 {
   if (textfile != 0) {
-    mPutStr(name, str);
+    mPutStr(name, str.c_str());
   }
   else {
-    matPutStr(name, const_cast<char *>(str));
+    matPutStr(name, const_cast<char *>(str.c_str()));
   }
 }
 
@@ -317,7 +275,7 @@ void delete_exodus_names(char **names, int count)
   delete[] names;
 }
 
-void get_put_user_names(int exo_file, ex_entity_type type, int num_blocks, const char *mname)
+void get_put_user_names(int exo_file, ex_entity_type type, int num_blocks, const std::string &mname)
 {
   int max_name_length = ex_inquire_int(exo_file, EX_INQ_DB_MAX_USED_NAME_LENGTH);
   max_name_length     = max_name_length < 32 ? 32 : max_name_length;
@@ -330,11 +288,11 @@ void get_put_user_names(int exo_file, ex_entity_type type, int num_blocks, const
     user_names += names[j];
     user_names += "\n";
   }
-  PutStr(mname, user_names.c_str());
+  PutStr(mname, user_names);
   delete_exodus_names(names, num_blocks);
 }
 
-void get_put_names(int exo_file, ex_entity_type type, int num_vars, const char *mname)
+void get_put_names(int exo_file, ex_entity_type type, int num_vars, const std::string &mname)
 {
   int max_name_length = ex_inquire_int(exo_file, EX_INQ_DB_MAX_USED_NAME_LENGTH);
   max_name_length     = max_name_length < 32 ? 32 : max_name_length;
@@ -353,7 +311,7 @@ void get_put_names(int exo_file, ex_entity_type type, int num_vars, const char *
   if (debug) {
     logger("\tWriting variable names");
   }
-  PutStr(mname, mat.c_str());
+  PutStr(mname, mat);
 
   delete_exodus_names(names, num_vars);
 }
@@ -445,7 +403,7 @@ void get_put_vars(int exo_file, ex_entity_type type, int num_blocks, int num_var
   }
   else {
     std::string var_name = prefix + "names";
-    get_put_names(exo_file, type, num_vars, var_name.c_str());
+    get_put_names(exo_file, type, num_vars, var_name);
 
     std::vector<double> scr(num_entity * num_time_steps);
 
@@ -590,7 +548,7 @@ std::vector<int> handle_element_blocks(int exo_file, int num_blocks, bool use_ce
           attr_names += "\n";
         }
         str = fmt::sprintf("blk%02d_attrnames", i + 1);
-        PutStr(str, attr_names.c_str());
+        PutStr(str, attr_names);
         delete_exodus_names(names, num_attr);
 
         for (int j = 0; j < num_attr; j++) {
@@ -602,7 +560,7 @@ std::vector<int> handle_element_blocks(int exo_file, int num_blocks, bool use_ce
     }
 
     get_put_user_names(exo_file, EX_ELEM_BLOCK, num_blocks, "blkusernames");
-    PutStr("blknames", types.c_str());
+    PutStr("blknames", types);
   }
   return num_elem_in_block;
 }
@@ -621,7 +579,8 @@ std::vector<int> handle_node_sets(int exo_file, int num_sets, bool use_cell_arra
     size_t           tot_dfac  = 0;
     std::vector<int> num_df(num_sets);
     for (int i = 0; i < num_sets; i++) {
-      int n1, n2;
+      int n1;
+      int n2;
       ex_get_set_param(exo_file, EX_NODE_SET, ids[i], &n1, &n2);
       num_nodes[i] = n1;
       num_df[i]    = n2;
@@ -788,7 +747,8 @@ std::vector<int> handle_side_sets(int exo_file, int num_sets, bool use_cell_arra
                                             MAT_F_DONT_COPY_DATA);
         Mat_VarSetCell(cell_array, index, cell_element[index]);
 
-        int n1, n2;
+        int n1;
+        int n2;
         ex_get_set_param(exo_file, EX_SIDE_SET, ids[i], &n1, &n2);
         num_sideset_sides[i] = n1;
         num_sideset_dfac[i]  = n2;
@@ -862,7 +822,8 @@ std::vector<int> handle_side_sets(int exo_file, int num_sets, bool use_cell_arra
       std::vector<int>    side_nodes;
       std::vector<double> ssdfac;
       for (int i = 0; i < num_sets; i++) {
-        int n1, n2;
+        int n1;
+        int n2;
         ex_get_set_param(exo_file, EX_SIDE_SET, ids[i], &n1, &n2);
         num_sideset_sides[i] = n1;
         num_sideset_dfac[i]  = n2;
@@ -954,8 +915,18 @@ int main(int argc, char *argv[])
 
   const char *ext = EXT;
 
-  int err, num_axes, num_blocks, num_side_sets, num_node_sets, num_time_steps, num_info_lines,
-      num_global_vars, num_nodal_vars, num_element_vars, num_nodeset_vars, num_sideset_vars;
+  int err;
+  int num_axes;
+  int num_blocks;
+  int num_side_sets;
+  int num_node_sets;
+  int num_time_steps;
+  int num_info_lines;
+  int num_global_vars;
+  int num_nodal_vars;
+  int num_element_vars;
+  int num_nodeset_vars;
+  int num_sideset_vars;
 
   size_t num_nodes    = 0;
   size_t num_elements = 0;
@@ -1136,7 +1107,7 @@ int main(int argc, char *argv[])
         ostr += "\n";
       }
     }
-    PutStr("info", ostr.c_str());
+    PutStr("info", ostr);
     ostr = "";
     for (int i = 0; i < num_info_lines; i++) {
       if (std::strlen(str2[i]) > 0 && strncmp(str2[i], "cavi", 4) == 0) {
@@ -1144,7 +1115,7 @@ int main(int argc, char *argv[])
         ostr += "\n";
       }
     }
-    PutStr("cvxp", ostr.c_str());
+    PutStr("cvxp", ostr);
   }
 
   /* nodal coordinates */

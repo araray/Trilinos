@@ -54,7 +54,7 @@
 #include "Xpetra_ConfigDefs.hpp"
 #include "Xpetra_Exceptions.hpp"
 
-#include "Xpetra_MultiVector.hpp"
+#include "Xpetra_MultiVector_decl.hpp"
 #include "Xpetra_CrsGraph.hpp"
 #include "Xpetra_CrsMatrix.hpp"
 #include "Xpetra_CrsMatrixFactory.hpp"
@@ -102,21 +102,22 @@ public:
   //! @name Constructor/Destructor Methods
   //@{
 
+  //! Constructor for a dynamic profile matrix (Epetra only)
+  CrsMatrixWrap (const RCP<const Map>& rowMap);
+
   //! Constructor specifying fixed number of entries for each row.
   CrsMatrixWrap (const RCP<const Map>& rowMap,
-                 size_t maxNumEntriesPerRow,
-                 Xpetra::ProfileType pftype = Xpetra::DynamicProfile);
+                 size_t maxNumEntriesPerRow);
 
   //! Constructor specifying (possibly different) number of entries in each row.
   CrsMatrixWrap (const RCP<const Map>& rowMap,
-                 const ArrayRCP<const size_t>& NumEntriesPerRowToAlloc,
-                 ProfileType pftype = Xpetra::DynamicProfile);
+                 const ArrayRCP<const size_t>& NumEntriesPerRowToAlloc);
 
   //! Constructor specifying fixed number of entries for each row and column map
-  CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, size_t maxNumEntriesPerRow, Xpetra::ProfileType pftype = Xpetra::DynamicProfile);
+  CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, size_t maxNumEntriesPerRow);
 
   //! Constructor specifying fixed number of entries for each row and column map
-  CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, const ArrayRCP<const size_t> &NumEntriesPerRowToAlloc, Xpetra::ProfileType pftype = Xpetra::DynamicProfile);
+  CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, const ArrayRCP<const size_t> &NumEntriesPerRowToAlloc);
 
 #ifdef HAVE_XPETRA_KOKKOS_REFACTOR
 #ifdef HAVE_XPETRA_TPETRA
@@ -388,6 +389,16 @@ public:
                    Scalar alpha = ScalarTraits<Scalar>::one(),
                    Scalar beta = ScalarTraits<Scalar>::zero()) const;
 
+  //! Computes the matrix-multivector multiplication for region layout matrices
+  virtual void apply(const MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &X,
+                    MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &Y,
+                    Teuchos::ETransp mode,
+                    Scalar alpha,
+                    Scalar beta,
+                    bool sumInterfaceValues,
+                    const RCP<Import<LocalOrdinal, GlobalOrdinal, Node> >& regionInterfaceImporter,
+                    const Teuchos::ArrayRCP<LocalOrdinal>& regionInterfaceLIDs) const;
+
   //! \brief Returns the Map associated with the domain of this operator.
   //! This will be <tt>null</tt> until fillComplete() is called.
   RCP<const Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> > getDomainMap() const;
@@ -450,8 +461,12 @@ public:
 
 #ifdef HAVE_XPETRA_KOKKOS_REFACTOR
 #ifdef HAVE_XPETRA_TPETRA
-  /// \brief Access the underlying local Kokkos::CrsMatrix object
-  local_matrix_type getLocalMatrix () const;
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
+  virtual local_matrix_type getLocalMatrix () const;
+#endif
+
+  virtual local_matrix_type getLocalMatrixDevice () const;
+  virtual typename local_matrix_type::HostMirror getLocalMatrixHost () const;
 #else
 #ifdef __GNUC__
 #warning "Xpetra Kokkos interface for CrsMatrix is enabled (HAVE_XPETRA_KOKKOS_REFACTOR) but Tpetra is disabled. The Kokkos interface needs Tpetra to be enabled, too."
@@ -476,11 +491,6 @@ public:
   
 
   //@}
-#ifdef XPETRA_ENABLE_DEPRECATED_CODE
-  template<class Node2>
-  RCP<Xpetra::Matrix<Scalar,LocalOrdinal,GlobalOrdinal,Node2> > XPETRA_DEPRECATED clone(const RCP<Node2> &node2) const;
-#endif
-
 private:
 
   // Default view is created after fillComplete()

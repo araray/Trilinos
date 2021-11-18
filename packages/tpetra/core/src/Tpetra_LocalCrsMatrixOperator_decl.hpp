@@ -64,8 +64,6 @@ namespace Tpetra {
       typename LocalOperator<MultiVectorScalar, Device>::scalar_type;
     using matrix_scalar_type =
       typename LocalOperator<MatrixScalar, Device>::scalar_type;
-
-  private:
     using array_layout =
       typename LocalOperator<MultiVectorScalar, Device>::array_layout;
     using device_type =
@@ -73,19 +71,28 @@ namespace Tpetra {
     using local_ordinal_type =
       ::Tpetra::Details::DefaultTypes::local_ordinal_type;
     using execution_space = typename Device::execution_space;
-    using local_graph_type =
-      Kokkos::StaticCrsGraph<local_ordinal_type,
-                             array_layout,
-                             execution_space>;
   public:
-    using local_matrix_type =
+    using local_matrix_device_type =
       KokkosSparse::CrsMatrix<matrix_scalar_type,
                               local_ordinal_type,
-                              execution_space,
+                              device_type,
                               void,
-                              typename local_graph_type::size_type>;
+                              size_t>;
+  private:
+    //The type of a matrix with offset=ordinal, but otherwise the same as local_matrix_device_type
+    using local_cusparse_matrix_type =
+      KokkosSparse::CrsMatrix<matrix_scalar_type,
+                              local_ordinal_type,
+                              device_type,
+                              void,
+                              local_ordinal_type>;
+    using local_graph_device_type = typename local_matrix_device_type::StaticCrsGraphType;
 
-    LocalCrsMatrixOperator (const std::shared_ptr<local_matrix_type>& A);
+  public:
+    using ordinal_view_type = typename local_graph_device_type::entries_type::non_const_type;
+
+    LocalCrsMatrixOperator (const std::shared_ptr<local_matrix_device_type>& A);
+    LocalCrsMatrixOperator (const std::shared_ptr<local_matrix_device_type>& A, const ordinal_view_type& A_ordinal_rowptrs);
     ~LocalCrsMatrixOperator () override = default;
 
     void
@@ -97,12 +104,24 @@ namespace Tpetra {
            const mv_scalar_type alpha,
            const mv_scalar_type beta) const override;
 
+    void
+    applyImbalancedRows (
+           Kokkos::View<const mv_scalar_type**, array_layout,
+             device_type, Kokkos::MemoryTraits<Kokkos::Unmanaged> > X,
+           Kokkos::View<mv_scalar_type**, array_layout,
+             device_type, Kokkos::MemoryTraits<Kokkos::Unmanaged> > Y,
+           const Teuchos::ETransp mode,
+           const mv_scalar_type alpha,
+           const mv_scalar_type beta) const;
+
     bool hasTransposeApply () const override;
 
-    const local_matrix_type& getLocalMatrix () const;
+    const local_matrix_device_type& getLocalMatrixDevice () const;
 
   private:
-    std::shared_ptr<local_matrix_type> A_;
+    std::shared_ptr<local_matrix_device_type> A_;
+    local_cusparse_matrix_type A_cusparse;
+    const bool have_A_cusparse;
   };
 
 } // namespace Tpetra

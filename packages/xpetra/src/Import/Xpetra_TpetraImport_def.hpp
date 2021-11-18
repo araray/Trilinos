@@ -74,6 +74,15 @@ TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::~TpetraImport()
 {  }
 
 template<class LocalOrdinal, class GlobalOrdinal, class Node>
+Teuchos::RCP<const Import<LocalOrdinal, GlobalOrdinal, Node> >   
+TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::createRemoteOnlyImport (const Teuchos::RCP<const map_type>& remoteTarget) const {
+  Teuchos::RCP<const Tpetra::Import< LocalOrdinal, GlobalOrdinal, Node> > newImport = import_->createRemoteOnlyImport(toTpetra(remoteTarget));
+  return Teuchos::rcp(new TpetraImport<LocalOrdinal,GlobalOrdinal,Node>(newImport));
+}
+
+
+
+template<class LocalOrdinal, class GlobalOrdinal, class Node>
 size_t TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::getNumSameIDs() const
 { XPETRA_MONITOR("TpetraImport::getNumSameIDs"); return import_->getNumSameIDs(); }
 
@@ -94,8 +103,13 @@ size_t TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::getNumRemoteIDs() const
 { XPETRA_MONITOR("TpetraImport::getNumRemoteIDs"); return import_->getNumRemoteIDs(); }
 
 template<class LocalOrdinal, class GlobalOrdinal, class Node>
-void TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::setDistributorParameters(const Teuchos::RCP<Teuchos::ParameterList> params) const
-{ XPETRA_MONITOR("TpetraImport::setDistributorParameters"); import_->getDistributor().setParameterList(params); }
+void TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::setDistributorParameters(const Teuchos::RCP<Teuchos::ParameterList> params) const{
+  XPETRA_MONITOR("TpetraImport::setDistributorParameters");
+  import_->getDistributor().setParameterList(params);
+  auto revDistor = import_->getDistributor().getReverse(false);
+  if (!revDistor.is_null())
+    revDistor->setParameterList(params);
+}
 
 template<class LocalOrdinal, class GlobalOrdinal, class Node>
 ArrayView< const LocalOrdinal > TpetraImport<LocalOrdinal,GlobalOrdinal,Node>::getRemoteLIDs() const
@@ -172,6 +186,13 @@ RCP< const Tpetra::Import< LocalOrdinal, GlobalOrdinal, Node > > TpetraImport<Lo
 
     //! Destructor.
     ~TpetraImport() {  }
+
+
+    //! Special "constructor"
+    Teuchos::RCP<const Import<LocalOrdinal, GlobalOrdinal, Node> >
+    createRemoteOnlyImport (const Teuchos::RCP<const map_type>& remoteTarget) const {
+      return Teuchos::null;
+    }
 
     //@}
 
@@ -275,6 +296,12 @@ RCP< const Tpetra::Import< LocalOrdinal, GlobalOrdinal, Node > > TpetraImport<Lo
 
     //! Destructor.
     ~TpetraImport() {  }
+    
+    //! Special "constructor"
+    Teuchos::RCP<const Import<LocalOrdinal, GlobalOrdinal, Node> >
+    createRemoteOnlyImport (const Teuchos::RCP<const map_type>& remoteTarget) const {
+      return Teuchos::null;
+    }
 
     //@}
 

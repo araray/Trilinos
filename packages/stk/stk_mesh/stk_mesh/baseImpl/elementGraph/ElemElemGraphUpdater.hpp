@@ -43,7 +43,6 @@
 #include <stk_util/parallel/ParallelReduce.hpp>
 #include <vector>                       // for allocator, vector
 #include "stk_mesh/base/Bucket.hpp"     // for Bucket
-#include "stk_mesh/base/BulkDataInlinedMethods.hpp"
 #include "stk_mesh/base/Entity.hpp"     // for Entity
 #include "stk_mesh/base/Selector.hpp"   // for Selector
 #include "stk_mesh/base/Types.hpp"      // for EntityId, EntityVector
@@ -96,7 +95,11 @@ public:
     virtual void fill_values_to_reduce(std::vector<size_t> &valuesToReduce)
     {
         valuesToReduce.clear();
-        valuesToReduce.push_back(elementsAdded.size());
+        unsigned value = any_added_elements_are_owned(elementsAdded) ? 1 : 0;
+        if (value == 0) {
+          elementsAdded.clear();
+        }
+        valuesToReduce.push_back(value);
     }
 
     virtual void set_reduced_values(const std::vector<size_t> &reducedValues)
@@ -115,6 +118,16 @@ public:
         changeEntityOwnerInProgress = false;
     }
 private:
+    bool any_added_elements_are_owned(stk::mesh::EntityVector& elems)
+    {
+      for(Entity& elem : elems) {
+        if (bulkData.is_valid(elem) && bulkData.bucket(elem).owned()) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     stk::mesh::BulkData &bulkData;
     stk::mesh::ElemElemGraph &elemGraph;
     stk::mesh::impl::ParallelGraphInfo newParallelGraphEntries;

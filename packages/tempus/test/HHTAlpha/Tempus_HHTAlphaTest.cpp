@@ -21,6 +21,7 @@
 #include "Thyra_LinearOpWithSolveFactoryHelpers.hpp"
 #include "Thyra_DetachedVectorView.hpp"
 #include "Thyra_DetachedMultiVectorView.hpp"
+#include "NOX_Thyra.H"
 
 
 #ifdef Tempus_ENABLE_MPI
@@ -47,15 +48,7 @@ using Tempus::IntegratorBasic;
 using Tempus::SolutionHistory;
 using Tempus::SolutionState;
 
-// Comment out any of the following tests to exclude from build/run.
-#define TEST_BALL_PARABOLIC
-#define TEST_CONSTRUCTING_FROM_DEFAULTS
-#define TEST_SINCOS_SECONDORDER
-#define TEST_SINCOS_FIRSTORDER
-#define TEST_SINCOS_CD
 
-
-#ifdef TEST_BALL_PARABOLIC
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(HHTAlpha, BallParabolic)
@@ -74,7 +67,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, BallParabolic)
   RCP<ParameterList> pl = sublist(pList, "Tempus", true);
 
   RCP<Tempus::IntegratorBasic<double> > integrator =
-    Tempus::integratorBasic<double>(pl, model);
+    Tempus::createIntegratorBasic<double>(pl, model);
 
   // Integrate to timeMax
   bool integratorStatus = integrator->advanceTime();
@@ -119,10 +112,8 @@ TEUCHOS_UNIT_TEST(HHTAlpha, BallParabolic)
     "\n Test failed!  Max error = " << err << " > tolerance = " << tolerance << "\n!");
 
 }
-#endif // TEST_BALL_PARABOLIC
 
 
-#ifdef TEST_CONSTRUCTING_FROM_DEFAULTS
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(HHTAlpha, ConstructingFromDefaults)
@@ -141,14 +132,12 @@ TEUCHOS_UNIT_TEST(HHTAlpha, ConstructingFromDefaults)
   // Setup Stepper for field solve ----------------------------
   auto stepper = rcp(new Tempus::StepperHHTAlpha<double>());
   stepper->setModel(model);
-  stepper->setSolver();
   stepper->initialize();
 
   // Setup TimeStepControl ------------------------------------
   auto timeStepControl = rcp(new Tempus::TimeStepControl<double>());
   ParameterList tscPL = pl->sublist("Default Integrator")
                            .sublist("Time Step Control");
-  timeStepControl->setStepType (tscPL.get<std::string>("Integrator Step Type"));
   timeStepControl->setInitIndex(tscPL.get<int>   ("Initial Time Index"));
   timeStepControl->setInitTime (tscPL.get<double>("Initial Time"));
   timeStepControl->setFinalTime(tscPL.get<double>("Final Time"));
@@ -156,12 +145,11 @@ TEUCHOS_UNIT_TEST(HHTAlpha, ConstructingFromDefaults)
   timeStepControl->initialize();
 
   // Setup initial condition SolutionState --------------------
-  Thyra::ModelEvaluatorBase::InArgs<double> inArgsIC =
-    stepper->getModel()->getNominalValues();
+  auto inArgsIC = model->getNominalValues();
   auto icX = rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x());
   auto icXDot = rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x_dot());
   auto icXDotDot = rcp_const_cast<Thyra::VectorBase<double> > (inArgsIC.get_x_dot_dot());
-  auto icState = rcp(new Tempus::SolutionState<double>(icX, icXDot, icXDotDot));
+  auto icState = Tempus::createSolutionStateX(icX, icXDot, icXDotDot);
   icState->setTime    (timeStepControl->getInitTime());
   icState->setIndex   (timeStepControl->getInitIndex());
   icState->setTimeStep(0.0);
@@ -177,8 +165,8 @@ TEUCHOS_UNIT_TEST(HHTAlpha, ConstructingFromDefaults)
 
   // Setup Integrator -----------------------------------------
   RCP<Tempus::IntegratorBasic<double> > integrator =
-    Tempus::integratorBasic<double>();
-  integrator->setStepperWStepper(stepper);
+    Tempus::createIntegratorBasic<double>();
+  integrator->setStepper(stepper);
   integrator->setTimeStepControl(timeStepControl);
   integrator->setSolutionHistory(solutionHistory);
   //integrator->setObserver(...);
@@ -214,10 +202,8 @@ TEUCHOS_UNIT_TEST(HHTAlpha, ConstructingFromDefaults)
   std::cout << "  =========================" << std::endl;
   TEST_FLOATING_EQUALITY(get_ele(*(x), 0), 0.144918, 1.0e-4 );
 }
-#endif // TEST_CONSTRUCTING_FROM_DEFAULTS
 
 
-#ifdef TEST_SINCOS_SECONDORDER
 // ************************************************************
 TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
 {
@@ -227,7 +213,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
   std::vector<double> StepSize;
   std::vector<double> xErrorNorm;
   std::vector<double> xDotErrorNorm;
-  const int nTimeStepSizes = 8;
+  const int nTimeStepSizes = 7;
   double time = 0.0;
 
   // Read params from .xml file
@@ -259,7 +245,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
               << nTimeStepSizes-1 << "), dt = " << dt << "\n";
     pl->sublist("Default Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Integrate to timeMax
     bool integratorStatus = integrator->advanceTime();
@@ -285,8 +271,10 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
       auto solnHistExact = rcp(new Tempus::SolutionHistory<double>());
       for (int i=0; i<solutionHistory->getNumStates(); i++) {
         double time_i = (*solutionHistory)[i]->getTime();
-        auto state = rcp(new Tempus::SolutionState<double>(
-            model->getExactSolution(time_i).get_x(),
+        auto state = Tempus::createSolutionStateX(
+          rcp_const_cast<Thyra::VectorBase<double> > (
+            model->getExactSolution(time_i).get_x()),
+          rcp_const_cast<Thyra::VectorBase<double> > (
             model->getExactSolution(time_i).get_x_dot()));
         state->setTime((*solutionHistory)[i]->getTime());
         solnHistExact->addState(state);
@@ -329,7 +317,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
     if (n == nTimeStepSizes-1) {  // Add exact solution last in vector.
       StepSize.push_back(0.0);
@@ -358,10 +346,8 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_SecondOrder)
   TEST_FLOATING_EQUALITY( xDotSlope,             order, 0.01   );
   TEST_FLOATING_EQUALITY( xDotErrorNorm[0],   0.104392, 1.0e-4 );
 }
-#endif // TEST_SINCOS_SECONDORDER
 
 
-#ifdef TEST_SINCOS_FIRSTORDER
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
@@ -372,7 +358,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
   std::vector<double> StepSize;
   std::vector<double> xErrorNorm;
   std::vector<double> xDotErrorNorm;
-  const int nTimeStepSizes = 8;
+  const int nTimeStepSizes = 7;
   double time = 0.0;
 
   // Read params from .xml file
@@ -404,7 +390,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
               << nTimeStepSizes-1 << "), dt = " << dt << "\n";
     pl->sublist("Default Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Integrate to timeMax
     bool integratorStatus = integrator->advanceTime();
@@ -430,8 +416,10 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
       auto solnHistExact = rcp(new Tempus::SolutionHistory<double>());
       for (int i=0; i<solutionHistory->getNumStates(); i++) {
         double time_i = (*solutionHistory)[i]->getTime();
-        auto state = rcp(new Tempus::SolutionState<double>(
-            model->getExactSolution(time_i).get_x(),
+        auto state = Tempus::createSolutionStateX(
+          rcp_const_cast<Thyra::VectorBase<double> > (
+            model->getExactSolution(time_i).get_x()),
+          rcp_const_cast<Thyra::VectorBase<double> > (
             model->getExactSolution(time_i).get_x_dot()));
         state->setTime((*solutionHistory)[i]->getTime());
         solnHistExact->addState(state);
@@ -474,7 +462,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
     if (n == nTimeStepSizes-1) {  // Add exact solution last in vector.
       StepSize.push_back(0.0);
@@ -492,22 +480,20 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_FirstOrder)
   double xSlope = 0.0;
   double xDotSlope = 0.0;
   RCP<Tempus::Stepper<double> > stepper = integrator->getStepper();
-  double order = stepper->getOrder();
+  //double order = stepper->getOrder();
   writeOrderError("Tempus_HHTAlpha_SinCos_FirstOrder-Error.dat",
                   stepper, StepSize,
                   solutions,    xErrorNorm,    xSlope,
                   solutionsDot, xDotErrorNorm, xDotSlope);
 
-  TEST_FLOATING_EQUALITY( xSlope,              order, 0.02   );
+  TEST_FLOATING_EQUALITY( xSlope,           0.977568, 0.02   );
   TEST_FLOATING_EQUALITY( xErrorNorm[0],    0.048932, 1.0e-4 );
-  TEST_FLOATING_EQUALITY( xDotSlope,         1.18873, 0.01   );
+  TEST_FLOATING_EQUALITY( xDotSlope,          1.2263, 0.01   );
   TEST_FLOATING_EQUALITY( xDotErrorNorm[0], 0.393504, 1.0e-4 );
 
 }
-#endif // TEST_SINCOS_FIRSTORDER
 
 
-#ifdef TEST_SINCOS_CD
 // ************************************************************
 // ************************************************************
 TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
@@ -518,7 +504,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
   std::vector<double> StepSize;
   std::vector<double> xErrorNorm;
   std::vector<double> xDotErrorNorm;
-  const int nTimeStepSizes = 8;
+  const int nTimeStepSizes = 7;
   double time = 0.0;
 
   // Read params from .xml file
@@ -550,7 +536,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
               << nTimeStepSizes-1 << "), dt = " << dt << "\n";
     pl->sublist("Default Integrator")
        .sublist("Time Step Control").set("Initial Time Step", dt);
-    integrator = Tempus::integratorBasic<double>(pl, model);
+    integrator = Tempus::createIntegratorBasic<double>(pl, model);
 
     // Integrate to timeMax
     bool integratorStatus = integrator->advanceTime();
@@ -576,8 +562,10 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
       auto solnHistExact = rcp(new Tempus::SolutionHistory<double>());
       for (int i=0; i<solutionHistory->getNumStates(); i++) {
         double time_i = (*solutionHistory)[i]->getTime();
-        auto state = rcp(new Tempus::SolutionState<double>(
-            model->getExactSolution(time_i).get_x(),
+        auto state = Tempus::createSolutionStateX(
+          rcp_const_cast<Thyra::VectorBase<double> > (
+            model->getExactSolution(time_i).get_x()),
+          rcp_const_cast<Thyra::VectorBase<double> > (
             model->getExactSolution(time_i).get_x_dot()));
         state->setTime((*solutionHistory)[i]->getTime());
         solnHistExact->addState(state);
@@ -620,7 +608,7 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
     Thyra::copy(*(integrator->getX()),solution.ptr());
     solutions.push_back(solution);
     auto solutionDot = Thyra::createMember(model->get_x_space());
-    Thyra::copy(*(integrator->getXdot()),solutionDot.ptr());
+    Thyra::copy(*(integrator->getXDot()),solutionDot.ptr());
     solutionsDot.push_back(solutionDot);
     if (n == nTimeStepSizes-1) {  // Add exact solution last in vector.
       StepSize.push_back(0.0);
@@ -649,6 +637,6 @@ TEUCHOS_UNIT_TEST(HHTAlpha, SinCos_CD)
   TEST_FLOATING_EQUALITY( xDotSlope,             order, 0.01   );
   TEST_FLOATING_EQUALITY( xDotErrorNorm[0],  0.0551522, 1.0e-4 );
 }
-#endif // TEST_SINCOS_CD
+
 
 }

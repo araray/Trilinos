@@ -65,14 +65,14 @@ namespace Intrepid2 {
       ++nthrow;                                                         \
       S ;                                                               \
     }                                                                   \
-    catch (std::exception err) {                                        \
+    catch (std::exception &err) {                                        \
       ++ncatch;                                                         \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     }
 
-    template<typename ValueType, typename DeviceSpaceType>
+    template<typename ValueType, typename DeviceType>
     int HDIV_TRI_I1_FEM_Test01(const bool verbose) {
 
       Teuchos::RCP<std::ostream> outStream;
@@ -85,7 +85,7 @@ namespace Intrepid2 {
 
       Teuchos::oblackholestream oldFormatState;
       oldFormatState.copyfmt(std::cout);
-
+      using DeviceSpaceType = typename DeviceType::execution_space;  
       typedef typename
         Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType ;
 
@@ -109,7 +109,7 @@ namespace Intrepid2 {
         << "|                                                                             |\n"
         << "===============================================================================\n";
 
-      typedef Kokkos::DynRankView<ValueType,DeviceSpaceType> DynRankView;
+      typedef Kokkos::DynRankView<ValueType,DeviceType> DynRankView;
       typedef Kokkos::DynRankView<ValueType,HostSpaceType> DynRankViewHost;
 #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
 
@@ -119,7 +119,7 @@ namespace Intrepid2 {
       // for virtual function, value and point types are declared in the class
       typedef ValueType outputValueType;
       typedef ValueType pointValueType;
-      Basis_HDIV_TRI_I1_FEM<DeviceSpaceType,outputValueType,pointValueType> triBasis;
+      Basis_HDIV_TRI_I1_FEM<DeviceType,outputValueType,pointValueType> triBasis;
       //typedef typename decltype(triBasis)::OutputViewType OutputViewType;
       //typedef typename decltype(triBasis)::PointViewType  PointViewType;
 
@@ -209,7 +209,7 @@ namespace Intrepid2 {
           *outStream << std::setw(70) << "^^^^----FAILURE!" << "\n";
           *outStream << "# of catch ("<< ncatch << ") is different from # of throw (" << nthrow << ")\n";
         }
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";
@@ -272,7 +272,7 @@ namespace Intrepid2 {
               << myTag(3) << "} ) = " << myBfOrd << "\n";
           }
         }
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << err.what() << "\n\n";
         errorFlag = -1000;
       }
@@ -289,26 +289,26 @@ namespace Intrepid2 {
       // values at vertices followed by midpoints. This is the same array format as the output from getValues.
       double basisValues[] = {
         // basis function 0 at 3 vertices followed by 3 midpoints
-        0.0,-1.0,                  1.0,-1.0,                               0.0, 0.0,
-        0.5,-1.0,                  0.5,-0.5,                               0.0,-0.5,
+        0.0,-2.0,                  2.0,-2.0,                               0.0, 0.0,
+        1.0,-2.0,                  1.0,-1.0,                               0.0,-1.0,
         // basis function 1 at 3 vertices followed by 3 midpoints
-        0.0, 0.0,                  1.0, 0.0,                0.0, 1.0,
-        0.5, 0.0,                  0.5, 0.5,                0.0, 0.5,
+        0.0, 0.0,                  2.0, 0.0,                0.0, 2.0,
+        1.0, 0.0,                  1.0, 1.0,                0.0, 1.0,
         // basis function 2 at 3 vertices followed by 3 midpoints
-        -1.0, 0.0,                 0.0, 0.0,                              -1.0, 1.0,
-        -0.5, 0.0,                -0.5, 0.5,                              -1.0, 0.5
+        -2.0, 0.0,                 0.0, 0.0,                              -2.0, 2.0,
+        -1.0, 0.0,                -1.0, 1.0,                              -2.0, 1.0
       };
 
       // DIV: each row gives the 3 correct values of the divergence of the 3 basis functions
       double basisDivs[] = {
         // 3 vertices
-        2.0,  2.0,   2.0,
-        2.0,  2.0,   2.0,
-        2.0,  2.0,   2.0,
+        4.0,  4.0,   4.0,
+        4.0,  4.0,   4.0,
+        4.0,  4.0,   4.0,
         // 3 edge centers
-        2.0,  2.0,   2.0,
-        2.0,  2.0,   2.0,
-        2.0,  2.0,   2.0,
+        4.0,  4.0,   4.0,
+        4.0,  4.0,   4.0,
+        4.0,  4.0,   4.0,
       };
 
 
@@ -325,7 +325,7 @@ namespace Intrepid2 {
         triNodesHost(4,0) =  0.5;  triNodesHost(4,1) =  0.5;
         triNodesHost(5,0) =  0.0;  triNodesHost(5,1) =  0.5;
 
-        auto triNodes = Kokkos::create_mirror_view(typename DeviceSpaceType::memory_space(), triNodesHost);
+        auto triNodes = Kokkos::create_mirror_view(typename DeviceType::memory_space(), triNodesHost);
         Kokkos::deep_copy(triNodes, triNodesHost);
         
         // Dimensions for the output arrays:
@@ -383,7 +383,7 @@ namespace Intrepid2 {
             }
           }
         }
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << err.what() << "\n\n";
         errorFlag = -1000;
       }
@@ -456,7 +456,7 @@ namespace Intrepid2 {
              }
            }
          }
-       } catch (std::logic_error err){
+       } catch (std::logic_error &err){
          *outStream << err.what() << "\n\n";
          errorFlag = -1000;
        };
@@ -483,7 +483,7 @@ namespace Intrepid2 {
           }
           errorFlag++;
         }
-      } catch (std::logic_error err){
+      } catch (std::logic_error &err){
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";

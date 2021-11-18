@@ -67,44 +67,49 @@
 #include "Xpetra_CrsMatrixWrap_decl.hpp"
 
 namespace Xpetra {
-
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap (const RCP<const Map>& rowMap,
-                 size_t maxNumEntriesPerRow,
-                 Xpetra::ProfileType pftype)
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap (const RCP<const Map>& rowMap)
     : finalDefaultView_ (false)
   {
-    matrixData_ = CrsMatrixFactory::Build (rowMap, maxNumEntriesPerRow, pftype);
+    matrixData_ = CrsMatrixFactory::Build (rowMap);
     CreateDefaultView ();
   }
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap (const RCP<const Map>& rowMap,
-                 const ArrayRCP<const size_t>& NumEntriesPerRowToAlloc,
-                 ProfileType pftype)
+                 size_t maxNumEntriesPerRow)
     : finalDefaultView_ (false)
   {
-    matrixData_ = CrsMatrixFactory::Build(rowMap, NumEntriesPerRowToAlloc, pftype);
+    matrixData_ = CrsMatrixFactory::Build (rowMap, maxNumEntriesPerRow);
     CreateDefaultView ();
   }
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, size_t maxNumEntriesPerRow, Xpetra::ProfileType pftype)
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap (const RCP<const Map>& rowMap,
+                 const ArrayRCP<const size_t>& NumEntriesPerRowToAlloc)
+    : finalDefaultView_ (false)
+  {
+    matrixData_ = CrsMatrixFactory::Build(rowMap, NumEntriesPerRowToAlloc);
+    CreateDefaultView ();
+  }
+
+  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, size_t maxNumEntriesPerRow)
     : finalDefaultView_(false)
   {
     // Set matrix data
-    matrixData_ = CrsMatrixFactory::Build(rowMap, colMap, maxNumEntriesPerRow, pftype);
+    matrixData_ = CrsMatrixFactory::Build(rowMap, colMap, maxNumEntriesPerRow);
 
     // Default view
     CreateDefaultView();
   }
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, const ArrayRCP<const size_t> &NumEntriesPerRowToAlloc, Xpetra::ProfileType pftype)
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CrsMatrixWrap(const RCP<const Map> &rowMap, const RCP<const Map>& colMap, const ArrayRCP<const size_t> &NumEntriesPerRowToAlloc)
     : finalDefaultView_(false)
   {
     // Set matrix data
-    matrixData_ = CrsMatrixFactory::Build(rowMap, colMap, NumEntriesPerRowToAlloc, pftype);
+    matrixData_ = CrsMatrixFactory::Build(rowMap, colMap, NumEntriesPerRowToAlloc);
 
     // Default view
     CreateDefaultView();
@@ -341,6 +346,19 @@ namespace Xpetra {
   }
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+  void CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::apply(const MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &X,
+                  MultiVector< Scalar, LocalOrdinal, GlobalOrdinal, Node > &Y,
+                  Teuchos::ETransp mode,
+                  Scalar alpha,
+                  Scalar beta,
+                  bool sumInterfaceValues,
+                  const RCP<Import<LocalOrdinal, GlobalOrdinal, Node> >& regionInterfaceImporter,
+                  const Teuchos::ArrayRCP<LocalOrdinal>& regionInterfaceLIDs
+  ) const{
+      matrixData_->apply(X,Y,mode,alpha,beta,sumInterfaceValues,regionInterfaceImporter,regionInterfaceLIDs);
+  }
+
+  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   RCP<const Xpetra::Map<LocalOrdinal,GlobalOrdinal,Node> > CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::getDomainMap() const {
     return matrixData_->getDomainMap();
   }
@@ -428,10 +446,22 @@ namespace Xpetra {
 
 #ifdef HAVE_XPETRA_KOKKOS_REFACTOR
 #ifdef HAVE_XPETRA_TPETRA
+#ifdef TPETRA_ENABLE_DEPRECATED_CODE
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type
   CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::getLocalMatrix () const {
-    return matrixData_->getLocalMatrix();
+    return getLocalMatrixDevice();
+  }
+#endif
+  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+  typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type::HostMirror
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::getLocalMatrixHost () const {
+    return matrixData_->getLocalMatrixHost();
+  }
+  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+  typename Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>::local_matrix_type
+  CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::getLocalMatrixDevice () const {
+    return matrixData_->getLocalMatrixDevice();
   }
 #else
 #ifdef __GNUC__
@@ -451,25 +481,7 @@ namespace Xpetra {
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   RCP<Xpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>> CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::getCrsMatrix() const {  return matrixData_; }
 
-#ifdef XPETRA_ENABLE_DEPRECATED_CODE
-  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  template <class Node2>
-  RCP<Xpetra::Matrix<Scalar,LocalOrdinal,GlobalOrdinal,Node2> > XPETRA_DEPRECATED CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::clone(const RCP<Node2> &node2) const {
-#ifdef HAVE_XPETRA_TPETRA
-    RCP<const Xpetra::TpetraCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > tMatrix =
-        Teuchos::rcp_dynamic_cast<const Xpetra::TpetraCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> >(matrixData_);
-    if (tMatrix == Teuchos::null)
-      throw Xpetra::Exceptions::RuntimeError("clone() functionality is only available for Tpetra");
-
-    return RCP<CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node2> >(new CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node2>(tMatrix->clone(node2)));
-    // TODO: inherit strided maps/views ?
-#else
-    return Teuchos::null;
-#endif
-  }
-#endif
-
-  // Default view is created after fillComplete()
+// Default view is created after fillComplete()
   // Because ColMap might not be available before fillComplete().
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   void CrsMatrixWrap<Scalar,LocalOrdinal,GlobalOrdinal,Node>::CreateDefaultView() {

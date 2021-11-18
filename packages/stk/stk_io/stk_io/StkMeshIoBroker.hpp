@@ -60,9 +60,8 @@
 #include "stk_util/util/ReportHandler.hpp"  // for ThrowAssert, etc
 namespace Ioss { class Property; }
 namespace Ioss { class Region; }
-namespace boost { class any; }
 namespace stk { namespace io { class InputFile; } }
-namespace stk { namespace io { class SidesetUpdater; } }
+namespace stk { namespace mesh { class SidesetUpdater; } }
 namespace stk { namespace mesh { class FieldBase; } }
 namespace stk { namespace mesh { class MetaData; } }
 namespace stk { namespace mesh { class Part; } }
@@ -114,9 +113,9 @@ namespace stk {
       bool property_exists(const std::string &property_name) const;
       void copy_property(const StkMeshIoBroker& src_broker, const std::string &property_name);
 
-      Teuchos::RCP<Ioss::Region> get_input_io_region();
-      Teuchos::RCP<Ioss::Region> get_output_io_region(size_t output_file_index);
-      Teuchos::RCP<Ioss::Region> get_heartbeat_io_region(size_t heartbeat_file_index);
+      Teuchos::RCP<Ioss::Region> get_input_io_region() const;
+      Teuchos::RCP<Ioss::Region> get_output_io_region(size_t output_file_index) const;
+      Teuchos::RCP<Ioss::Region> get_heartbeat_io_region(size_t heartbeat_file_index) const;
 
       void begin_define_transient_for_heartbeat(size_t heartbeat_file_index);
       void end_define_transient_for_heartbeat(size_t heartbeat_file_index);
@@ -145,7 +144,10 @@ namespace stk {
       // (typically locally owned part) used to associate entities
       // when generating the output database.
       void set_subset_selector(size_t output_file_index, Teuchos::RCP<stk::mesh::Selector> my_selector);
-      void set_subset_selector(size_t output_file_index, stk::mesh::Selector &my_selector);
+      void set_subset_selector(size_t output_file_index, const stk::mesh::Selector &my_selector);
+
+      void set_skin_mesh_selector(size_t output_file_index, Teuchos::RCP<stk::mesh::Selector> my_selector);
+      void set_skin_mesh_selector(size_t output_file_index, stk::mesh::Selector &my_selector);
 
       void set_shared_selector(size_t output_file_index, Teuchos::RCP<stk::mesh::Selector> my_selector);
       void set_shared_selector(size_t output_file_index, stk::mesh::Selector &my_selector);
@@ -157,10 +159,10 @@ namespace stk {
       void set_adaptivity_filter(size_t output_file_index, bool hasAdaptivity);
       void set_skin_mesh_flag(size_t output_file_index, bool skinMesh);
 
-      stk::mesh::Selector get_active_selector();
+      stk::mesh::Selector get_active_selector() const;
       void set_active_selector(stk::mesh::Selector my_selector);
 
-      Teuchos::RCP<stk::mesh::Selector> deprecated_selector();
+      Teuchos::RCP<stk::mesh::Selector> deprecated_selector() const;
       void deprecated_set_selector(Teuchos::RCP<stk::mesh::Selector> my_selector);
 
       // Set bulk data directly with your own bulk data. If this is
@@ -197,6 +199,11 @@ namespace stk {
       void set_auto_load_attributes(bool shouldAutoLoadAttributes)
       {
           m_autoLoadAttributes = shouldAutoLoadAttributes;
+      }
+
+      void set_auto_load_distribution_factor_per_nodeset(bool shouldAutoLoad)
+      {
+          m_autoLoadDistributionFactorPerNodeSet = shouldAutoLoad;
       }
 
       // Create the Ioss::DatabaseIO associated with the specified filename
@@ -236,7 +243,7 @@ namespace stk {
       size_t add_mesh_database(const std::string &filename,
                                const std::string &type,
                                DatabasePurpose purpose,
-                               Ioss::PropertyManager &properties);
+                               const Ioss::PropertyManager &properties);
 
       // Create Ioss::DatabaseIO associated with the specified
       // filename using the default filetype (typically "exodus"). If
@@ -318,7 +325,7 @@ namespace stk {
       // calls both of these methods.
       virtual void populate_mesh(bool delay_field_data_allocation = true);
       bool populate_mesh_elements_and_nodes(bool delay_field_data_allocation);
-      void populate_mesh_sidesets(bool i_started_modification_cycle);
+      void populate_mesh_entitysets(bool i_started_modification_cycle);
 
       // Read/generate the field-data for the mesh, including
       // coordinates, attributes and distribution factors.
@@ -326,10 +333,10 @@ namespace stk {
       // the above-declared 'populate_mesh()' method.
       void populate_field_data();
 
-      FieldNameToPartVector get_nodal_var_names();
-      FieldNameToPartVector get_elem_var_names();
-      FieldNameToPartVector get_nodeset_var_names();
-      FieldNameToPartVector get_sideset_var_names();
+      FieldNameToPartVector get_nodal_var_names() const;
+      FieldNameToPartVector get_elem_var_names() const;
+      FieldNameToPartVector get_nodeset_var_names() const;
+      FieldNameToPartVector get_sideset_var_names() const;
 
       // For all transient fields on the mesh database:
       // - declare a stk_field of the same name,
@@ -376,25 +383,30 @@ namespace stk {
 
       bool read_input_field(stk::io::MeshField &mf);
       
-      void get_global_variable_names(std::vector<std::string> &names);
-      size_t get_global_variable_length(const std::string& name);
+      void get_global_variable_names(std::vector<std::string> &names) const;
+      size_t get_global_variable_length(const std::string& name) const;
 
       bool get_global(const std::string &variableName,
-		      boost::any &value,
-		      stk::util::ParameterType::Type type,
-		      bool abort_if_not_found=true);
+              stk::util::Parameter &param,
+              bool abort_if_not_found=true) const;
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+      STK_DEPRECATED bool get_global(const std::string &variableName,
+              STK_ANY_NAMESPACE::any &value,
+              stk::util::ParameterType::Type type,
+              bool abort_if_not_found=true) const;
+#endif
       bool get_global(const std::string &variableName,
-		      int &globalVar,
-		      bool abort_if_not_found=true);
+              int &globalVar,
+              bool abort_if_not_found=true) const;
       bool get_global(const std::string &variableName,
-		      double &globalVar,
-		      bool abort_if_not_found=true);
+              double &globalVar,
+              bool abort_if_not_found=true) const;
       bool get_global(const std::string &variableName,
-		      std::vector<double> &globalVar,
-		      bool abort_if_not_found=true);
+              std::vector<double> &globalVar,
+              bool abort_if_not_found=true) const;
       bool get_global(const std::string &variableName,
-		      std::vector<int> &globalVar,
-		      bool abort_if_not_found=true);
+              std::vector<int> &globalVar,
+              bool abort_if_not_found=true) const;
       bool has_input_global(const std::string &globalVarName) const;
 
       void add_input_field(const stk::io::MeshField &mesh_field);
@@ -464,12 +476,29 @@ namespace stk {
                       const std::string &globalVarName) const;
       void add_global_ref(size_t output_file_index,
 			  const std::string &variableName,
-			  const boost::any *value,
-			  stk::util::ParameterType::Type type);
+			  const stk::util::Parameter &param);
       void add_global(size_t output_file_index,
 		      const std::string &variableName,
-		      const boost::any &value,
+		      const stk::util::Parameter &param);
+      template<typename T>
+      void add_global(size_t output_file_index,
+              const std::string& variableName,
+              const T& value,
+              stk::util::ParameterType::Type type)
+      {
+        validate_output_file_index(output_file_index);
+        m_outputFiles[output_file_index]->add_global(variableName, value, type);
+      }
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+      STK_DEPRECATED void add_global_ref(size_t output_file_index,
+			  const std::string &variableName,
+			  const STK_ANY_NAMESPACE::any *value,
+			  stk::util::ParameterType::Type type);
+      STK_DEPRECATED void add_global(size_t output_file_index,
+		      const std::string &variableName,
+		      const STK_ANY_NAMESPACE::any &value,
 		      stk::util::ParameterType::Type type);
+#endif
       void add_global(size_t output_file_index,
 		      const std::string &variableName,
 		      Ioss::Field::BasicType dataType);
@@ -489,10 +518,10 @@ namespace stk {
       // Output the data for all defined fields to the database for
       // the step added by "begin_output_step".  End step with a call
       // to "end_output_step"
-      int write_defined_output_fields(size_t output_file_index, const stk::mesh::FieldState *state = nullptr);
+      int write_defined_output_fields(size_t output_file_index, const stk::mesh::FieldState *state = nullptr) const;
       int write_defined_output_fields_for_selected_subset(size_t output_file_index,
                                                           std::vector<stk::mesh::Part*>& selectOutputElementParts,
-                                                          const stk::mesh::FieldState *state = nullptr);
+                                                          const stk::mesh::FieldState *state = nullptr) const;
 
       // Force all output databases to "flush" their data to disk (if possible)
       // Typically called by the application during a planned or unplanned
@@ -513,22 +542,39 @@ namespace stk {
       // you have global variables to output.
       int process_output_request(size_t output_file_index, double time);
 
+      template<typename T>
+      void write_global(size_t output_file_index, const std::string &globalVarName,
+                        const T &value, stk::util::ParameterType::Type type) const
+      {
+          validate_output_file_index(output_file_index);
+          stk::util::Parameter p;
+          p.value = value;
+          p.type = type;
+          m_outputFiles[output_file_index]->write_global(globalVarName, p);
+      }
+
+      void write_global(size_t output_file_index,
+                        const std::string& variableName,
+                        const stk::util::Parameter& param) const;
+
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+      STK_DEPRECATED void write_global(size_t output_file_index,
+              const std::string &variableName,
+              const STK_ANY_NAMESPACE::any &value,
+              stk::util::ParameterType::Type type) const;
+#endif
       void write_global(size_t output_file_index,
 			const std::string &variableName,
-			const boost::any &value,
-			stk::util::ParameterType::Type type);
+      double data) const;
       void write_global(size_t output_file_index,
 			const std::string &variableName,
-			double data);
+      int data) const;
       void write_global(size_t output_file_index,
 			const std::string &variableName,
-			int data);
+      std::vector<double>& data) const;
       void write_global(size_t output_file_index,
 			const std::string &variableName,
-			std::vector<double>& data);
-      void write_global(size_t output_file_index,
-			const std::string &variableName,
-			std::vector<int>& data);
+      std::vector<int>& data) const;
 
       // Add a history or heartbeat output...
       size_t add_heartbeat_output(const std::string &filename,
@@ -538,33 +584,63 @@ namespace stk {
   
       void define_heartbeat_global(size_t index,
                                    const std::string &name,
-                                   const boost::any *value,
-                                   stk::util::ParameterType::Type type,
+                                   const stk::util::Parameter &param,
                                    int copies = 1,
-                                   Ioss::Field::RoleType role = Ioss::Field::TRANSIENT);
+                                   Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
 
       void define_heartbeat_global(size_t index,
                                    const std::string &globalVarName,
-                                   const boost::any *value,
+                                   const stk::util::Parameter &param,
                                    const std::string &storage,
                                    Ioss::Field::BasicType dataType,
                                    int copies = 1,
-                                   Ioss::Field::RoleType role = Ioss::Field::TRANSIENT);
+                                   Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
 
       void add_heartbeat_global(size_t index,
                                 const std::string &name,
-                                const boost::any *value,
-                                stk::util::ParameterType::Type type,
+                                const stk::util::Parameter &param,
                                 int copies = 1,
-                                Ioss::Field::RoleType role = Ioss::Field::TRANSIENT);
+                                Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
   
       void add_heartbeat_global(size_t index,
                                 const std::string &globalVarName,
-                                const boost::any *value,
+                                const stk::util::Parameter &param,
                                 const std::string &storage,
                                 Ioss::Field::BasicType dataType,
                                 int copies = 1,
-                                Ioss::Field::RoleType role = Ioss::Field::TRANSIENT);
+                                Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
+
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+      STK_DEPRECATED void define_heartbeat_global(size_t index,
+                                   const std::string &name,
+                                   const STK_ANY_NAMESPACE::any *value,
+                                   stk::util::ParameterType::Type type,
+                                   int copies = 1,
+                                   Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
+
+      STK_DEPRECATED void define_heartbeat_global(size_t index,
+                                   const std::string &globalVarName,
+                                   const STK_ANY_NAMESPACE::any *value,
+                                   const std::string &storage,
+                                   Ioss::Field::BasicType dataType,
+                                   int copies = 1,
+                                   Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
+
+      STK_DEPRECATED void add_heartbeat_global(size_t index,
+                                const std::string &name,
+                                const STK_ANY_NAMESPACE::any *value,
+                                stk::util::ParameterType::Type type,
+                                int copies = 1,
+                                Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
+  
+      STK_DEPRECATED void add_heartbeat_global(size_t index,
+                                const std::string &globalVarName,
+                                const STK_ANY_NAMESPACE::any *value,
+                                const std::string &storage,
+                                Ioss::Field::BasicType dataType,
+                                int copies = 1,
+                                Ioss::Field::RoleType role = Ioss::Field::REDUCTION);
+#endif
 
       bool has_heartbeat_global(size_t output_file_index,
                                 const std::string &globalVarName) const;
@@ -592,7 +668,7 @@ namespace stk {
       Teuchos::RCP<const stk::mesh::BulkData> bulk_data_rcp() const { return m_bulkData; }
 
       // Return the coordinate field for this mesh.
-      stk::mesh::FieldBase const& get_coordinate_field();
+      stk::mesh::FieldBase const& get_coordinate_field() const;
 
       // If there are nodal fields defined on parts with
       // higher-rank. For example, a nodal field on all the nodes of
@@ -622,43 +698,46 @@ namespace stk {
       bool use_part_id_for_output(size_t output_file_index) const;
 
       void set_option_to_not_collapse_sequenced_fields();
-      int get_num_time_steps();
-      double get_max_time();
-      std::vector<double> get_time_steps();
+      int get_num_time_steps() const;
+      double get_max_time() const;
+      std::vector<double> get_time_steps() const;
       void set_max_num_steps_before_overwrite(size_t outputFileIndex, int maxNumStepsInFile);
 
       void set_name_and_version_for_qa_record(size_t outputFileIndex, const std::string &codeName, const std::string &codeVersion);
       void add_qa_records(size_t outputFileIndex, const std::vector<QaRecord> &qaRecords);
       void add_info_records(size_t outputFileIndex, const std::vector<std::string> &infoRecords);
-      std::vector<QaRecord> get_qa_records();
-      std::vector<std::string> get_info_records();
+      std::vector<QaRecord> get_qa_records() const;
+      std::vector<std::string> get_info_records() const;
       stk::mesh::FieldVector get_ordered_attribute_fields(const stk::mesh::Part *blockPart) const;
       const std::vector<std::vector<int>> & get_attribute_field_ordering_stored_by_part_ordinal() const;
       void set_attribute_field_ordering_stored_by_part_ordinal(const std::vector<std::vector<int>> &ordering);
-      void fill_coordinate_frames(std::vector<int>& ids, std::vector<double>& coords, std::vector<char>& tags);
-      std::string get_output_filename(size_t outputIndex);
+      void fill_coordinate_frames(std::vector<int>& ids, std::vector<double>& coords, std::vector<char>& tags) const;
+      std::string get_output_filename(size_t outputIndex) const;
 
-      bool is_output_index_valid(size_t outputIndex);
-      bool is_input_index_valid(size_t outputIndex);
+      bool is_output_index_valid(size_t outputIndex) const;
+      bool is_input_index_valid(size_t outputIndex) const;
 
-      Ioss::DatabaseIO *get_input_database(size_t inputIndex);
-      Ioss::DatabaseIO *get_output_database(size_t outputIndex);
+      Ioss::DatabaseIO *get_input_database(size_t inputIndex) const;
+      Ioss::DatabaseIO *get_output_database(size_t outputIndex) const;
 
-      bool set_input_multistate_suffixes(size_t inputIndex, std::vector<std::string>& multiStateSuffixes);
-      bool set_output_multistate_suffixes(size_t outputIndex, std::vector<std::string>& multiStateSuffixes);
+      bool set_input_multistate_suffixes(size_t inputIndex, const std::vector<std::string>& multiStateSuffixes);
+      bool set_output_multistate_suffixes(size_t outputIndex, const std::vector<std::string>& multiStateSuffixes);
 
-      void set_reference_input_region(size_t outputIndex, StkMeshIoBroker& inputBroker);
+      void set_reference_input_region(size_t outputIndex, const StkMeshIoBroker& inputBroker);
 
-      bool create_named_suffix_field_type(const std::string& type_name, std::vector<std::string>& suffices) const;
+      bool create_named_suffix_field_type(const std::string& type_name, const std::vector<std::string>& suffices) const;
 
       bool add_field_type_mapping(const std::string& field, const std::string& type) const;
 
       // Returns 4 or 8 based on several hueristics to determine
       // the integer size required for an output database.
-      int check_integer_size_requirements();
+
+      int check_integer_size_requirements_serial() const;
+      int check_integer_size_requirements_parallel() const;
+      int check_integer_size_requirements() const;
       void create_surface_to_block_mapping();
 
-      std::vector<stk::mesh::Entity> get_output_entities(size_t outputIndex, const stk::mesh::BulkData& bulk_data, const std::string &name);
+      std::vector<stk::mesh::Entity> get_output_entities(size_t outputIndex, const stk::mesh::BulkData& bulk_data, const std::string &name) const;
       //-END
     protected:
       void set_sideset_face_creation_behavior_for_testing(SideSetFaceCreationBehavior behavior)
@@ -707,6 +786,7 @@ namespace stk {
 
 
       stk::mesh::Selector m_activeSelector;
+      stk::mesh::Selector m_subsetSelector;
       Teuchos::RCP<stk::mesh::Selector> m_deprecatedSelector;
 
     protected:
@@ -726,14 +806,16 @@ namespace stk {
       size_t m_activeMeshIndex;
       SideSetFaceCreationBehavior m_sidesetFaceCreationBehavior;
       bool m_autoLoadAttributes;
+      bool m_autoLoadDistributionFactorPerNodeSet;
+      bool m_enableEdgeIO;
     };
 
-    inline Teuchos::RCP<Ioss::Region> StkMeshIoBroker::get_output_io_region(size_t output_file_index) {
+    inline Teuchos::RCP<Ioss::Region> StkMeshIoBroker::get_output_io_region(size_t output_file_index) const {
       validate_output_file_index(output_file_index);
       return m_outputFiles[output_file_index]->get_output_io_region();
     }
 
-    inline Teuchos::RCP<Ioss::Region> StkMeshIoBroker::get_heartbeat_io_region(size_t heartbeat_file_index) {
+    inline Teuchos::RCP<Ioss::Region> StkMeshIoBroker::get_heartbeat_io_region(size_t heartbeat_file_index) const {
       validate_heartbeat_file_index(heartbeat_file_index);
       return m_heartbeat[heartbeat_file_index]->get_heartbeat_io_region();
     }
@@ -755,9 +837,22 @@ namespace stk {
     }
 
     inline void StkMeshIoBroker::set_subset_selector(size_t output_file_index,
+						     const stk::mesh::Selector &my_selector) {
+      m_subsetSelector = my_selector;
+      validate_output_file_index(output_file_index);
+      m_outputFiles[output_file_index]->set_subset_selector(Teuchos::rcpFromRef(m_subsetSelector));
+    }
+
+    inline void StkMeshIoBroker::set_skin_mesh_selector(size_t output_file_index,
+						     Teuchos::RCP<stk::mesh::Selector> my_selector) {
+      validate_output_file_index(output_file_index);
+      m_outputFiles[output_file_index]->set_skin_mesh_selector(my_selector);
+    }
+
+    inline void StkMeshIoBroker::set_skin_mesh_selector(size_t output_file_index,
 						     stk::mesh::Selector &my_selector) {
       validate_output_file_index(output_file_index);
-      m_outputFiles[output_file_index]->set_subset_selector(Teuchos::rcpFromRef(my_selector));
+      m_outputFiles[output_file_index]->set_skin_mesh_selector(Teuchos::rcpFromRef(my_selector));
     }
 
     inline void StkMeshIoBroker::set_shared_selector(size_t output_file_index,
@@ -801,7 +896,7 @@ namespace stk {
       m_outputFiles[output_file_index]->is_skin_mesh(skinMesh);
     }
 
-    inline stk::mesh::Selector StkMeshIoBroker::get_active_selector() {
+    inline stk::mesh::Selector StkMeshIoBroker::get_active_selector() const {
       return m_activeSelector;
     }
 
@@ -809,7 +904,7 @@ namespace stk {
       m_activeSelector = my_selector;
     }
 
-    inline Teuchos::RCP<stk::mesh::Selector> StkMeshIoBroker::deprecated_selector() {
+    inline Teuchos::RCP<stk::mesh::Selector> StkMeshIoBroker::deprecated_selector() const {
       return m_deprecatedSelector;
     }
     
@@ -825,7 +920,52 @@ namespace stk {
 
     inline void StkMeshIoBroker::define_heartbeat_global(size_t index,
                                                          const std::string &name,
-                                                         const boost::any *value,
+                                                         const stk::util::Parameter &param,
+                                                         int copies,
+                                                         Ioss::Field::RoleType role)
+    {
+      STKIORequire(index < m_heartbeat.size());
+      m_heartbeat[index]->define_global_ref(name, param, copies, role);
+    }
+
+    inline void StkMeshIoBroker::define_heartbeat_global(size_t index,
+                                                         const std::string &globalVarName,
+                                                         const stk::util::Parameter &param,
+                                                         const std::string &storage,
+                                                         Ioss::Field::BasicType dataType,
+                                                         int copies,
+                                                         Ioss::Field::RoleType role)
+    {
+      STKIORequire(index < m_heartbeat.size());
+      m_heartbeat[index]->define_global_ref(globalVarName, param, storage, dataType, copies, role);
+    }
+
+    inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
+						      const std::string &name,
+						      const stk::util::Parameter &param,
+						      int copies,
+						      Ioss::Field::RoleType role)
+    {
+      STKIORequire(index < m_heartbeat.size());
+      m_heartbeat[index]->add_global_ref(name, param, copies, role);
+    }
+  
+    inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
+                                                      const std::string &globalVarName,
+                                                      const stk::util::Parameter &param,
+                                                      const std::string &storage,
+                                                      Ioss::Field::BasicType dataType,
+                                                      int copies,
+                                                      Ioss::Field::RoleType role)
+    {
+      STKIORequire(index < m_heartbeat.size());
+      m_heartbeat[index]->add_global_ref(globalVarName, param, storage, dataType, copies, role);
+    }
+
+#ifndef STK_HIDE_DEPRECATED_CODE // Delete after September 2021
+    STK_DEPRECATED inline void StkMeshIoBroker::define_heartbeat_global(size_t index,
+                                                         const std::string &name,
+                                                         const STK_ANY_NAMESPACE::any *value,
                                                          stk::util::ParameterType::Type type,
                                                          int copies,
                                                          Ioss::Field::RoleType role)
@@ -836,7 +976,7 @@ namespace stk {
 
     inline void StkMeshIoBroker::define_heartbeat_global(size_t index,
                                                          const std::string &globalVarName,
-                                                         const boost::any *value,
+                                                         const STK_ANY_NAMESPACE::any *value,
                                                          const std::string &storage,
                                                          Ioss::Field::BasicType dataType,
                                                          int copies,
@@ -846,9 +986,9 @@ namespace stk {
       m_heartbeat[index]->define_global_ref(globalVarName, value, storage, dataType, copies, role);
     }
 
-    inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
+    STK_DEPRECATED inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
 						      const std::string &name,
-						      const boost::any *value,
+						      const STK_ANY_NAMESPACE::any *value,
 						      stk::util::ParameterType::Type type,
 						      int copies,
 						      Ioss::Field::RoleType role)
@@ -857,9 +997,9 @@ namespace stk {
       m_heartbeat[index]->add_global_ref(name, value, type, copies, role);
     }
   
-    inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
+    STK_DEPRECATED inline void StkMeshIoBroker::add_heartbeat_global(size_t index,
                                                       const std::string &globalVarName,
-                                                      const boost::any *value,
+                                                      const STK_ANY_NAMESPACE::any *value,
                                                       const std::string &storage,
                                                       Ioss::Field::BasicType dataType,
                                                       int copies,
@@ -868,6 +1008,7 @@ namespace stk {
       STKIORequire(index < m_heartbeat.size());
       m_heartbeat[index]->add_global_ref(globalVarName, value, storage, dataType, copies, role);
     }
+#endif
 
     inline void StkMeshIoBroker::process_heartbeat_output(size_t index, int step, double time)
     {

@@ -119,7 +119,7 @@ namespace {
     typedef Teuchos::ScalarTraits<ST> STS;
     typedef typename STS::magnitudeType MT;
     typedef Teuchos::ScalarTraits<MT> STM;
-    typedef typename ArrayView<const LO>::size_type size_type;
+    typedef CrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> MAT;
 
     MT mySum = STM::zero ();
     Array<LO> inds (matrix->getNodeMaxNumRowEntries ());
@@ -129,8 +129,8 @@ namespace {
     for (size_t i = 0; i < myNumRows; ++i) {
       const LO myRow = as<LO> (i);
       const size_t numRowEnts = matrix->getNumEntriesInLocalRow (myRow);
-      ArrayView<const LO> indsView = inds.view (0, as<size_type> (numRowEnts));
-      ArrayView<const ST> valsView = vals.view (0, as<size_type> (numRowEnts));
+      typename MAT::local_inds_host_view_type indsView;
+      typename MAT::values_host_view_type valsView;
       matrix->getLocalRowView (myRow, indsView, valsView);
       for (size_t j = 0; j < numRowEnts; ++j) {
         const ST curVal = valsView[j];
@@ -202,13 +202,11 @@ namespace {
     matrix->leftScale(*vector);
     matrix2->rightScale(*vector);
 
-    RCP<MAT> diffMat1 = createCrsMatrix<Scalar, LO, GO, Node>(map,3);
-    RCP<MAT> diffMat2 = createCrsMatrix<Scalar, LO, GO, Node>(map,3);
     Scalar sOne = ScalarTraits<Scalar>::one();
-    Tpetra::MatrixMatrix::Add(*matrix, false, -sOne, *answerMatrix, false, sOne, diffMat1);
-    diffMat1->fillComplete();
-    Tpetra::MatrixMatrix::Add(*matrix2, false, -sOne, *answerMatrix, false, sOne, diffMat2);
-    diffMat2->fillComplete();
+
+    RCP<MAT> diffMat1 = Tpetra::MatrixMatrix::add(sOne, false, *matrix, -sOne, false, *answerMatrix);
+    RCP<MAT> diffMat2 = Tpetra::MatrixMatrix::add(sOne, false, *matrix2, -sOne, false, *answerMatrix);
+
     Scalar epsilon1 = getNorm(diffMat1)/getNorm(answerMatrix);
     Scalar epsilon2 = getNorm(diffMat2)/getNorm(answerMatrix);
     TEST_COMPARE(ScalarTraits<Scalar>::real(epsilon1), <, 1e-10)

@@ -42,8 +42,10 @@
 #include "stk_search/KDTree_BoundingBox.hpp"
 #include "stk_util/environment/Env.hpp"
 #include "stk_util/environment/WallTime.hpp"
+#include "stk_util/parallel/ParallelReduce.hpp"
 #include <stk_search/CommonSearchUtil.hpp>
 #include <stk_search/Sphere.hpp>
+#include <stk_search/IdentProc.hpp>
 
 
 namespace stk {
@@ -126,8 +128,7 @@ namespace stk {
 #endif
           for(unsigned int iboxDomain = 0; iboxDomain < numBoxDomain; ++iboxDomain) {
             proxSearch.SearchForOverlap(local_domain[iboxDomain].first, overlapList);
-            for(unsigned ilist = 0; ilist < overlapList.size(); ++ilist) {
-              const int jboxRange = overlapList[ilist];
+            for(auto&& jboxRange : overlapList) {
               if(intersects(local_domain[iboxDomain].first, rangeObjs[jboxRange])) {
                 if(jboxRange < (int)local_range.size()) {
                   interList.emplace_back( local_domain[iboxDomain].second, local_range[jboxRange].second );
@@ -213,8 +214,7 @@ namespace stk {
 #endif
           for(unsigned int iboxDomain = 0; iboxDomain < numBoxDomain; ++iboxDomain) {
             proxSearch.SearchForOverlap(local_domain[iboxDomain].first, overlapList);
-            for(unsigned ilist = 0; ilist < overlapList.size(); ++ilist) {
-              const int jboxRange = overlapList[ilist];
+            for(auto&& jboxRange : overlapList) {
               if(jboxRange < (int)local_range.size()) {
                 interList.emplace_back( local_domain[iboxDomain].second, local_range[jboxRange].second );
               } else {
@@ -231,6 +231,37 @@ namespace stk {
       if(communicateRangeBoxInfo) {
         stk::search::communicateVector(comm, searchResults, communicateRangeBoxInfo);
         std::sort(searchResults.begin(), searchResults.end());
+      }
+    }
+
+   template <typename DomainIdentifier, typename RangeIdentifier, typename DomainObjType, typename RangeObjType>
+      inline void coarse_search_kdtree_driver(std::vector< std::pair<DomainObjType, DomainIdentifier> > const & local_domain,
+                                std::vector< std::pair<RangeObjType,  RangeIdentifier > > const & local_range,
+                                MPI_Comm comm,
+                                std::vector<std::pair<DomainIdentifier, RangeIdentifier> >& searchResults,
+                                bool communicateRangeBoxInfo=true)
+    {
+      const size_t local_sizes[2] = {local_domain.size(), local_range.size()};
+      size_t global_sizes[2];
+      all_reduce_sum(comm, local_sizes, global_sizes, 2);
+      const bool domain_has_more_boxes = (global_sizes[0] >= global_sizes[1]);
+      if(domain_has_more_boxes)
+      {
+        coarse_search_kdtree(local_domain, local_range, comm, searchResults, communicateRangeBoxInfo);
+      }
+      else
+      {
+        std::vector<std::pair<RangeIdentifier, DomainIdentifier> > tempSearchResults;
+        coarse_search_kdtree(local_range, local_domain, comm, tempSearchResults, communicateRangeBoxInfo);
+        const int p_rank = stk::parallel_machine_rank(comm);
+        searchResults.reserve(tempSearchResults.size());
+        for(size_t i=0; i<tempSearchResults.size(); ++i)
+        {
+          size_t idx = tempSearchResults.size() - i - 1;
+          auto&& pair = tempSearchResults[idx];
+          if (communicateRangeBoxInfo || get_proc<DomainIdentifier>()(pair.second) == p_rank)
+            searchResults.emplace_back(pair.second, pair.first);
+        }
       }
     }
 

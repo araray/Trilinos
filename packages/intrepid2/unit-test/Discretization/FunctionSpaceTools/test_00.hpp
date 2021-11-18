@@ -66,15 +66,16 @@ namespace Intrepid2 {
     try {                                                               \
       S ;                                                               \
     }                                                                   \
-    catch (std::logic_error err) {                                      \
+    catch (std::logic_error &err) {                                      \
       *outStream << "Expected Error ----------------------------------------------------------------\n"; \
       *outStream << err.what() << '\n';                                 \
       *outStream << "-------------------------------------------------------------------------------" << "\n\n"; \
     };                                                                  
 #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
     
-    template<typename ValueType, typename DeviceSpaceType>
+    template<typename ValueType, typename DeviceType>
     int FunctionSpaceTools_Test00(const bool verbose) {
+      using ExecSpaceType = typename DeviceType::execution_space;
       
       Teuchos::RCP<std::ostream> outStream;
       Teuchos::oblackholestream bhs; // outputs nothing
@@ -88,9 +89,9 @@ namespace Intrepid2 {
       oldFormatState.copyfmt(std::cout);
 
       typedef typename
-        Kokkos::Impl::is_space<DeviceSpaceType>::host_mirror_space::execution_space HostSpaceType ;
+        Kokkos::Impl::is_space<DeviceType>::host_mirror_space::execution_space HostSpaceType ;
 
-      *outStream << "DeviceSpace::  "; DeviceSpaceType::print_configuration(*outStream, false);
+      *outStream << "DeviceSpace::  ";   ExecSpaceType::print_configuration(*outStream, false);
       *outStream << "HostSpace::    ";   HostSpaceType::print_configuration(*outStream, false);
 
       *outStream                                                        \
@@ -119,8 +120,8 @@ namespace Intrepid2 {
       
       try{
 #ifdef HAVE_INTREPID2_DEBUG
-        typedef FunctionSpaceTools<DeviceSpaceType> fst;
-        typedef Kokkos::DynRankView<ValueType,DeviceSpaceType> DynRankView;
+        typedef FunctionSpaceTools<DeviceType> fst;
+        typedef Kokkos::DynRankView<ValueType,DeviceType> DynRankView;
         #define ConstructWithLabel(obj, ...) obj(#obj, __VA_ARGS__)
 
         DynRankView ConstructWithLabel( a_2, 2 );
@@ -211,7 +212,7 @@ namespace Intrepid2 {
         INTREPID2_TEST_ERROR_EXPECTED( fst::evaluate(a_2_2_2_3, a_2_2, a_2_2_2_2_2) );
         INTREPID2_TEST_ERROR_EXPECTED( fst::evaluate(a_2_2_2_2, a_2_2, a_2_2_2_2_2) );
 #endif
-      } catch (std::logic_error err) {
+      } catch (std::logic_error &err) {
         *outStream << "UNEXPECTED ERROR !!! ----------------------------------------------------------\n";
         *outStream << err.what() << '\n';
         *outStream << "-------------------------------------------------------------------------------" << "\n\n";

@@ -47,7 +47,7 @@
 #define XPETRA_MULTIVECTORFACTORY_DECL_HPP
 
 #include "Xpetra_ConfigDefs.hpp"
-#include "Xpetra_MultiVector.hpp"
+#include "Xpetra_MultiVector_decl.hpp"
 
 #ifdef HAVE_XPETRA_TPETRA
 #include "Xpetra_TpetraMultiVector.hpp"
@@ -61,9 +61,25 @@
 // #include "Xpetra_BlockedMap.hpp"
 #include "Xpetra_Exceptions.hpp"
 
+
 namespace Xpetra {
 
+/*!
+  @class MultiVectorFactory
+  @brief Factory for any type of Xpetra::MultiVector and its derived classes
 
+  Creates instances of \c Xpetra::MulitVector and \c Xpetra::BlockedMultiVector ,
+  depending on the type of map, i.e. \c Xpetra::Map vs. \c Xpetra::BlockedMap .
+
+  @tparam Scalar
+  @tparam LocalOrdinal
+  @tparam GlobalOrdinal
+  @tparam Node
+
+  \note Although this class can gerenate \c Xpetra::BlockedMultiVector ,
+  it always returns \c Xpetra::MultiVector .
+  Don't forget to cast to \c Xpetra::BlockedMultiVector , if you need the blocked layout directly.
+*/
 template<class Scalar,
          class LocalOrdinal,
          class GlobalOrdinal,
@@ -86,6 +102,10 @@ class MultiVectorFactory
     Build(const Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
           const Teuchos::ArrayView<const Teuchos::ArrayView<const Scalar>>& ArrayOfPtrs,
           size_t                                                            NumVectors);
+
+    static Teuchos::RCP<MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
+    Build(const Teuchos::RCP<const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node > > &source,
+        Teuchos::DataAccess copyOrView);
 };
 
 
@@ -123,6 +143,10 @@ class MultiVectorFactory<double, int, int, EpetraNode>
     Build(const Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
           const Teuchos::ArrayView<const Teuchos::ArrayView<const Scalar>>& ArrayOfPtrs,
           size_t                                                            NumVectors);
+
+    static Teuchos::RCP<MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
+    Build(const Teuchos::RCP<const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node > > &source,
+        Teuchos::DataAccess copyOrView);
 };
 
 
@@ -151,6 +175,10 @@ class MultiVectorFactory<int, int, int, EpetraNode>
     Build(const Teuchos::RCP<const Map<LocalOrdinal, GlobalOrdinal, Node>>& map,
           const Teuchos::ArrayView<const Teuchos::ArrayView<const Scalar>>& ArrayOfPtrs,
           size_t                                                            NumVectors);
+
+    static Teuchos::RCP<MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
+    Build(const Teuchos::RCP<const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node > > &source,
+          Teuchos::DataAccess copyOrView);
 };
 
 
@@ -184,6 +212,10 @@ public:
         const Teuchos::ArrayView< const Teuchos::ArrayView< const Scalar > > &ArrayOfPtrs,
         size_t NumVectors);
 
+  static Teuchos::RCP<MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
+  Build(const Teuchos::RCP<const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node > > &source,
+        Teuchos::DataAccess copyOrView);
+
 };
 
 
@@ -213,6 +245,10 @@ public:
   Build(const Teuchos::RCP< const Map< LocalOrdinal, GlobalOrdinal, Node > > &map,
         const Teuchos::ArrayView< const Teuchos::ArrayView< const Scalar > > &ArrayOfPtrs,
         size_t NumVectors);
+
+  static Teuchos::RCP<MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node> >
+  Build(const Teuchos::RCP<const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node > > &source,
+        Teuchos::DataAccess copyOrView);
 
 };
 

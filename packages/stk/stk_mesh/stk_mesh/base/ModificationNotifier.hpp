@@ -101,6 +101,14 @@ public:
         }
     }
 
+    void notify_modification_begin()
+    {
+        for(std::shared_ptr<ModificationObserver>& observer : observers)
+        {
+            observer->modification_begin_notification();
+        }
+    }
+  
     void notify_started_modification_end()
     {
         for(std::shared_ptr<ModificationObserver>& observer : observers)
@@ -189,6 +197,22 @@ public:
         }
 
         return typed_observers;
+    }
+
+    void notify_relation_destroyed(Entity from, Entity to, ConnectivityOrdinal ordinal)
+    {
+      for(std::shared_ptr<ModificationObserver>& observer : observers)
+      {
+          observer->relation_destroyed(from, to, ordinal);
+      }
+    }
+
+    void notify_relation_declared(Entity from, Entity to, ConnectivityOrdinal ordinal)
+    {
+      for(std::shared_ptr<ModificationObserver>& observer : observers)
+      {
+          observer->relation_declared(from, to, ordinal);
+      }
     }
 
 private:

@@ -95,16 +95,14 @@ namespace Xpetra {
      * \param npr extimated number of entries per row in each block(!)
      * \param brm of type BlockReorderManager
      * \param bmat original full blocked operator (we keep the RCP to make sure all subblocks are available)
-     * \param pftype Xpetra profile type
      */
     ReorderedBlockedCrsMatrix
         (Teuchos::RCP<const MapExtractor>& rangeMaps,
          Teuchos::RCP<const MapExtractor>& domainMaps,
          size_t npr,
          Teuchos::RCP<const Xpetra::BlockReorderManager> brm,
-         Teuchos::RCP<const Xpetra::BlockedCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > bmat,
-         Xpetra::ProfileType pftype = Xpetra::DynamicProfile)
-  : Xpetra::BlockedCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node>(rangeMaps, domainMaps, npr,pftype) {
+         Teuchos::RCP<const Xpetra::BlockedCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> > bmat)
+  : Xpetra::BlockedCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node>(rangeMaps, domainMaps, npr) {
       brm_ = brm;
       fullOp_ = bmat;
     }
@@ -151,6 +149,11 @@ namespace Xpetra {
     //! @name Methods implementing Matrix
     //@{
 
+    //! sparse matrix-multivector multiplication for the region layout matrices (currently no blocked implementation)
+    virtual void apply(const MultiVector &X, MultiVector &Y, Teuchos::ETransp mode, Scalar alpha, Scalar beta, bool sumInterfaceValues,
+                 const RCP<Xpetra::Import<LocalOrdinal, GlobalOrdinal, Node> >& regionInterfaceImporter,
+                 const Teuchos::ArrayRCP<LocalOrdinal>& regionInterfaceLIDs) const
+    { }
     //! \brief Computes the sparse matrix-multivector multiplication.
     /*! Performs \f$Y = \alpha A^{\textrm{mode}} X + \beta Y\f$, with one special exceptions:
       - if <tt>beta == 0</tt>, apply() overwrites \c Y, so that any values in \c Y (including NaNs) are ignored.
@@ -271,7 +274,6 @@ namespace Xpetra {
 
     /** \brief Print the object with some verbosity level to an FancyOStream object. */
     void describe(Teuchos::FancyOStream& out, const Teuchos::EVerbosityLevel verbLevel = Teuchos::Describable::verbLevel_default) const {
-      typedef Xpetra::BlockedCrsMatrix<Scalar,LocalOrdinal,GlobalOrdinal,Node> BlockedCrsMatrix;
 
       out << "Xpetra::ReorderedBlockedCrsMatrix: " << BlockedCrsMatrix::Rows() << " x " << BlockedCrsMatrix::Cols() << std::endl;
 

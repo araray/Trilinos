@@ -21,7 +21,10 @@ struct CommandLineOptions {
   int maxAllowedNumIters {30};
   int maxNumIters {100};
   int restartLength {30};
+  std::string orthoType {"ICGS"};
   int stepSize {1};
+  bool useCholQR {false};
+  bool useCholQR2 {false};
   bool computeRitzValues {true};
   bool zeroInitialGuess {true};
   bool verbose {true};
@@ -51,8 +54,14 @@ TEUCHOS_STATIC_SETUP()
                  "Maximum number of iterations per restart cycle.  "
                  "This corresponds to the standard Belos parameter "
                  "\"Num Blocks\".");
+  clp.setOption ("ortho", &commandLineOptions.orthoType,
+                 "Name of the orthogonalization procedure");
   clp.setOption ("stepSize", &commandLineOptions.stepSize,
                  "Step size; only applies to algorithms that take it.");
+  clp.setOption ("useCholQR", "noCholQR", &commandLineOptions.useCholQR,
+                 "Whether to use CholQR");
+  clp.setOption ("useCholQR2", "noCholQR2", &commandLineOptions.useCholQR2,
+                 "Whether to use CholQR2");
   clp.setOption ("computeRitzValues", "noRitzValues", &commandLineOptions.computeRitzValues,
                  "Whether to compute Ritz values");
   clp.setOption ("zeroInitialGuess", "nonzeroInitialGuess",
@@ -168,7 +177,7 @@ testSolver (Teuchos::FancyOStream& out,
   // debugging.  If the test crashes without useful output, try
   // setting this to 'true'.  That will change 'myOut' from an alias
   // to 'out', into a wrapper for std::cerr.
-  constexpr bool debug = true;
+  constexpr bool debug = false;
 
   const SC ZERO = STS::zero ();
   const SC ONE = STS::one ();
@@ -226,8 +235,15 @@ testSolver (Teuchos::FancyOStream& out,
   params->set ("Verbosity", verbose ? 1 : 0);
   params->set ("Maximum Iterations", commandLineOptions.maxNumIters);
   params->set ("Num Blocks", commandLineOptions.restartLength);
-  params->set ("Step Size", commandLineOptions.stepSize);
-  params->set ("Compute Ritz Values", commandLineOptions.computeRitzValues);
+  params->set ("Orthogonalization", commandLineOptions.orthoType);
+  if (solverName == "TPETRA GMRES S-STEP") {
+    params->set ("Step Size", commandLineOptions.stepSize);
+    params->set ("CholeskyQR",  commandLineOptions.useCholQR);
+    params->set ("CholeskyQR2", commandLineOptions.useCholQR2);
+  }
+  if (solverName == "TPETRA GMRES S-STEP" || solverName == "TPETRA GMRES SINGLE REDUCE") {
+    params->set ("Compute Ritz Values", commandLineOptions.computeRitzValues);
+  }
   try {
     solver->setParameters (params);
   }
@@ -302,6 +318,8 @@ testSolver (Teuchos::FancyOStream& out,
     TEST_ASSERT( relResNorm <= tol );
   }
   myOut << endl;
+
+  Teuchos::TimeMonitor::summarize();
 }
 
 TEUCHOS_UNIT_TEST( TpetraNativeSolvers, Diagonal )
@@ -313,23 +331,8 @@ TEUCHOS_UNIT_TEST( TpetraNativeSolvers, Diagonal )
 
 } // namespace (anonymous)
 
-namespace BelosTpetra {
-namespace Impl {
-  // extern void register_Cg (const bool verbose);
-  extern void register_Gmres (const bool verbose);
-  extern void register_GmresS (const bool verbose);
-  extern void register_GmresSstep (const bool verbose);
-} // namespace Impl
-} // namespace BelosTpetra
-
 int main (int argc, char* argv[])
 {
   Tpetra::ScopeGuard tpetraScope (&argc, &argv);
-
-  constexpr bool verbose = false;
-  // BelosTpetra::Impl::register_Cg (verbose);
-  BelosTpetra::Impl::register_Gmres (verbose);
-  BelosTpetra::Impl::register_GmresS (verbose);
-  BelosTpetra::Impl::register_GmresSstep (verbose);
   return Teuchos::UnitTestRepository::runUnitTestsFromMain (argc, argv);
 }

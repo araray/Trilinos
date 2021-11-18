@@ -13,6 +13,7 @@
 #include "Teuchos_StackedTimer.hpp"
 #include "Teuchos_ScalarTraits.hpp"
 
+#include "Kokkos_View_Fad.hpp"
 #include "KokkosCompat_ClassicNodeAPI_Wrapper.hpp"
 
 #include "Panzer_NodeType.hpp"
@@ -133,7 +134,7 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
   using Teuchos::rcp;
   using Teuchos::rcp_dynamic_cast;
 
-  Teuchos::RCP<Teuchos::FancyOStream> out = Teuchos::rcp(new Teuchos::FancyOStream(Teuchos::rcp(&std::cout,false)));
+  Teuchos::RCP<Teuchos::FancyOStream> out = Teuchos::rcp(new Teuchos::FancyOStream(Teuchos::rcpFromRef(std::cout)));
   Teuchos::RCP<const Teuchos::MpiComm<int> > comm
     = rcp_dynamic_cast<const Teuchos::MpiComm<int> >(Teuchos::DefaultComm<int>::getComm());
   if (comm->getSize() > 1) {
@@ -142,6 +143,7 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
 
   Teuchos::RCP<Teuchos::StackedTimer> stacked_timer;
   bool use_stacked_timer;
+  std::string test_name = "MiniEM 3D RefMaxwell";
 
   {
     // defaults for command-line options
@@ -156,6 +158,7 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
     const char * solverNames[4] = {"Augmentation", "MueLu-RefMaxwell", "ML-RefMaxwell", "CG"};
     solverType solver = MUELU_REFMAXWELL;
     int numTimeSteps = 1;
+    bool resetSolver = false;
     bool doSolveTimings = false;
     int numReps = 0;
     linearAlgebraType linAlgebraValues[2] = {linAlgTpetra, linAlgEpetra};
@@ -175,8 +178,10 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
     clp.setOption("solverFile",&xml,"XML file with the solver params");
     clp.setOption<solverType>("solver",&solver,4,solverValues,solverNames,"Solver that is used");
     clp.setOption("numTimeSteps",&numTimeSteps);
+    clp.setOption("resetSolver","no-resetSolver",&resetSolver,"update the solver in every timestep");
     clp.setOption("doSolveTimings","no-doSolveTimings",&doSolveTimings,"repeat the first solve \"numTimeSteps\" times");
     clp.setOption("stacked-timer","no-stacked-timer",&use_stacked_timer,"Run with or without stacked timer output");
+    clp.setOption("test-name", &test_name, "Name of test (for Watchr output)");
 
     // parse command-line argument
     clp.recogniseAllOptions(true);
@@ -189,8 +194,12 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
     case Teuchos::CommandLineProcessor::PARSE_SUCCESSFUL:          break;
     }
 
-    if (use_stacked_timer)
+    if (use_stacked_timer) {
       stacked_timer = rcp(new Teuchos::StackedTimer("Mini-EM"));
+      Teuchos::RCP<Teuchos::FancyOStream> verbose_out = Teuchos::rcp(new Teuchos::FancyOStream(Teuchos::rcpFromRef(std::cout)));
+      verbose_out->setShowProcRank(true);
+      stacked_timer->setVerboseOstream(verbose_out);
+    }
     Teuchos::TimeMonitor::setStackedTimer(stacked_timer);
 
     Teuchos::TimeMonitor tM(*Teuchos::TimeMonitor::getNewTimer(std::string("Mini-EM: Total Time")));
@@ -633,7 +642,8 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
     // compute the jacobian matrix only once
     Kokkos::fence();
     physics->evalModel(inArgs,outArgs);
-    outArgs.set_W(RCP<Thyra::LinearOpWithSolveBase<Scalar> >(NULL));
+    if (!resetSolver)
+      outArgs.set_W(RCP<Thyra::LinearOpWithSolveBase<Scalar> >(NULL));
 
     // take time-steps with Backward Euler
     if (exodus_output)
@@ -644,8 +654,10 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
 
     {
       Teuchos::TimeMonitor tMts(*Teuchos::TimeMonitor::getNewTimer(std::string("Mini-EM: timestepper")));
+      auto time_step_timer = Teuchos::TimeMonitor::getNewTimer(std::string("Mini-EM: Advance Time Step"));
       for(int ts = 1; ts < numTimeSteps+1; ts++)
         {
+          Teuchos::TimeMonitor adv_time_step_timer(*time_step_timer);
           (*out) << std::endl;
           (*out) << "**************************************************" << std::endl;
           (*out) << "* starting time step " << ts << std::endl;
@@ -723,6 +735,9 @@ int main_(Teuchos::CommandLineProcessor &clp, int argc,char * argv[])
     Teuchos::StackedTimer::OutputOptions options;
     options.output_fraction = options.output_histogram = options.output_minmax = true;
     stacked_timer->report(*out, comm, options);
+    auto xmlOut = stacked_timer->reportWatchrXML(test_name + ' ' + std::to_string(comm->getSize()) + " ranks", comm);
+    if(xmlOut.length())
+      std::cout << "\nAlso created Watchr performance report " << xmlOut << '\n';
   } else
     Teuchos::TimeMonitor::summarize(*out,false,true,false,Teuchos::Union,"",true);
 

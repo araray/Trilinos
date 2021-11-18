@@ -44,11 +44,6 @@
 
 /// \file Tpetra_Vector_def.hpp
 /// \brief Definition of the Tpetra::Vector class
-///
-/// If you want to use Tpetra::Vector, include "Tpetra_Vector.hpp" (a
-/// file which CMake generates and installs for you).  If you only
-/// want the declaration of Tpetra::Vector, include
-/// "Tpetra_Vector_decl.hpp".
 
 #include "Tpetra_MultiVector.hpp"
 #include "Tpetra_Details_gathervPrint.hpp"
@@ -108,6 +103,14 @@ namespace Tpetra {
     : base_type (map, view, origView)
   {}
 
+
+  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
+  Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
+  Vector (const Teuchos::RCP<const map_type>& map,
+          const wrapped_dual_view_type& view)
+    : base_type (map, view)
+  {}
+
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
   Vector (const MultiVector<Scalar, LocalOrdinal, GlobalOrdinal, Node>& X,
@@ -118,7 +121,7 @@ namespace Tpetra {
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   void
   Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
-  replaceGlobalValue (const GlobalOrdinal globalRow, const Scalar& value) const {
+  replaceGlobalValue (const GlobalOrdinal globalRow, const Scalar& value) {
     this->base_type::replaceGlobalValue (globalRow, 0, value);
   }
 
@@ -127,7 +130,7 @@ namespace Tpetra {
   Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
   sumIntoGlobalValue (const GlobalOrdinal globalRow,
                       const Scalar& value,
-                      const bool atomic) const
+                      const bool atomic)
   {
     this->base_type::sumIntoGlobalValue (globalRow, 0, value, atomic);
   }
@@ -135,7 +138,7 @@ namespace Tpetra {
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   void
   Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
-  replaceLocalValue (const LocalOrdinal myRow, const Scalar& value) const {
+  replaceLocalValue (const LocalOrdinal myRow, const Scalar& value) {
     this->base_type::replaceLocalValue (myRow, 0, value);
   }
 
@@ -144,7 +147,7 @@ namespace Tpetra {
   Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
   sumIntoLocalValue (const LocalOrdinal globalRow,
                      const Scalar& value,
-                     const bool atomic) const
+                     const bool atomic)
   {
     this->base_type::sumIntoLocalValue (globalRow, 0, value, atomic);
   }
@@ -207,65 +210,6 @@ namespace Tpetra {
     return norm;
   }
 
-#ifdef TPETRA_ENABLE_DEPRECATED_CODE
-  template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
-  typename Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::mag_type
-  TPETRA_DEPRECATED
-  Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
-  normWeighted (const Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>& weights) const
-  {
-    using Kokkos::ALL;
-    using Kokkos::subview;
-    using Teuchos::Comm;
-    using Teuchos::RCP;
-    using Teuchos::reduceAll;
-    using Teuchos::REDUCE_SUM;
-    typedef Kokkos::Details::ArithTraits<impl_scalar_type> ATS;
-    typedef Kokkos::Details::ArithTraits<mag_type> ATM;
-    typedef Kokkos::View<mag_type, device_type> norm_view_type; // just one
-    const char tfecfFuncName[] = "normWeighted: ";
-
-#ifdef HAVE_TPETRA_DEBUG
-    TEUCHOS_TEST_FOR_EXCEPTION_CLASS_FUNC(
-      ! this->getMap ()->isCompatible (*weights.getMap ()), std::runtime_error,
-      "Vectors do not have compatible Maps:" << std::endl
-      << "this->getMap(): " << std::endl << *this->getMap()
-      << "weights.getMap(): " << std::endl << *weights.getMap() << std::endl);
-#else
-    const size_t lclNumRows = this->getLocalLength ();
-    TEUCHOS_TEST_FOR_EXCEPTION_CLASS_FUNC(
-      lclNumRows != weights.getLocalLength (), std::runtime_error,
-      "Vectors do not have the same local length.");
-#endif // HAVE_TPETRA_DEBUG
-
-    norm_view_type lclNrm ("lclNrm"); // local norm
-    mag_type gblNrm = ATM::zero (); // return value
-
-    auto X_lcl = this->template getLocalView<device_type> ();
-    auto W_lcl = this->template getLocalView<device_type> ();
-    KokkosBlas::nrm2w_squared (lclNrm,
-                               subview (X_lcl, ALL (), 0),
-                               subview (W_lcl, ALL (), 0));
-    const mag_type OneOverN =
-      ATM::one () / static_cast<mag_type> (this->getGlobalLength ());
-    RCP<const Comm<int> > comm = this->getMap ().is_null () ?
-      Teuchos::null : this->getMap ()->getComm ();
-
-    if (! comm.is_null () && this->isDistributed ()) {
-      // Assume that MPI can access device memory.
-      reduceAll<int, mag_type> (*comm, REDUCE_SUM, 1, lclNrm.data (),
-                                &gblNrm);
-      gblNrm = ATM::sqrt (gblNrm * OneOverN);
-    }
-    else {
-      auto lclNrm_h = Kokkos::create_mirror_view (lclNrm);
-      Kokkos::deep_copy (lclNrm_h, lclNrm);
-      gblNrm = ATM::sqrt (ATS::magnitude (lclNrm_h()) * OneOverN);
-    }
-
-    return gblNrm;
-  }
-#endif // TPETRA_ENABLE_DEPRECATED_CODE
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>
   std::string Vector<Scalar, LocalOrdinal, GlobalOrdinal, Node>::
@@ -305,11 +249,8 @@ namespace Tpetra {
         << this->getOrigNumLocalRows () << " rows on this process.");
     }
 
-    const std::pair<size_t, size_t> offsetPair (offset, offset + newNumRows);
-    // Need 'this->' to get view_ and origView_ from parent class.
-    return rcp (new V (subMap,
-                       subview (this->view_, offsetPair, ALL ()),
-                       this->origView_));
+    // Need 'this->' to get view_ from parent class.
+    return rcp (new V (subMap, wrapped_dual_view_type(this->view_,Kokkos::pair<int,int>(offset,offset+newNumRows),ALL())));
   }
 
   template <class Scalar, class LocalOrdinal, class GlobalOrdinal, class Node>

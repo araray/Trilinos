@@ -69,6 +69,26 @@ DisconnectGroup::DisconnectGroup(const stk::mesh::BulkData& bulk, const stk::mes
   update_id();
 }
 
+DisconnectGroup::DisconnectGroup(const stk::mesh::BulkData& bulk, const BlockPair& blockPair, stk::mesh::Entity node)
+: m_bulk(bulk),
+  m_parts(stk::mesh::ConstPartVector()),
+  m_entities(stk::mesh::EntityVector()),
+  m_node(node),
+  m_active(true),
+  m_blockPair(blockPair),
+  m_hasBlockPair(true)
+{
+  ThrowRequire(m_bulk.is_valid(m_node));
+
+  if(m_blockPair.second != nullptr) {
+    m_parts.push_back(m_blockPair.second);
+  }
+
+  m_entities = get_group_elements();
+  store_node_sharing_info();
+  update_id();
+}
+
 DisconnectGroup::DisconnectGroup(const stk::mesh::BulkData& bulk, const stk::mesh::Part* part)
 : m_bulk(bulk),
   m_parts(stk::mesh::ConstPartVector()),
@@ -103,12 +123,18 @@ DisconnectGroup::DisconnectGroup(const DisconnectGroup& group)
   m_node(group.m_node),
   m_active(group.m_active),
   m_id(group.m_id),
-  m_entityOwnerProcVec(group.m_entityOwnerProcVec)
+  m_entityOwnerProcVec(group.m_entityOwnerProcVec),
+  m_blockPair(group.m_blockPair),
+  m_hasBlockPair(group.m_hasBlockPair)
 {
 }
 
 bool DisconnectGroup::operator<(const DisconnectGroup& group) const {
   if(m_parts.empty() || group.m_parts.empty()) { return false; }
+
+  if(m_hasBlockPair) {
+    return m_blockPair < group.m_blockPair;
+  }
 
   return (m_parts[0]->mesh_meta_data_ordinal() < group.m_parts[0]->mesh_meta_data_ordinal());
 }
@@ -117,6 +143,11 @@ bool DisconnectGroup::operator==(const DisconnectGroup& group) const {
   if(m_id != -1 && group.m_id != -1) {
     return (m_id == group.m_id) && (m_node == group.m_node);
   }
+
+  if(m_hasBlockPair) {
+    return (m_entities == group.m_entities);
+  }
+
   return (m_parts == group.m_parts) && (m_entities == group.m_entities);
 }
 
@@ -229,46 +260,46 @@ stk::mesh::EntityIdVector DisconnectGroup::get_group_element_ids() const
   }
   return elementIds;
 }
-
-void DisconnectGroup::pack_group_info(stk::CommBuffer& procBuffer, stk::mesh::EntityId newNodeId, int proc, std::ostringstream& os) const {
+void DisconnectGroup::pack_group_info(stk::CommBuffer& procBuffer, stk::mesh::EntityId newNodeId, int proc) const {
   ThrowRequire(!m_parts.empty());
   stk::mesh::EntityId parentNodeId = m_bulk.identifier(m_node);
-  os << "P" << m_bulk.parallel_rank() << ": Packing node " << parentNodeId << " to proc " << proc << std::endl;
+
   procBuffer.pack<stk::mesh::EntityId>(parentNodeId);
   procBuffer.pack<unsigned>(m_parts.size());
-  os << "P" << m_bulk.parallel_rank() << ": Packing part list of size " << m_parts.size() << " to proc " << proc << std::endl;
+
   for(const stk::mesh::Part* part : m_parts) {
     procBuffer.pack<stk::mesh::PartOrdinal>(part->mesh_meta_data_ordinal());
-    os << "P" << m_bulk.parallel_rank() << ":       " << part->name() << " to proc " << proc << std::endl;
   }
   if(m_parts.size() > 1) {
     stk::mesh::EntityIdVector elements = get_group_element_ids();
     procBuffer.pack<unsigned>(elements.size());
     procBuffer.pack<stk::mesh::EntityId>(elements.data(), elements.size());
-    os << "P" << m_bulk.parallel_rank() << ": Packing element list of size " << elements.size() << " to proc " << proc << std::endl;
   }
   procBuffer.pack<stk::mesh::EntityId>(newNodeId);
-  os << "P" << m_bulk.parallel_rank() << ": Packing new id " << newNodeId << " to proc " << proc << std::endl;
+
+  procBuffer.pack<bool>(m_hasBlockPair);
+  if(m_hasBlockPair) {
+    procBuffer.pack<stk::mesh::PartOrdinal>(m_blockPair.first->mesh_meta_data_ordinal());
+    procBuffer.pack<stk::mesh::PartOrdinal>(m_blockPair.second->mesh_meta_data_ordinal());
+  }
 }
 
-void DisconnectGroup::unpack_group_info(stk::CommBuffer& procBuffer, stk::mesh::EntityId& newNodeId, int proc, std::ostringstream& os) {
+void DisconnectGroup::unpack_group_info(stk::CommBuffer& procBuffer, stk::mesh::EntityId& newNodeId, int proc) {
   unsigned numParts = 0;
   stk::mesh::PartOrdinal partOrdinal;
   stk::mesh::EntityId parentNodeId;
 
   procBuffer.unpack<stk::mesh::EntityId>(parentNodeId);
-  os << "P" << m_bulk.parallel_rank() << ": Unpacking node " << parentNodeId << " from proc " << proc << std::endl;
 
   m_node = m_bulk.get_entity(stk::topology::NODE_RANK, parentNodeId);
   ThrowRequire(m_bulk.is_valid(m_node));
 
   procBuffer.unpack<unsigned>(numParts);
   ThrowRequire(numParts != 0u);
-  os << "P" << m_bulk.parallel_rank() << ": Unpacking part list of size " << numParts << " from proc " << proc << std::endl;
+
   for(unsigned i = 0; i < numParts; i++) {
     procBuffer.unpack<stk::mesh::PartOrdinal>(partOrdinal);
     const stk::mesh::Part* part = &m_bulk.mesh_meta_data().get_part(partOrdinal);
-    os << "P" << m_bulk.parallel_rank() << ":       " << part->name() << " from proc " << proc << std::endl;
     m_parts.push_back(part);
   }
 
@@ -283,13 +314,21 @@ void DisconnectGroup::unpack_group_info(stk::CommBuffer& procBuffer, stk::mesh::
       ThrowRequire(m_bulk.is_valid(element));
       m_entities.push_back(element);
     }
-    os << "P" << m_bulk.parallel_rank() << ": Unpacking element list of size " << numElems << " from proc " << proc << std::endl;
   } else {
     m_entities = get_group_elements();
   }
 
   procBuffer.unpack<stk::mesh::EntityId>(newNodeId);
-  os << "P" << m_bulk.parallel_rank() << ": Unpacking new id " << newNodeId << " from proc " << proc << std::endl;
+
+  procBuffer.unpack<bool>(m_hasBlockPair);
+  if(m_hasBlockPair) {
+    procBuffer.unpack<stk::mesh::PartOrdinal>(partOrdinal);
+    stk::mesh::Part* part = &m_bulk.mesh_meta_data().get_part(partOrdinal);
+    m_blockPair.first = part;
+    procBuffer.unpack<stk::mesh::PartOrdinal>(partOrdinal);
+    part = &m_bulk.mesh_meta_data().get_part(partOrdinal);
+    m_blockPair.second = part;
+  }
 }
 
 std::vector<int> get_elements_owners(const stk::mesh::BulkData& bulk, const stk::mesh::EntityVector& entities)

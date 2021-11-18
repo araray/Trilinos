@@ -1,4 +1,16 @@
-IF(Kokkos_ENABLE_OpenMP)
+IF(Kokkos_ENABLE_OPENMP)
+
+    TRIBITS_ADD_EXECUTABLE(
+        simple_test_check
+        NOEXEPREFIX
+        SOURCES simple_test_check.cpp
+     )
+
+    TRIBITS_ADD_EXECUTABLE(
+        singular_matrix_check
+        NOEXEPREFIX
+        SOURCES singular_matrix_check.cpp
+     )
 
     TRIBITS_ADD_EXECUTABLE(
         basker_test
@@ -8,20 +20,20 @@ IF(Kokkos_ENABLE_OpenMP)
 
      TRIBITS_ADD_EXECUTABLE(
         basker_test_inc
-	NOEXEPREFIX
-	SOURCES basker_test_inc.cpp 
+        NOEXEPREFIX
+        SOURCES basker_test_inc.cpp
      )
 
      TRIBITS_ADD_EXECUTABLE(
         basker_amesos2_interface_test
-	NOEXEPREFIX
-	SOURCES amesos2_interface_test.cpp test_util.hpp
+        NOEXEPREFIX
+        SOURCES amesos2_interface_test.cpp test_util.hpp
      )
      
      TRIBITS_ADD_EXECUTABLE(
         basker_amesos2_interface_coverage_test
-	NOEXEPREFIX
-	SOURCES amesos2_interface_coverage_test.cpp test_util.hpp
+        NOEXEPREFIX
+        SOURCES amesos2_interface_coverage_test.cpp test_util.hpp
      )
          
      ##Single threaded test
@@ -77,7 +89,7 @@ IF(Kokkos_ENABLE_OpenMP)
      )
 
 
-ENDIF() ##END Kokkos_ENABLE_OpenMP
+ENDIF() ##END Kokkos_ENABLE_OPENMP
 
 TRIBITS_COPY_FILES_TO_BINARY_DIR(${PACKAGE_NAME}_Test_Files
         SOURCE_FILES matrix1.mtx coverage.mtx 
@@ -85,4 +97,4 @@ TRIBITS_COPY_FILES_TO_BINARY_DIR(${PACKAGE_NAME}_Test_Files
         DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-                
+
